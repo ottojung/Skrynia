@@ -274,11 +274,10 @@ function createServer(opts) {
 
   // --- Static app serving ---
 
-  function serveApp(ns, req, res) {
+  function serveApp(ns, req, res, urlPath) {
     const cur = currentLink(ns);
     if (!existsSync(cur)) { res.writeHead(503, {'Content-Type':'text/plain'}); res.end('Service unavailable'); return; }
     const releaseRoot = realpathSync(cur);
-    let urlPath = req.url.replace(/^\/a\/[^/]+\/?/, '/') || '/index.html';
     if (urlPath === '/') urlPath = '/index.html';
     const safe = path.normalize(urlPath);
     if (safe.includes('..')) { res.writeHead(403); res.end('Forbidden'); return; }
@@ -320,17 +319,19 @@ function createServer(opts) {
 
   function readBody(req, res, cb) {
     const chunks = []; let size = 0;
+    let oversized = false;
     req.on('data', c => {
+      if (oversized) return;
       size += c.length;
       if (size > MAX_OBJECT_SIZE) {
+        oversized = true;
         res.writeHead(413, {'Content-Type':'application/json'});
         res.end(JSON.stringify({error:'request_too_large'}));
-        req.destroy();
         return;
       }
       chunks.push(c);
     });
-    req.on('end', () => { if (!res.writableEnded) cb(Buffer.concat(chunks)); });
+    req.on('end', () => { if (!oversized) cb(Buffer.concat(chunks)); });
   }
 
   function route(req, res) {
@@ -379,7 +380,7 @@ function createServer(opts) {
       let ns;
       try { ns = decodeURIComponent(appMatch[1]); } catch { res.writeHead(400); res.end('Bad namespace'); return; }
       if (!validNs(ns)) { res.writeHead(400); res.end('Bad namespace'); return; }
-      return serveApp(ns, req, res);
+      return serveApp(ns, req, res, appMatch[2] || '/');
     }
 
     if (p === '/_skrynia/health') { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:true})); return; }

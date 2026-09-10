@@ -26,5 +26,5 @@ jobs:
         run: |
           mkdir -p /tmp/test-app
           printf 'build:\n\tmkdir -p build && echo ok > build/index.html\n' > /tmp/test-app/Makefile
-          docker run --rm --read-only --tmpfs /tmp:size=256m --network none --security-opt no-new-privileges --cap-drop ALL -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
+          docker run --rm --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp:size=256m --network none --security-opt no-new-privileges --cap-drop ALL -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
           test -f /tmp/test-app/build/index.html

@@ -212,10 +212,12 @@ function cmdDeploy(args) {
     // 3. Build in container (repo RW, root FS ro, drop caps)
     ensureDir(stageDir);
     const absSubdir = path.relative(repoDir, appDir);
+    const owner = fs.statSync(repoDir);
 
     info('building with container...');
     const dockerArgs = [
       'run', '--rm',
+      '--user', `${owner.uid}:${owner.gid}`,
       '--read-only',
       '--tmpfs', '/tmp:size=256m',
       '--network', 'none',
@@ -246,7 +248,7 @@ function cmdDeploy(args) {
 
     // 6. Atomic rename: staging dir -> release dir (same filesystem)
     const now = Date.now();
-    const ts = new Date(now).toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const ts = new Date(now).toISOString().replace(/[^0-9]/g, '').slice(0, 17);
     const rand = crypto.randomBytes(3).toString('hex');
     const releaseId = ts + '-' + rand;
     const relDir = path.join(RELEASES_DIR, ns, releaseId);

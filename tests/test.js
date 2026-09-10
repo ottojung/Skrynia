@@ -256,6 +256,21 @@ async function test_app_serving() {
   } finally { await stopServer(server); }
 }
 
+async function test_app_serving_query_string() {
+  setup(); createNs('qsapp');
+  const relBase = path.join(TMP, 'releases', 'qsapp');
+  fs.mkdirSync(relBase, { recursive: true });
+  fs.writeFileSync(path.join(relBase, 'app.js'), 'console.log("qs")');
+  fs.symlinkSync(relBase, path.join(relBase, '..', 'qsapp', 'current'));
+  const { server, port } = await startServer();
+  try {
+    let r = await get(port, '/a/qsapp/app.js?x=1');
+    assert(r.status === 200, 'qs file 200');
+    assert(r.text === 'console.log("qs")', 'qs body');
+    assert(r.headers['content-type'] === 'application/javascript', 'qs content-type');
+  } finally { await stopServer(server); }
+}
+
 async function test_rollback_sim() {
   setup();
   const relBase = path.join(TMP, 'releases', 'rbapp');
@@ -765,6 +780,34 @@ async function test_rollback_rejects_positional() {
   assert(threw, 'positional rollback threw');
 }
 
+async function test_readBody_oversized_413() {
+  setup(); createNs('ns');
+  const { server, port } = await startServer();
+  try {
+    const big = Buffer.alloc(10485761, 0x41);
+    const r = await req(port, 'POST', '/_skrynia/store/ns/big', big, {'Content-Type':'application/octet-stream','X-Skrynia-Mode':'public-write'});
+    assert(r.status === 413, 'oversized returns 413, got ' + r.status);
+    const j = JSON.parse(r.text);
+    assert(j.error === 'request_too_large', 'error key correct');
+  } finally { await stopServer(server); }
+}
+
+async function test_release_timestamp_millis() {
+  setup();
+  const env = deployEnv();
+  const repoDir = path.join(TMP, 'tsrepo');
+  const h = makeRepo(repoDir, { 'Makefile': 'build:\n\tmkdir -p build && echo ok > build/index.html\n' });
+  makeFakeDocker(['cd "$REPO" && mkdir -p build && echo ok > build/index.html']);
+  execFileSync(NODE, deployArgs('file://' + repoDir, h, '.', 'tsns'), { timeout: 30000, env });
+  const releases = fs.readdirSync(path.join(TMP, 'releases', 'tsns')).filter(d => !d.startsWith('.') && d !== 'current');
+  assert(releases.length === 1, 'one release');
+  const rid = releases[0];
+  assert(/^\d{17}-[0-9a-f]{6}$/.test(rid), 'release id has 17-digit timestamp + 6-hex random, got: ' + rid);
+  const tsPart = rid.split('-')[0];
+  assert(tsPart.length === 17, 'timestamp part 17 chars');
+  assert(/^\d{8}\d{6}\d{3}$/.test(tsPart), 'YYYYMMDDHHmmssSSS format');
+}
+
 async function test_docker_security_opts() {
   // Verify admin.js uses correct Docker security flags:
   // --security-opt no-new-privileges (not standalone --no-new-privileges)
@@ -777,6 +820,9 @@ async function test_docker_security_opts() {
   assert(src.includes("'--cap-drop', 'ALL'"), 'must have --cap-drop ALL');
   // Must have --read-only
   assert(src.includes("'--read-only'"), 'must have --read-only');
+  // Must have --user with owner uid:gid
+  assert(src.includes("'--user'"), 'must have --user flag');
+  assert(src.includes('owner.uid') && src.includes('owner.gid'), 'must reference owner uid and gid');
 }
 
 // --- Runner ---
@@ -791,6 +837,7 @@ const tests = [
   ['quota_full', test_quota_full],
   ['atomic_symlink', test_atomic_symlink],
   ['app_serving', test_app_serving],
+  ['app_serving_query_string', test_app_serving_query_string],
   ['rollback_sim', test_rollback_sim],
   ['concurrent_create', test_concurrent_create],
   ['concurrent_quota_boundary', test_concurrent_quota_boundary],
@@ -827,6 +874,8 @@ const tests = [
   ['examples_hello_make_build', test_examples_hello_make_build],
   ['undeploy_rejects_positional', test_undeploy_rejects_positional],
   ['rollback_rejects_positional', test_rollback_rejects_positional],
+  ['readBody_oversized_413', test_readBody_oversized_413],
+  ['release_timestamp_millis', test_release_timestamp_millis],
   ['docker_security_opts', test_docker_security_opts],
 ];
 
