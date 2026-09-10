@@ -153,11 +153,14 @@ node src/admin.js inspect --namespace myapp
 ## Builder
 
 The builder image is a `node:20-alpine` image with `make`, `git`, and `npm`.
+The default image is published to GHCR from `builder/Dockerfile`.
+Local `make builder` builds the image locally as a developer convenience.
 Containers run with `--rm` (disposable), `--cap-drop ALL`,
-and `--security-opt no-new-privileges`. The root filesystem is writable so
-builds can produce output. The app repo is mounted read-write.
+`--security-opt no-new-privileges`, and `HOME=/tmp` so npm works under
+arbitrary numeric UIDs. The root filesystem is writable so builds can
+produce output. The app repo is mounted read-write.
 
-To build the builder image:
+To build the builder image locally:
 
 ```sh
 make builder

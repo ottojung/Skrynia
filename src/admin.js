@@ -262,6 +262,7 @@ function cmdDeploy(args) {
     const dockerArgs = [
       'run', '--rm',
       '--user', `${owner.uid}:${owner.gid}`,
+      '--env', 'HOME=/tmp',
       '--network', 'none',
       '--security-opt', 'no-new-privileges',
       '--cap-drop', 'ALL',

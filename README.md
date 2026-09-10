@@ -128,7 +128,7 @@ See [docs/api-spec.md](docs/api-spec.md) for full details.
 
 - **Server**: Single-process Node.js HTTP server; event-loop serialization for safety
 - **Admin CLI**: Keyword-flag interface; all operations use `execFileSync` (no shell injection)
-- **Builder**: Local Docker image (`node:20-alpine` + make + git + npm); runs with disposable `--rm`, `--cap-drop ALL`, `--security-opt no-new-privileges`; root filesystem is writable for builds
+- **Builder**: Published to GHCR from `builder/Dockerfile` (`node:20-alpine` + make + git + npm); local `make builder` is a developer convenience; containers run with `--rm`, `--cap-drop ALL`, `--security-opt no-new-privileges`, `HOME=/tmp`; root filesystem is writable for builds
 - **Storage**: Filesystem-based; one `.dat`/`.meta`/`.cap` triplet per object per namespace
 - **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
 - **APP_DIR**: Optional external exposure; `APP_DIR/{ns}` symlink to release dir for direct web server access

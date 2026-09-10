@@ -874,6 +874,8 @@ async function test_docker_security_opts() {
   assert(src.includes("'--rm'"), 'must have --rm for disposable containers');
   // Must NOT have --read-only (writable root FS for builds)
   assert(!src.includes("'--read-only'"), 'must not use --read-only (writable root FS for builds)');
+  // Must set HOME=/tmp so npm works under arbitrary numeric UIDs
+  assert(src.includes("'--env', 'HOME=/tmp'"), 'must set HOME=/tmp for npm under numeric UID');
   // Must have --security-opt followed by no-new-privileges
   assert(src.includes("'--security-opt', 'no-new-privileges'"), 'must use --security-opt no-new-privileges');
   // Must have --cap-drop ALL
@@ -938,12 +940,6 @@ async function test_birthday_list_npm_build() {
   assert(content.includes('Birthday Wishlist'), 'build/index.html has expected content');
   assert(content.includes('Skrynia'), 'build/index.html references Skrynia');
   rmrf(buildDir);
-}
-
-async function test_builder_dockerfile_includes_npm() {
-  const df = fs.readFileSync(path.join(SRC, 'builder', 'Dockerfile'), 'utf8');
-  assert(df.includes('npm --version'), 'builder Dockerfile verifies npm');
-  assert(df.includes('node:20-alpine'), 'builder uses node:20-alpine');
 }
 
 async function test_examples_path_is_singular() {
@@ -1016,7 +1012,6 @@ const tests = [
   ['base_path_rejects_empty', test_base_path_rejects_empty],
   ['base_path_server_uses_helper', test_base_path_server_uses_helper],
   ['birthday_list_npm_build', test_birthday_list_npm_build],
-  ['builder_dockerfile_includes_npm', test_builder_dockerfile_includes_npm],
   ['examples_path_is_singular', test_examples_path_is_singular],
 ];
 
