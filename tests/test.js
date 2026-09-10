@@ -765,6 +765,20 @@ async function test_rollback_rejects_positional() {
   assert(threw, 'positional rollback threw');
 }
 
+async function test_docker_security_opts() {
+  // Verify admin.js uses correct Docker security flags:
+  // --security-opt no-new-privileges (not standalone --no-new-privileges)
+  const src = fs.readFileSync(path.join(SRC, 'src', 'admin.js'), 'utf8');
+  // Must NOT have standalone --no-new-privileges (would be flag with dash prefix alone)
+  assert(!src.includes("'--no-new-privileges'"), 'must not use standalone --no-new-privileges');
+  // Must have --security-opt followed by no-new-privileges
+  assert(src.includes("'--security-opt', 'no-new-privileges'"), 'must use --security-opt no-new-privileges');
+  // Must have --cap-drop ALL
+  assert(src.includes("'--cap-drop', 'ALL'"), 'must have --cap-drop ALL');
+  // Must have --read-only
+  assert(src.includes("'--read-only'"), 'must have --read-only');
+}
+
 // --- Runner ---
 
 const tests = [
@@ -813,6 +827,7 @@ const tests = [
   ['examples_hello_make_build', test_examples_hello_make_build],
   ['undeploy_rejects_positional', test_undeploy_rejects_positional],
   ['rollback_rejects_positional', test_rollback_rejects_positional],
+  ['docker_security_opts', test_docker_security_opts],
 ];
 
 let pass = 0, fail = 0;

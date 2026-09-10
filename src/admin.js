@@ -219,7 +219,7 @@ function cmdDeploy(args) {
       '--read-only',
       '--tmpfs', '/tmp:size=256m',
       '--network', 'none',
-      '--no-new-privileges',
+      '--security-opt', 'no-new-privileges',
       '--cap-drop', 'ALL',
       '-v', repoDir + ':/repo',
       '-w', '/repo/' + absSubdir,
