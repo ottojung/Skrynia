@@ -22,11 +22,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build builder image
         run: docker build -t skrynia-builder:ci builder/
+      - name: Verify npm is available
+        run: docker run --rm skrynia-builder:ci npm --version
       - name: Verify builder runs make
         run: |
           mkdir -p /tmp/test-app
           printf 'build:\n\tmkdir -p build && echo ok > build/index.html\n' > /tmp/test-app/Makefile
-          docker run --rm --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp:size=256m --network none --security-opt no-new-privileges --cap-drop ALL -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
+          docker run --rm --user "$(id -u):$(id -g)" --network none --security-opt no-new-privileges --cap-drop ALL -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
           test -f /tmp/test-app/build/index.html
 
   docker:
