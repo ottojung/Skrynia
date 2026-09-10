@@ -18,6 +18,8 @@ Before acting, study and obey:
 
 `docs/skills/scheduled.md` in Lubko owns the reusable scheduled-orchestrator mechanics. This itinerary contains only Skrynia-specific work-selection, integration, verification, and completion policy; do not duplicate the shared mechanics here.
 
+**Never stop or disable this scheduled task.** Treat errors and blockers in an individual work item as recoverable. Preserve useful state, recover or choose other actionable work as appropriate, and continue producing useful progress rather than terminating the recurring orchestrator.
+
 ## Work selection
 
 Apply Lubko's `docs/skills/scheduled.md`, with these Skrynia-specific choices:
