@@ -98,9 +98,22 @@ jobs:
           docker pull ghcr.io/ottojung/skrynia:latest
           docker pull ghcr.io/ottojung/skrynia-builder:latest
 
-      - name: Smoke test skrynia image
+      - name: Smoke test skrynia HTTP image
         run: |
-          docker run --rm --entrypoint node ghcr.io/ottojung/skrynia:latest /app/src/admin.js help
+          docker rm -f skrynia-smoke >/dev/null 2>&1 || true
+          docker run -d --name skrynia-smoke \
+            --read-only \
+            --tmpfs /tmp \
+            --tmpfs /var/lib/skrynia \
+            --network host \
+            --env SKRYNIA_TOKEN=smoke-token \
+            ghcr.io/ottojung/skrynia:latest
+          trap 'docker rm -f skrynia-smoke >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:17380/_skrynia/health && break
+            sleep 0.2
+          done
+          curl -fsS 'http://127.0.0.1:17380/_skrynia/ns/list?token=smoke-token' | grep '"namespaces"'
 
       - name: Smoke test skrynia-builder image
         run: |
