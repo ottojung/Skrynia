@@ -34,8 +34,17 @@ function createServer(opts) {
   const RELEASES_DIR = path.join(DATA_DIR, 'releases');
   const STORAGE_DIR = path.join(DATA_DIR, 'storage');
   const STATE_DIR = path.join(DATA_DIR, 'state');
-  const PREFIX = process.env.SKRYNIA_PREFIX || '/usr/local';
-  const CLIENT_PATH = path.join(PREFIX, 'share/skrynia/client/skrynia.js');
+  const CLIENT_PATH = path.join(__dirname, 'client.js');
+
+  // Configurable URL base path for app serving (default "/apps").
+  // There is no canonical prefix; the deployer sets this to match the
+  // reverse proxy or web server configuration (e.g. "/a", "/apps", "/s").
+  const APP_BASE_PATH = (opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps').replace(/\/+$/, '');
+
+  // Optional separate filesystem directory where active app symlinks are
+  // exposed for direct serving by an external web server (e.g. nginx).
+  // When set, admin deploy creates APP_DIR/{ns} -> release dir symlinks.
+  const APP_DIR = opts.appDir || process.env.SKRYNIA_APP_DIR || '';
 
   const DEFAULT_QUOTA_BYTES = parseInt(process.env.SKRYNIA_DEFAULT_QUOTA_BYTES || '10485760', 10);
   const MAX_OBJECT_COUNT = parseInt(process.env.SKRYNIA_MAX_OBJECT_COUNT || '10000', 10);
@@ -274,14 +283,19 @@ function createServer(opts) {
 
   // --- Static app serving ---
 
+  function activeLink(ns) {
+    return APP_DIR ? path.join(APP_DIR, ns) : path.join(RELEASES_DIR, ns, 'current');
+  }
+
   function serveApp(ns, req, res, urlPath) {
-    const cur = currentLink(ns);
-    if (!existsSync(cur)) { res.writeHead(503, {'Content-Type':'text/plain'}); res.end('Service unavailable'); return; }
-    const releaseRoot = realpathSync(cur);
+    const link = activeLink(ns);
+    if (!existsSync(link)) { res.writeHead(503, {'Content-Type':'text/plain'}); res.end('Service unavailable'); return; }
+    let appRoot;
+    try { appRoot = realpathSync(link); } catch { res.writeHead(503, {'Content-Type':'text/plain'}); res.end('Service unavailable'); return; }
     if (urlPath === '/') urlPath = '/index.html';
     const safe = path.normalize(urlPath);
     if (safe.includes('..')) { res.writeHead(403); res.end('Forbidden'); return; }
-    const filePath = path.join(releaseRoot, safe);
+    const filePath = path.join(appRoot, safe);
 
     // For missing files (no realpath possible), return 404.
     // For existing files/symlinks, realpath to detect escapes.
@@ -291,7 +305,7 @@ function createServer(opts) {
 
     let resolved;
     try { resolved = realpathSync(filePath); } catch { resolved = null; }
-    if (!resolved || (resolved !== releaseRoot && !resolved.startsWith(releaseRoot + path.sep))) {
+    if (!resolved || (resolved !== appRoot && !resolved.startsWith(appRoot + path.sep))) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
 
@@ -299,7 +313,7 @@ function createServer(opts) {
       const tryIndex = path.join(resolved, 'index.html');
       if (existsSync(tryIndex)) {
         const tryResolved = realpathSync(tryIndex);
-        if (tryResolved === releaseRoot || tryResolved.startsWith(releaseRoot + path.sep)) {
+        if (tryResolved === appRoot || tryResolved.startsWith(appRoot + path.sep)) {
           serveFile(tryIndex, res); return;
         }
       }
@@ -375,7 +389,11 @@ function createServer(opts) {
       res.writeHead(405); res.end('Method not allowed'); return;
     }
 
-    const appMatch = p.match(/^\/a\/([^/]+)(\/.*)?$/);
+    // Build app route regex from configurable base path.
+    // Escapes regex metacharacters in the prefix, then matches /{ns}/{path}.
+    const baseRe = APP_BASE_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const appRe = new RegExp('^' + baseRe + '/([^/]+)(/.*)?$');
+    const appMatch = p.match(appRe);
     if (appMatch) {
       let ns;
       try { ns = decodeURIComponent(appMatch[1]); } catch { res.writeHead(400); res.end('Bad namespace'); return; }
@@ -390,6 +408,7 @@ function createServer(opts) {
   ensureDir(RELEASES_DIR); ensureDir(STORAGE_DIR); ensureDir(STATE_DIR);
 
   const server = http.createServer(route);
+  server._skrynia = { APP_BASE_PATH, APP_DIR, DATA_DIR };
   return server;
 }
 

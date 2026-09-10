@@ -20,12 +20,14 @@ function setup() {
   fs.mkdirSync(path.join(TMP, 'releases'), { recursive: true });
   fs.mkdirSync(path.join(TMP, 'storage'), { recursive: true });
   fs.mkdirSync(path.join(TMP, 'state'), { recursive: true });
+  fs.mkdirSync(path.join(TMP, 'builds'), { recursive: true });
   rmrf(FAKE_BIN);
   fs.mkdirSync(FAKE_BIN, { recursive: true });
 }
 
-function startServer() {
-  const server = createServer({ dataDir: TMP });
+function startServer(extraOpts) {
+  const opts = Object.assign({ dataDir: TMP }, extraOpts || {});
+  const server = createServer(opts);
   return new Promise(resolve => {
     server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
   });
@@ -245,13 +247,13 @@ async function test_app_serving() {
   fs.symlinkSync(relBase, path.join(relBase, '..', 'webapp', 'current'));
   const { server, port } = await startServer();
   try {
-    let r = await get(port, '/a/webapp/');
+    let r = await get(port, '/apps/webapp/');
     assert(r.status === 200, 'index 200');
     assert(r.text === '<h1>Hello</h1>', 'index body');
-    r = await get(port, '/a/webapp/assets/app.js');
+    r = await get(port, '/apps/webapp/assets/app.js');
     assert(r.status === 200, 'js 200');
     assert(r.headers['content-type'] === 'application/javascript', 'js type');
-    r = await get(port, '/a/webapp/../../etc/passwd');
+    r = await get(port, '/apps/webapp/../../etc/passwd');
     assert(r.status >= 400, 'traversal blocked');
   } finally { await stopServer(server); }
 }
@@ -264,11 +266,67 @@ async function test_app_serving_query_string() {
   fs.symlinkSync(relBase, path.join(relBase, '..', 'qsapp', 'current'));
   const { server, port } = await startServer();
   try {
-    let r = await get(port, '/a/qsapp/app.js?x=1');
+    let r = await get(port, '/apps/qsapp/app.js?x=1');
     assert(r.status === 200, 'qs file 200');
     assert(r.text === 'console.log("qs")', 'qs body');
     assert(r.headers['content-type'] === 'application/javascript', 'qs content-type');
   } finally { await stopServer(server); }
+}
+
+async function test_app_serving_custom_base_path() {
+  setup(); createNs('myapp');
+  const relBase = path.join(TMP, 'releases', 'myapp');
+  fs.mkdirSync(relBase, { recursive: true });
+  fs.writeFileSync(path.join(relBase, 'index.html'), '<p>custom</p>');
+  fs.symlinkSync(relBase, path.join(relBase, '..', 'myapp', 'current'));
+  const { server, port } = await startServer({ appBasePath: '/myapps' });
+  try {
+    let r = await get(port, '/myapps/myapp/');
+    assert(r.status === 200, 'custom base 200');
+    assert(r.text === '<p>custom</p>', 'custom base body');
+    r = await get(port, '/apps/myapp/');
+    assert(r.status === 404, 'default base 404');
+  } finally { await stopServer(server); }
+}
+
+async function test_app_dir_serving() {
+  setup(); createNs('dapp');
+  const relBase = path.join(TMP, 'releases', 'dapp');
+  fs.mkdirSync(relBase, { recursive: true });
+  fs.writeFileSync(path.join(relBase, 'index.html'), '<p>from appdir</p>');
+  const appDir = path.join(TMP, 'app-expose');
+  fs.mkdirSync(appDir, { recursive: true });
+  // Unified: active link lives in APP_DIR, not in releases/current
+  fs.symlinkSync(relBase, path.join(appDir, 'dapp'));
+  const { server, port } = await startServer({ appDir });
+  try {
+    let r = await get(port, '/apps/dapp/');
+    assert(r.status === 200, 'appdir 200');
+    assert(r.text === '<p>from appdir</p>', 'appdir body');
+  } finally { await stopServer(server); }
+}
+
+async function test_app_dir_symlink_atomic() {
+  setup(); createNs('atomicns');
+  const relBase = path.join(TMP, 'releases', 'atomicns');
+  fs.mkdirSync(path.join(relBase, 'r1'), { recursive: true });
+  fs.writeFileSync(path.join(relBase, 'r1', 'index.html'), 'v1');
+  fs.mkdirSync(path.join(relBase, 'r2'), { recursive: true });
+  fs.writeFileSync(path.join(relBase, 'r2', 'index.html'), 'v2');
+  const appDir = path.join(TMP, 'app-expose-atomic');
+  fs.mkdirSync(appDir, { recursive: true });
+  // Deploy: atomic symlink in APP_DIR (no current in releases)
+  const appLink = path.join(appDir, 'atomicns');
+  const tmpLink = appLink + '.tmp';
+  fs.symlinkSync(path.join(relBase, 'r2'), tmpLink);
+  fs.renameSync(tmpLink, appLink);
+  assert(fs.readlinkSync(appLink).includes('r2'), 'appdir points to r2');
+  assert(!fs.existsSync(path.join(relBase, 'current')), 'no current in releases');
+  // Rollback: atomic swap in APP_DIR
+  const tmpLink2 = appLink + '.tmp';
+  fs.symlinkSync(path.join(relBase, 'r1'), tmpLink2);
+  fs.renameSync(tmpLink2, appLink);
+  assert(fs.readlinkSync(appLink).includes('r1'), 'appdir rolled back to r1');
 }
 
 async function test_rollback_sim() {
@@ -401,16 +459,16 @@ async function test_app_serving_symlink_escape() {
   fs.symlinkSync(relBase, path.join(relBase, '..', 'escapeapp', 'current'));
   const { server, port } = await startServer();
   try {
-    let r = await get(port, '/a/escapeapp/public/ok.html');
+    let r = await get(port, '/apps/escapeapp/public/ok.html');
     assert(r.status === 200, 'normal file 200');
-    r = await get(port, '/a/escapeapp/public/escape/passwd');
+    r = await get(port, '/apps/escapeapp/public/escape/passwd');
     assert(r.status === 403, 'symlink escape 403, got ' + r.status);
-    r = await get(port, '/a/escapeapp/public/escape');
+    r = await get(port, '/apps/escapeapp/public/escape');
     assert(r.status === 403, 'symlink itself 403, got ' + r.status);
     // Root-level escape
-    r = await get(port, '/a/escapeapp/escape/passwd');
+    r = await get(port, '/apps/escapeapp/escape/passwd');
     assert(r.status === 403, 'root escape 403, got ' + r.status);
-    r = await get(port, '/a/escapeapp/escape');
+    r = await get(port, '/apps/escapeapp/escape');
     assert(r.status === 403, 'root symlink itself 403, got ' + r.status);
   } finally { await stopServer(server); }
 }
@@ -516,7 +574,7 @@ async function test_missing_static_returns_404() {
   fs.symlinkSync(relBase, path.join(relBase, '..', 'ns', 'current'));
   const { server, port } = await startServer();
   try {
-    const r = await get(port, '/a/ns/nonexistent.html');
+    const r = await get(port, '/apps/ns/nonexistent.html');
     assert(r.status === 404, 'missing static 404, got ' + r.status);
   } finally { await stopServer(server); }
 }
@@ -671,7 +729,7 @@ async function test_deploy_failure_cleanup() {
     execFileSync(NODE, deployArgs('file://' + repoDir, h, '.', 'failns'), { timeout: 30000, env, stdio: 'pipe' });
   } catch (e) { threw = true; assert(e.stderr.toString().includes('build failed'), 'build failed'); }
   assert(threw, 'deploy threw');
-  assert(fs.readdirSync('/tmp').filter(e => e.startsWith('skrynia-build-')).length === 0, 'temp cleaned');
+  assert(fs.readdirSync(path.join(TMP, 'builds')).filter(e => e.startsWith('build-')).length === 0, 'temp cleaned');
 }
 
 async function test_undeploy_destructive() {
@@ -838,6 +896,9 @@ const tests = [
   ['atomic_symlink', test_atomic_symlink],
   ['app_serving', test_app_serving],
   ['app_serving_query_string', test_app_serving_query_string],
+  ['app_serving_custom_base_path', test_app_serving_custom_base_path],
+  ['app_dir_serving', test_app_dir_serving],
+  ['app_dir_symlink_atomic', test_app_dir_symlink_atomic],
   ['rollback_sim', test_rollback_sim],
   ['concurrent_create', test_concurrent_create],
   ['concurrent_quota_boundary', test_concurrent_quota_boundary],
