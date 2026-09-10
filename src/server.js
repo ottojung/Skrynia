@@ -354,7 +354,7 @@ function createServer(opts) {
     if (appMatch) {
       let ns;
       try { ns = decodeURIComponent(appMatch[1]); } catch { res.writeHead(400); res.end('Bad namespace'); return; }
-      if (!validNs(ns)) { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_namespace'})); return; }
+      if (!validNs(ns)) { res.writeHead(400); res.end('Bad namespace'); return; }
       return serveApp(ns, req, res, appMatch[2] || '/');
     }
 
@@ -365,7 +365,7 @@ function createServer(opts) {
   ensureDir(shared.RELEASES_DIR); ensureDir(shared.STORAGE_DIR); ensureDir(shared.STATE_DIR);
 
   const server = http.createServer(route);
-  server._skrynia = { APP_BASE_PATH, APP_DIR, dataDir: shared.dataDir };
+  server._skrynia = { APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir };
   return server;
 }
 
