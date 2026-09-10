@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Node.js 18+ on the server
+- Node.js 20+ on the server
 - Docker (for builder container)
 - git (for cloning app repositories)
 
@@ -30,7 +30,7 @@ This installs:
 - `/usr/local/bin/skrynia` - Admin CLI
 - `/usr/local/lib/skrynia/` - Server and admin code
 - `/usr/local/share/skrynia/` - Configuration and client library
-- `/etc/systemd/system/skrynia.service` - Systemd service
+- `/etc/systemd/system/skrynia.service` - Systemd service (runs as `skrynia` user)
 
 ## Configuration
 
@@ -39,7 +39,7 @@ Edit `/usr/local/share/skrynia/skrynia.conf`:
 ```sh
 SKRYNIA_PORT=17380
 SKRYNIA_DATA_DIR=/var/lib/skrynia
-SKRYNIA_BUILDER_IMAGE=ghcr.io/ottojung/skrynia-builder:latest
+SKRYNIA_BUILDER_IMAGE=ghcr.io/ottojung/skrynia-builder:0.1.0
 SKRYNIA_DEFAULT_QUOTA_BYTES=10485760
 ```
 
@@ -77,11 +77,15 @@ skrynia deploy git@github.com:myorg/myapp.git abc123def . myapp --builder myregi
 ```
 
 The deploy command:
-1. Clones the repo to a temporary workspace
-2. Checks out the exact commit
-3. Runs `make build` in the subdirectory via the builder container
-4. Copies `build/` output to an immutable release directory
-5. Atomically activates the release
+1. Validates subdirectory (no `..`, no absolute paths)
+2. Clones the repo to a temporary workspace
+3. Checks out the exact commit
+4. Validates subdirectory stays inside repo (realpath check)
+5. Runs `make build` in the subdirectory via the builder container (whole repo mounted, workdir set to subdir)
+6. Validates build output (rejects symlinks and special files)
+7. Stages validated output, then atomic rename to release directory
+8. Atomically activates the release
+9. Updates config with `currentReleaseId`
 
 ## Rollback
 
@@ -93,15 +97,16 @@ skrynia rollback myapp
 skrynia rollback myapp 20260910120000
 ```
 
+Rollback updates the deployment config metadata with the new `currentReleaseId`.
+
 ## Undeploy
 
 ```sh
-# Remove app and all stored data (default)
+# Remove app, releases, namespace data and state (always destructive)
 skrynia undeploy myapp
-
-# Remove app but keep stored data
-skrynia undeploy myapp --preserve-data
 ```
+
+Undeploy always removes releases, stored data, and namespace state. There is no preserve-data option in v1.
 
 ## Managing namespaces
 
@@ -150,3 +155,5 @@ skrynia ns inspect myns  # Check current usage
 journalctl -u skrynia -n 50
 systemctl status skrynia
 ```
+
+The server runs as the dedicated `skrynia` user with `NoNewPrivileges` and `ProtectSystem=strict`.

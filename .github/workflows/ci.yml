@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main, skrynia-platform]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: node tests/test.js
+
+  builder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build builder image
+        run: docker build -t skrynia-builder:ci builder/
+      - name: Verify builder runs make
+        run: |
+          mkdir -p /tmp/test-app && echo 'build:\n\tmkdir -p build && echo ok > build/index.html' > /tmp/test-app/Makefile
+          docker run --rm -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
+          test -f /tmp/test-app/build/index.html

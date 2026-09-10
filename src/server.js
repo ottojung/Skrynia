@@ -13,12 +13,19 @@
 //   - create: exclusive O_CREAT on .dat file (fails if exists)
 //   - put: write to .tmp, fs.rename to .dat (atomic on POSIX)
 //   - delete: unlink .dat, .meta, .cap (individual unlinks)
+//
+// Namespace policy: a namespace must exist (have a quota.json) before
+// the public store API will accept mutations.
+//
+// Capability verifier: the .cap file is the single source of truth
+// containing the SHA-256 hash of the capability. The .meta file does
+// not store the verifier.
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, statSync, readdirSync, realpathSync, renameSync, openSync, closeSync, createWriteStream } = fs;
+const { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, statSync, readdirSync, realpathSync, renameSync, lstatSync, openSync, closeSync } = fs;
 const { O_CREAT, O_EXCL, O_WRONLY } = fs.constants || {};
 
 function createServer(opts) {
@@ -48,6 +55,28 @@ function createServer(opts) {
   function capPath(ns, key) { return path.join(nsDir(ns), key + '.cap'); }
   function quotaFile(ns) { return path.join(STATE_DIR, ns, 'quota.json'); }
   function currentLink(ns) { return path.join(RELEASES_DIR, ns, 'current'); }
+
+  // --- Namespace validation ---
+
+  function nsExists(ns) { return existsSync(quotaFile(ns)); }
+
+  function requireNs(ns, res) {
+    if (!nsExists(ns)) {
+      res.writeHead(404, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({error:'namespace_not_found'}));
+      return false;
+    }
+    return true;
+  }
+
+  function requireNsCreate(ns, res) {
+    if (!nsExists(ns)) {
+      res.writeHead(409, {'Content-Type':'application/json'});
+      res.end(JSON.stringify({error:'namespace_not_created', detail:'use admin CLI to create namespace first'}));
+      return false;
+    }
+    return true;
+  }
 
   function generateCapability() { return crypto.randomBytes(32).toString('hex'); }
   function sha256hex(data) { return crypto.createHash('sha256').update(data).digest('hex'); }
@@ -81,7 +110,6 @@ function createServer(opts) {
 
   // --- Atomic file helpers ---
 
-  // Exclusive create: returns true if created, false if exists
   function exclusiveCreate(filePath, data) {
     try {
       const fd = openSync(filePath, O_CREAT | O_EXCL | O_WRONLY);
@@ -94,14 +122,13 @@ function createServer(opts) {
     }
   }
 
-  // Atomic replace: write to tmp, rename
   function atomicReplace(filePath, data) {
     const tmp = filePath + '.tmp.' + process.pid;
     writeFileSync(tmp, data);
     renameSync(tmp, filePath);
   }
 
-  // --- Storage handlers (single-process event-loop serialized) ---
+  // --- Storage handlers ---
 
   function handleGet(ns, key, res) {
     const op = objPath(ns, key);
@@ -113,6 +140,8 @@ function createServer(opts) {
   }
 
   function handleCreate(ns, key, body, req, res) {
+    if (!requireNsCreate(ns, res)) return;
+
     const mode = req.headers['x-skrynia-mode'] || 'capability-write';
     if (!['immutable','capability-write','public-write'].includes(mode)) {
       res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_mode'})); return;
@@ -131,7 +160,6 @@ function createServer(opts) {
 
     ensureDir(nsDir(ns));
 
-    // Exclusive create: atomic fail-if-exists
     const created = exclusiveCreate(objPath(ns, key), body);
     if (!created) {
       res.writeHead(409, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'already_exists'})); return;
@@ -143,12 +171,13 @@ function createServer(opts) {
 
     if (mode === 'capability-write') {
       const cap = generateCapability();
-      meta.capVerifier = sha256hex(cap);
+      const verifier = sha256hex(cap);
+      // .cap file is the single source of truth for the verifier
+      writeFileSync(capPath(ns, key), verifier);
       resp.capability = cap;
     }
 
     writeFileSync(metaPath(ns, key), JSON.stringify(meta, null, 2));
-    if (mode === 'capability-write') writeFileSync(capPath(ns, key), meta.capVerifier);
 
     q.bytes += body.length; q.count++;
     saveQuota(ns, q);
@@ -157,6 +186,8 @@ function createServer(opts) {
   }
 
   function handlePut(ns, key, body, req, res) {
+    if (!requireNs(ns, res)) return;
+
     const op = objPath(ns, key);
     if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
     const meta = JSON.parse(readFileSync(metaPath(ns, key), 'utf8'));
@@ -164,7 +195,8 @@ function createServer(opts) {
     if (meta.mode === 'capability-write') {
       const cap = req.headers['x-skrynia-capability'];
       if (!cap) { res.writeHead(403, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'capability_required'})); return; }
-      if (sha256hex(cap) !== readFileSync(capPath(ns, key), 'utf8')) {
+      const storedHash = readFileSync(capPath(ns, key), 'utf8');
+      if (sha256hex(cap) !== storedHash) {
         res.writeHead(403, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_capability'})); return;
       }
     }
@@ -174,8 +206,13 @@ function createServer(opts) {
 
     const q = recalcQuota(ns);
     const oldSize = meta.size;
+    const newBytes = q.bytes - oldSize + body.length;
 
-    // Atomic replace: tmp + rename
+    // Enforce quota AFTER computing new total, BEFORE writing
+    if (newBytes > q.quotaBytes) {
+      res.writeHead(507, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'namespace_full',detail:'quota_bytes'})); return;
+    }
+
     atomicReplace(op, body);
 
     meta.size = body.length;
@@ -183,13 +220,15 @@ function createServer(opts) {
     meta.modified = new Date().toISOString();
     writeFileSync(metaPath(ns, key), JSON.stringify(meta, null, 2));
 
-    q.bytes = q.bytes - oldSize + body.length;
+    q.bytes = newBytes;
     saveQuota(ns, q);
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ok:true}));
   }
 
   function handleDelete(ns, key, req, res) {
+    if (!requireNs(ns, res)) return;
+
     const op = objPath(ns, key);
     if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
     const meta = JSON.parse(readFileSync(metaPath(ns, key), 'utf8'));
@@ -224,12 +263,23 @@ function createServer(opts) {
     const safe = path.normalize(urlPath);
     if (safe.includes('..')) { res.writeHead(403); res.end('Forbidden'); return; }
     const filePath = path.join(releaseRoot, safe);
-    if (!existsSync(filePath) || statSync(filePath).isDirectory()) {
-      const tryIndex = path.join(filePath, 'index.html');
-      if (existsSync(tryIndex)) { serveFile(tryIndex, res); return; }
+
+    // Path-safety: resolved path must stay inside releaseRoot.
+    // This catches symlink escapes after realpath resolution.
+    let resolved;
+    try { resolved = realpathSync(filePath); } catch { resolved = null; }
+    if (!resolved || !resolved.startsWith(releaseRoot)) {
+      res.writeHead(403); res.end('Forbidden'); return;
+    }
+
+    if (!existsSync(resolved) || statSync(resolved).isDirectory()) {
+      const tryIndex = path.join(resolved, 'index.html');
+      if (existsSync(tryIndex) && realpathSync(tryIndex).startsWith(releaseRoot)) {
+        serveFile(tryIndex, res); return;
+      }
       res.writeHead(404); res.end('Not found'); return;
     }
-    serveFile(filePath, res);
+    serveFile(resolved, res);
   }
 
   function serveFile(p, res) {
@@ -255,7 +305,7 @@ function createServer(opts) {
       const ns = decodeURIComponent(storeMatch[1]);
       const sk = safeKey(decodeURIComponent(storeMatch[2]));
       if (!sk) { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_key'})); return; }
-      if (req.method === 'GET') return handleGet(ns, sk, res);
+      if (req.method === 'GET') { if (!requireNs(ns, res)) return; return handleGet(ns, sk, res); }
       if (req.method === 'DELETE') return handleDelete(ns, sk, req, res);
       if (req.method === 'PUT' || req.method === 'POST') {
         return readBody(req, body => {
