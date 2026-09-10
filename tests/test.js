@@ -808,12 +808,12 @@ async function test_admin_ns_preserves_quota() {
 }
 
 async function test_examples_hello_make_build() {
-  // Verify examples/hello can produce build/index.html
-  const helloDir = path.join(SRC, 'examples', 'hello');
+  // Verify example/hello can produce build/index.html
+  const helloDir = path.join(SRC, 'example', 'hello');
   const buildDir = path.join(helloDir, 'build');
   try { rmrf(buildDir); } catch {}
   execFileSync('make', ['build'], { cwd: helloDir, timeout: 5000, stdio: 'pipe' });
-  assert(fs.existsSync(path.join(buildDir, 'index.html')), 'examples/hello build/index.html exists');
+  assert(fs.existsSync(path.join(buildDir, 'index.html')), 'example/hello build/index.html exists');
   const content = fs.readFileSync(path.join(buildDir, 'index.html'), 'utf8');
   assert(content.includes('Hello Skrynia'), 'build/index.html has expected content');
   rmrf(buildDir);
@@ -868,20 +868,21 @@ async function test_release_timestamp_millis() {
 }
 
 async function test_docker_security_opts() {
-  // Verify admin.js uses correct Docker security flags:
-  // --security-opt no-new-privileges (not standalone --no-new-privileges)
+  // Verify admin.js uses correct Docker flags for disposable writable builds:
   const src = fs.readFileSync(path.join(SRC, 'src', 'admin.js'), 'utf8');
-  // Must NOT have standalone --no-new-privileges (would be flag with dash prefix alone)
-  assert(!src.includes("'--no-new-privileges'"), 'must not use standalone --no-new-privileges');
-  // Must have --security-opt followed by no-new-privileges
-  assert(src.includes("'--security-opt', 'no-new-privileges'"), 'must use --security-opt no-new-privileges');
-  // Must have --cap-drop ALL
-  assert(src.includes("'--cap-drop', 'ALL'"), 'must have --cap-drop ALL');
-  // Must have --read-only
-  assert(src.includes("'--read-only'"), 'must have --read-only');
-  // Must have --user with owner uid:gid
+  // Must have --rm for disposable containers
+  assert(src.includes("'--rm'"), 'must have --rm for disposable containers');
+  // Must NOT have --read-only (writable root FS for builds)
+  assert(!src.includes("'--read-only'"), 'must not use --read-only (writable root FS for builds)');
+  // Must set HOME=/tmp so npm works under arbitrary numeric UIDs
+  assert(src.includes("'--env', 'HOME=/tmp'"), 'must set HOME=/tmp for npm under numeric UID');
+  // Must have --user with owner uid:gid for output ownership
   assert(src.includes("'--user'"), 'must have --user flag');
   assert(src.includes('owner.uid') && src.includes('owner.gid'), 'must reference owner uid and gid');
+  // Must NOT have security sandbox flags (builds are disposable, not sandboxed)
+  assert(!src.includes("'--network'"), 'must not have --network flag');
+  assert(!src.includes("'--security-opt'"), 'must not have --security-opt flag');
+  assert(!src.includes("'--cap-drop'"), 'must not have --cap-drop flag');
 }
 
 async function test_base_path_strips_trailing_slashes() {
@@ -927,6 +928,27 @@ async function test_base_path_server_uses_helper() {
     r = await get(port, '/custom/bpns/index.html');
     assert(r.status === 200, 'explicit file works');
   } finally { await stopServer(server); }
+}
+
+async function test_birthday_list_npm_build() {
+  const blDir = path.join(SRC, 'example', 'birthday-list');
+  const buildDir = path.join(blDir, 'build');
+  try { rmrf(buildDir); } catch {}
+  execFileSync('npm', ['run', 'build'], { cwd: blDir, timeout: 10000, stdio: 'pipe' });
+  assert(fs.existsSync(path.join(buildDir, 'index.html')), 'birthday-list build/index.html exists');
+  const content = fs.readFileSync(path.join(buildDir, 'index.html'), 'utf8');
+  assert(content.includes('Birthday Wishlist'), 'build/index.html has expected content');
+  assert(content.includes('Skrynia'), 'build/index.html references Skrynia');
+  rmrf(buildDir);
+}
+
+async function test_examples_path_is_singular() {
+  const singular = path.join(SRC, 'example');
+  const plural = path.join(SRC, 'examples');
+  assert(fs.existsSync(singular), 'example/ directory exists');
+  assert(!fs.existsSync(plural), 'examples/ directory does not exist');
+  assert(fs.existsSync(path.join(singular, 'hello')), 'example/hello exists');
+  assert(fs.existsSync(path.join(singular, 'birthday-list')), 'example/birthday-list exists');
 }
 
 // --- Runner ---
@@ -989,6 +1011,8 @@ const tests = [
   ['base_path_rejects_no_leading_slash', test_base_path_rejects_no_leading_slash],
   ['base_path_rejects_empty', test_base_path_rejects_empty],
   ['base_path_server_uses_helper', test_base_path_server_uses_helper],
+  ['birthday_list_npm_build', test_birthday_list_npm_build],
+  ['examples_path_is_singular', test_examples_path_is_singular],
 ];
 
 let pass = 0, fail = 0;

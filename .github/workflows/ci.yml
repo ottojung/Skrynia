@@ -26,8 +26,15 @@ jobs:
         run: |
           mkdir -p /tmp/test-app
           printf 'build:\n\tmkdir -p build && echo ok > build/index.html\n' > /tmp/test-app/Makefile
-          docker run --rm --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp:size=256m --network none --security-opt no-new-privileges --cap-drop ALL -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
+          docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
           test -f /tmp/test-app/build/index.html
+      - name: Verify builder rootfs is writable
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" skrynia-builder:ci sh -c 'touch /var/tmp/rootfs-writable && rm /var/tmp/rootfs-writable'
+      - name: Verify builder runs npm and builds birthday-list
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp -v "$PWD":/repo -w /repo/example/birthday-list skrynia-builder:ci sh -c 'npm --version && npm run build'
+          test -f example/birthday-list/build/index.html
 
   docker:
     runs-on: ubuntu-latest
@@ -98,3 +105,4 @@ jobs:
       - name: Smoke test skrynia-builder image
         run: |
           docker run --rm ghcr.io/ottojung/skrynia-builder:latest make --version
+          docker run --rm ghcr.io/ottojung/skrynia-builder:latest npm --version

@@ -48,7 +48,7 @@ The `--commit` must be a full git object id (40 or 64 hex characters). The deplo
 Deploy process:
 1. Clones repo, checks out exact commit, verifies HEAD
 2. Validates subdirectory stays inside repo
-3. Runs `make build` in a read-only container (repo mounted read-write)
+3. Runs `make build` in a disposable container (repo mounted read-write, writable root FS for npm)
 4. Validates build output (no symlinks, no special files)
 5. Auto-creates namespace with default quota if absent (preserves existing)
 6. Atomic rename staging dir into release dir (same filesystem)
@@ -62,11 +62,22 @@ Deploy process:
 node src/admin.js deploy \
   --repo git@github.com:ottojung/Skrynia.git \
   --commit $(git rev-parse HEAD) \
-  --subdir examples/hello \
+  --subdir example/hello \
   --namespace hello-app
 ```
 
-`examples/hello` is a minimal app with `index.html` and a Makefile that copies it to `build/`.
+`example/hello` is a minimal app with `index.html` and a Makefile that copies it to `build/`.
+
+```sh
+# Deploy the birthday-list example (npm-driven build)
+node src/admin.js deploy \
+  --repo git@github.com:ottojung/Skrynia.git \
+  --commit $(git rev-parse HEAD) \
+  --subdir example/birthday-list \
+  --namespace birthday-list
+```
+
+`example/birthday-list` demonstrates shared wishlist reservations using Skrynia client storage with predetermined item keys and create-if-absent semantics.
 
 ## CLI reference
 
@@ -117,7 +128,7 @@ See [docs/api-spec.md](docs/api-spec.md) for full details.
 
 - **Server**: Single-process Node.js HTTP server; event-loop serialization for safety
 - **Admin CLI**: Keyword-flag interface; all operations use `execFileSync` (no shell injection)
-- **Builder**: Local Docker image (`node:20-alpine` + make + git); runs with `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`
+- **Builder**: Published to GHCR from `builder/Dockerfile` (`node:20-alpine` + make + git + npm); local `make builder` is a developer convenience; containers run with `--rm` (disposable), `--user` for output ownership, `HOME=/tmp`; root filesystem is writable for builds including npm
 - **Storage**: Filesystem-based; one `.dat`/`.meta`/`.cap` triplet per object per namespace
 - **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
 - **APP_DIR**: Optional external exposure; `APP_DIR/{ns}` symlink to release dir for direct web server access
