@@ -27,12 +27,16 @@ cp -T -- ./src/client.js "$PREFIX/share/skrynia/client/skrynia.js"
 # Create skrynia user if it does not exist
 id skrynia >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin skrynia
 
-# Create state directories with correct ownership
+# Create state directories with correct ownership.
+# Set group to skrynia with setgid so new files/dirs inherit it.
+# Mode 0775 allows the skrynia service (running as skrynia user) to write
+# directories and files that admin CLI creates as root.
 mkdir -p -- /var/lib/skrynia/releases
 mkdir -p -- /var/lib/skrynia/storage
 mkdir -p -- /var/lib/skrynia/state
 chown -R skrynia:skrynia /var/lib/skrynia 2>/dev/null || true
-chmod -R 0755 /var/lib/skrynia 2>/dev/null || true
+chmod 0775 /var/lib/skrynia 2>/dev/null || true
+chmod -R g+rws /var/lib/skrynia 2>/dev/null || true
 
 # Install systemd service
 mkdir -p -- /etc/systemd/system/

@@ -2,7 +2,7 @@
  * Skrynia client library - tiny dependency-free helper for browser apps.
  *
  * Binary-safe: GET responses are returned as raw bytes (ArrayBuffer).
- * Convenience methods .text() and .json() parse on demand.
+ * Convenience methods .text() and .json() decode via TextDecoder on demand.
  *
  * Usage:
  *   const store = Skrynia.store('my-namespace');
@@ -31,11 +31,14 @@
   }
 
   RawBytes.prototype.text = function() {
-    return this._xhr.responseText;
+    var buf = this._xhr.response;
+    if (!buf || buf.byteLength === 0) return '';
+    return new TextDecoder('utf-8').decode(new Uint8Array(buf));
   };
 
   RawBytes.prototype.json = function() {
-    return JSON.parse(this._xhr.responseText);
+    var txt = this.text();
+    return txt === '' ? null : JSON.parse(txt);
   };
 
   RawBytes.prototype.bytes = function() {
@@ -62,7 +65,9 @@
       }
       xhr.onload = function() { resolve(new RawBytes(xhr)); };
       xhr.onerror = function() { reject(new Error('network error')); };
-      xhr.send(body || null);
+      // Send body; empty string for methods that should not carry a body,
+      // null for GET/HEAD. Omitting body entirely is correct for zero-length.
+      xhr.send(body != null ? body : undefined);
     });
   }
 
@@ -97,7 +102,7 @@
       'Content-Type': opts.contentType || 'application/octet-stream',
       'X-Skrynia-Mode': opts.mode || 'capability-write',
     };
-    return request('POST', this._url(key), data, headers).then(function(raw) {
+    return request('POST', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
       if (raw.status() !== 201) throw new Error('create failed: ' + raw.status());
       return raw.json();
     });
@@ -112,7 +117,7 @@
       'Content-Type': opts.contentType || 'application/octet-stream',
     };
     if (opts.capability) headers['X-Skrynia-Capability'] = opts.capability;
-    return request('PUT', this._url(key), data, headers).then(function(raw) {
+    return request('PUT', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
       if (raw.status() !== 200) throw new Error('put failed: ' + raw.status());
       return raw.json();
     });
@@ -125,7 +130,7 @@
     opts = opts || {};
     var headers = {};
     if (opts.capability) headers['X-Skrynia-Capability'] = opts.capability;
-    return request('DELETE', this._url(key), null, headers).then(function(raw) {
+    return request('DELETE', this._url(key), undefined, headers, 'arraybuffer').then(function(raw) {
       if (raw.status() !== 200) throw new Error('delete failed: ' + raw.status());
       return raw.json();
     });

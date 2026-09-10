@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
 const DATA_DIR = process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
@@ -26,12 +27,37 @@ function rmrfDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function die(msg) { process.stderr.write('skrynia: ' + msg + '\n'); process.exit(1); }
+function die(msg) { throw new Error('skrynia: ' + msg); }
 function info(msg) { process.stderr.write('skrynia: ' + msg + '\n'); }
 
 function currentLink(ns) { return path.join(RELEASES_DIR, ns, 'current'); }
 function configPath(ns) { return path.join(STATE_DIR, ns, 'config.json'); }
 function quotaPath(ns) { return path.join(STATE_DIR, ns, 'quota.json'); }
+
+// --- Strict namespace validator ---
+// Same rule as server.js: one canonical validator for all namespace-derived paths.
+const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+function validNs(ns) {
+  return typeof ns === 'string' && NS_RE.test(ns);
+}
+
+// --- Flag parser (--key value pairs, returns flags map + remaining args) ---
+
+function parseFlags(args) {
+  const flags = {};
+  const rest = [];
+  let i = 0;
+  while (i < args.length) {
+    if (args[i].startsWith('--') && i + 1 < args.length && !args[i + 1].startsWith('--')) {
+      flags[args[i].slice(2)] = args[i + 1];
+      i += 2;
+    } else {
+      rest.push(args[i]);
+      i++;
+    }
+  }
+  return { flags, rest };
+}
 
 function loadConfig(ns) {
   const p = configPath(ns);
@@ -96,22 +122,50 @@ function safeSymlinkSync(target, linkPath) {
   fs.symlinkSync(target, linkPath);
 }
 
+// --- Namespace creation / ensure ---
+
+function ensureNamespace(ns, quotaBytes) {
+  ensureDir(path.join(STORAGE_DIR, ns));
+  ensureDir(path.join(STATE_DIR, ns));
+  const p = quotaPath(ns);
+  if (!fs.existsSync(p)) {
+    const q = { bytes: 0, count: 0, quotaBytes: quotaBytes || 10485760, maxObjects: 10000 };
+    fs.writeFileSync(p, JSON.stringify(q, null, 2));
+    info('created namespace ' + ns + ' (quota: ' + q.quotaBytes + ' bytes)');
+  }
+}
+
 // --- Commands ---
 
 function cmdDeploy(args) {
-  if (args.length < 4) {
-    die('usage: skrynia deploy <repo-url> <commit> <subdir> <namespace> [--builder IMAGE]');
+  const { flags, rest } = parseFlags(args);
+
+  // All four flags are required; positional args rejected.
+  const repoUrl = flags['repo'];
+  const commit = flags['commit'];
+  const ns = flags['namespace'];
+  const subdir = flags['subdir'];
+
+  const missing = [];
+  if (!repoUrl) missing.push('--repo');
+  if (!commit) missing.push('--commit');
+  if (!ns) missing.push('--namespace');
+  if (!subdir) missing.push('--subdir');
+  if (missing.length > 0) {
+    die('missing required flags: ' + missing.join(', ') + '\nusage: skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]');
   }
-  const repoUrl = args[0];
-  const commit = args[1];
-  const subdir = args[2];
-  const ns = args[3];
+  if (rest.length > 0) {
+    die('unexpected positional arguments: ' + rest.join(' ') + '\nusage: skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]');
+  }
+
+  if (!validNs(ns)) die('invalid namespace: ' + ns + ' (must match ' + NS_RE + ')');
+
+  // Ensure namespace exists (auto-create with default quota on first deploy)
+  ensureNamespace(ns);
 
   let builderImage = BUILDER_IMAGE;
-  const builderIdx = args.indexOf('--builder');
-  if (builderIdx !== -1) {
-    builderImage = args[builderIdx + 1];
-    if (!builderImage) die('--builder requires a value');
+  if (flags['builder']) {
+    builderImage = flags['builder'];
   }
 
   info('deploying namespace=' + ns);
@@ -148,9 +202,9 @@ function cmdDeploy(args) {
     const stageDir = path.join(workDir, 'stage');
     ensureDir(stageDir);
 
-    // Create a Makefile wrapper in staging that writes output to stage
     // Mount the whole repo so monorepo parent paths (../shared etc) work
-    // but set working directory to the app subdirectory
+    // but set working directory to the app subdirectory.
+    // Repo is mounted RW so make build can write build/ inside it.
     const repoMount = repoDir;
     const absSubdir = path.relative(repoDir, appDir);
 
@@ -158,9 +212,8 @@ function cmdDeploy(args) {
     const dockerArgs = [
       'run', '--rm',
       '--network', 'none',
-      '--read-only',
       '--tmpfs', '/tmp:size=256m',
-      '-v', repoMount + ':/repo:ro',
+      '-v', repoMount + ':/repo',
       '-v', stageDir + ':/stage',
       '-w', '/repo/' + absSubdir,
       builderImage,
@@ -189,7 +242,11 @@ function cmdDeploy(args) {
     buildSucceeded = true;
 
     // 5. Create release directory only after successful build + validation
-    const releaseId = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    // Unique release ID with millisecond + random suffix for sub-second uniqueness.
+    const now = Date.now();
+    const ts = new Date(now).toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+    const rand = crypto.randomBytes(3).toString('hex');
+    const releaseId = ts + '-' + rand;
     const relDir = path.join(RELEASES_DIR, ns, releaseId);
     ensureDir(path.dirname(relDir));
 
@@ -241,6 +298,7 @@ function cmdUndeploy(args) {
     die('usage: skrynia undeploy <namespace>');
   }
   const ns = args[0];
+  if (!validNs(ns)) die('invalid namespace: ' + ns);
 
   info('undeploying namespace=' + ns);
 
@@ -273,6 +331,7 @@ function cmdRollback(args) {
     die('usage: skrynia rollback <namespace> [release-id]');
   }
   const ns = args[0];
+  if (!validNs(ns)) die('invalid namespace: ' + ns);
   const target = args[1];
 
   const relBase = path.join(RELEASES_DIR, ns);
@@ -314,6 +373,7 @@ function cmdRollback(args) {
 function cmdReleases(args) {
   if (args.length < 1) die('usage: skrynia releases <namespace>');
   const ns = args[0];
+  if (!validNs(ns)) die('invalid namespace: ' + ns);
   const relBase = path.join(RELEASES_DIR, ns);
   if (!fs.existsSync(relBase)) die('no releases for namespace ' + ns);
 
@@ -337,6 +397,7 @@ function cmdReleases(args) {
 function cmdInspect(args) {
   if (args.length < 1) die('usage: skrynia inspect <namespace>');
   const ns = args[0];
+  if (!validNs(ns)) die('invalid namespace: ' + ns);
   const cfg = loadConfig(ns);
   if (!cfg) die('namespace ' + ns + ' not found');
   console.log(JSON.stringify(cfg, null, 2));
@@ -345,19 +406,26 @@ function cmdInspect(args) {
 function cmdNsCreate(args) {
   if (args.length < 1) die('usage: skrynia ns create <namespace> [--quota BYTES]');
   const ns = args[0];
+  if (!validNs(ns)) die('invalid namespace: ' + ns + ' (must match ' + NS_RE + ')');
   ensureDir(path.join(STORAGE_DIR, ns));
   ensureDir(path.join(STATE_DIR, ns));
 
   const qidx = args.indexOf('--quota');
   const quotaBytes = qidx !== -1 ? parseInt(args[qidx + 1], 10) : 10485760;
-  const q = { bytes: 0, count: 0, quotaBytes };
-  fs.writeFileSync(quotaPath(ns), JSON.stringify(q, null, 2));
-  info('created namespace ' + ns + ' (quota: ' + quotaBytes + ' bytes)');
+  const p = quotaPath(ns);
+  if (!fs.existsSync(p)) {
+    const q = { bytes: 0, count: 0, quotaBytes, maxObjects: 10000 };
+    fs.writeFileSync(p, JSON.stringify(q, null, 2));
+    info('created namespace ' + ns + ' (quota: ' + quotaBytes + ' bytes)');
+  } else {
+    info('namespace ' + ns + ' already exists (quota preserved)');
+  }
 }
 
 function cmdNsRemove(args) {
   if (args.length < 1) die('usage: skrynia ns remove <namespace>');
   const ns = args[0];
+  if (!validNs(ns)) die('invalid namespace: ' + ns);
   rmrfDir(path.join(STORAGE_DIR, ns));
   rmrfDir(path.join(STATE_DIR, ns));
   info('removed namespace ' + ns);
@@ -366,6 +434,7 @@ function cmdNsRemove(args) {
 function cmdNsInspect(args) {
   if (args.length < 1) die('usage: skrynia ns inspect <namespace>');
   const ns = args[0];
+  if (!validNs(ns)) die('invalid namespace: ' + ns);
   const q = recalcQuota(ns);
   const cfg = loadConfig(ns);
   console.log(JSON.stringify({ namespace: ns, quota: q, deployment: cfg || null }, null, 2));
@@ -389,7 +458,8 @@ function cmdNsList() {
 function cmdHelp() {
   console.log('skrynia - Skrynia platform admin CLI\n' +
     '\nUsage:\n' +
-    '  skrynia deploy <repo> <commit> <subdir> <ns> [--builder IMAGE]\n' +
+    '  skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name>\n' +
+    '                        [--builder IMAGE]\n' +
     '                        Deploy app from git source\n' +
     '  skrynia undeploy <ns>\n' +
     '                        Remove app, releases, namespace data and state\n' +
@@ -406,8 +476,8 @@ function cmdHelp() {
     '  skrynia ns list       List all namespaces with usage\n' +
     '\n  skrynia help          Show this help\n' +
     '\nExamples:\n' +
-    '  skrynia deploy git@github.com:myorg/myapp.git abc123def . myapp\n' +
-    '  skrynia deploy git@github.com:myorg/mono.git abc123 frontend myapp\n' +
+    '  skrynia deploy --repo git@github.com:myorg/myapp.git --commit abc123def --subdir . --namespace myapp\n' +
+    '  skrynia deploy --repo git@github.com:myorg/mono.git --commit def456ghi --subdir frontend --namespace myapp\n' +
     '  skrynia undeploy myapp\n' +
     '  skrynia rollback myapp\n' +
     '  skrynia releases myapp\n' +
@@ -422,19 +492,24 @@ if (args.length === 0 || args[0] === 'help') { cmdHelp(); process.exit(0); }
 const cmd = args[0];
 const cmdArgs = args.slice(1);
 
-switch (cmd) {
-  case 'deploy': cmdDeploy(cmdArgs); break;
-  case 'undeploy': cmdUndeploy(cmdArgs); break;
-  case 'rollback': cmdRollback(cmdArgs); break;
-  case 'releases': cmdReleases(cmdArgs); break;
-  case 'inspect': cmdInspect(cmdArgs); break;
-  case 'ns':
-    if (cmdArgs[0] === 'create') cmdNsCreate(cmdArgs.slice(1));
-    else if (cmdArgs[0] === 'remove') cmdNsRemove(cmdArgs.slice(1));
-    else if (cmdArgs[0] === 'inspect') cmdNsInspect(cmdArgs.slice(1));
-    else if (cmdArgs[0] === 'list') cmdNsList();
-    else die('unknown ns command: use create, remove, inspect, or list');
-    break;
-  default:
-    die('unknown command: ' + cmd + ". Run 'skrynia help' for usage.");
+try {
+  switch (cmd) {
+    case 'deploy': cmdDeploy(cmdArgs); break;
+    case 'undeploy': cmdUndeploy(cmdArgs); break;
+    case 'rollback': cmdRollback(cmdArgs); break;
+    case 'releases': cmdReleases(cmdArgs); break;
+    case 'inspect': cmdInspect(cmdArgs); break;
+    case 'ns':
+      if (cmdArgs[0] === 'create') cmdNsCreate(cmdArgs.slice(1));
+      else if (cmdArgs[0] === 'remove') cmdNsRemove(cmdArgs.slice(1));
+      else if (cmdArgs[0] === 'inspect') cmdNsInspect(cmdArgs.slice(1));
+      else if (cmdArgs[0] === 'list') cmdNsList();
+      else die('unknown ns command: use create, remove, inspect, or list');
+      break;
+    default:
+      die('unknown command: ' + cmd + ". Run 'skrynia help' for usage.");
+  }
+} catch (e) {
+  process.stderr.write('skrynia: ' + e.message + '\n');
+  process.exit(1);
 }

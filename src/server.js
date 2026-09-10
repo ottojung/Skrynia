@@ -42,9 +42,17 @@ function createServer(opts) {
 
   function ensureDir(dir) { mkdirSync(dir, { recursive: true }); }
 
+  // --- Strict namespace validator ---
+  // Used for all HTTP and CLI namespace-derived paths.
+  const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+  function validNs(ns) {
+    return typeof ns === 'string' && NS_RE.test(ns);
+  }
+
   function safeKey(key) {
     if (typeof key !== 'string' || key.length === 0 || key.length > MAX_KEY_LENGTH) return null;
     if (key.includes('\0') || key.includes('..') || key.startsWith('/') || key.includes('//')) return null;
+    if (key.includes('/')) return null;
     if (key === '.' || key === '..') return null;
     return key;
   }
@@ -81,6 +89,14 @@ function createServer(opts) {
   function generateCapability() { return crypto.randomBytes(32).toString('hex'); }
   function sha256hex(data) { return crypto.createHash('sha256').update(data).digest('hex'); }
 
+  function timingSafeEqualHex(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
+    const bufA = Buffer.from(a, 'hex');
+    const bufB = Buffer.from(b, 'hex');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  }
+
   // --- Quota ---
 
   function loadQuota(ns) {
@@ -113,8 +129,13 @@ function createServer(opts) {
   function exclusiveCreate(filePath, data) {
     try {
       const fd = openSync(filePath, O_CREAT | O_EXCL | O_WRONLY);
-      closeSync(fd);
-      writeFileSync(filePath, data);
+      try {
+        if (data && data.length > 0) {
+          fs.writeSync(fd, data, 0, data.length, null);
+        }
+      } finally {
+        closeSync(fd);
+      }
       return true;
     } catch (e) {
       if (e.code === 'EEXIST') return false;
@@ -196,7 +217,7 @@ function createServer(opts) {
       const cap = req.headers['x-skrynia-capability'];
       if (!cap) { res.writeHead(403, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'capability_required'})); return; }
       const storedHash = readFileSync(capPath(ns, key), 'utf8');
-      if (sha256hex(cap) !== storedHash) {
+      if (!timingSafeEqualHex(sha256hex(cap), storedHash)) {
         res.writeHead(403, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_capability'})); return;
       }
     }
@@ -236,7 +257,7 @@ function createServer(opts) {
     if (meta.mode === 'capability-write') {
       const cap = req.headers['x-skrynia-capability'];
       if (!cap) { res.writeHead(403, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'capability_required'})); return; }
-      if (sha256hex(cap) !== readFileSync(capPath(ns, key), 'utf8')) {
+      if (!timingSafeEqualHex(sha256hex(cap), readFileSync(capPath(ns, key), 'utf8'))) {
         res.writeHead(403, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_capability'})); return;
       }
     }
@@ -266,16 +287,20 @@ function createServer(opts) {
 
     // Path-safety: resolved path must stay inside releaseRoot.
     // This catches symlink escapes after realpath resolution.
+    // Boundary check: path must equal root or start with root + path.sep.
     let resolved;
     try { resolved = realpathSync(filePath); } catch { resolved = null; }
-    if (!resolved || !resolved.startsWith(releaseRoot)) {
+    if (!resolved || (resolved !== releaseRoot && !resolved.startsWith(releaseRoot + path.sep))) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
 
     if (!existsSync(resolved) || statSync(resolved).isDirectory()) {
       const tryIndex = path.join(resolved, 'index.html');
-      if (existsSync(tryIndex) && realpathSync(tryIndex).startsWith(releaseRoot)) {
-        serveFile(tryIndex, res); return;
+      if (existsSync(tryIndex)) {
+        const tryResolved = realpathSync(tryIndex);
+        if (tryResolved === releaseRoot || tryResolved.startsWith(releaseRoot + path.sep)) {
+          serveFile(tryIndex, res); return;
+        }
       }
       res.writeHead(404); res.end('Not found'); return;
     }
@@ -303,6 +328,7 @@ function createServer(opts) {
     const storeMatch = req.url.match(/^\/_skrynia\/store\/([^/]+)\/(.+?)(?:\?.*)?$/);
     if (storeMatch) {
       const ns = decodeURIComponent(storeMatch[1]);
+      if (!validNs(ns)) { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_namespace'})); return; }
       const sk = safeKey(decodeURIComponent(storeMatch[2]));
       if (!sk) { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_key'})); return; }
       if (req.method === 'GET') { if (!requireNs(ns, res)) return; return handleGet(ns, sk, res); }
@@ -317,7 +343,11 @@ function createServer(opts) {
     }
 
     const appMatch = p.match(/^\/a\/([^/]+)(\/.*)?$/);
-    if (appMatch) return serveApp(decodeURIComponent(appMatch[1]), req, res);
+    if (appMatch) {
+      const ns = decodeURIComponent(appMatch[1]);
+      if (!validNs(ns)) { res.writeHead(400); res.end('Bad namespace'); return; }
+      return serveApp(ns, req, res);
+    }
 
     if (p === '/_skrynia/health') { res.writeHead(200, {'Content-Type':'application/json'}); res.end(JSON.stringify({ok:true})); return; }
     res.writeHead(404); res.end('Not found');

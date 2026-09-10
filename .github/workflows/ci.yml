@@ -24,6 +24,7 @@ jobs:
         run: docker build -t skrynia-builder:ci builder/
       - name: Verify builder runs make
         run: |
-          mkdir -p /tmp/test-app && echo 'build:\n\tmkdir -p build && echo ok > build/index.html' > /tmp/test-app/Makefile
+          mkdir -p /tmp/test-app
+          printf 'build:\n\tmkdir -p build && echo ok > build/index.html\n' > /tmp/test-app/Makefile
           docker run --rm -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
           test -f /tmp/test-app/build/index.html

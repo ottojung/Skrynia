@@ -65,19 +65,34 @@ location /a/ {
 
 ## Deploying an app
 
+All deploy parameters are required keyword flags:
+
 ```sh
-# Basic deploy
-skrynia deploy git@github.com:myorg/myapp.git abc123def . myapp
+# Deploy from repo root (repo root is the app)
+skrynia deploy \
+  --repo git@github.com:myorg/myapp.git \
+  --commit abc123def \
+  --subdir . \
+  --namespace myapp
 
 # Deploy from subdirectory of monorepo
-skrynia deploy git@github.com:myorg/monorepo.git def456ghi frontend myapp
+skrynia deploy \
+  --repo git@github.com:myorg/monorepo.git \
+  --commit def456ghi \
+  --subdir frontend \
+  --namespace myapp
 
 # Deploy with custom builder
-skrynia deploy git@github.com:myorg/myapp.git abc123def . myapp --builder myregistry/builder:v2
+skrynia deploy \
+  --repo git@github.com:myorg/myapp.git \
+  --commit abc123def \
+  --subdir . \
+  --namespace myapp \
+  --builder myregistry/builder:v2
 ```
 
 The deploy command:
-1. Validates subdirectory (no `..`, no absolute paths)
+1. Validates namespace and subdirectory (no `..`, no absolute paths)
 2. Clones the repo to a temporary workspace
 3. Checks out the exact commit
 4. Validates subdirectory stays inside repo (realpath check)
@@ -87,6 +102,20 @@ The deploy command:
 8. Atomically activates the release
 9. Updates config with `currentReleaseId`
 
+### Included example
+
+The `examples/hello` directory contains a minimal deployable app with its own Makefile:
+
+```sh
+skrynia deploy \
+  --repo git@github.com:ottojung/Skrynia.git \
+  --commit $(git rev-parse HEAD) \
+  --subdir examples/hello \
+  --namespace hello-app
+```
+
+The Makefile produces `build/index.html` with a simple HTML page.
+
 ## Rollback
 
 ```sh
@@ -94,7 +123,7 @@ The deploy command:
 skrynia rollback myapp
 
 # Rollback to specific release
-skrynia rollback myapp 20260910120000
+skrynia rollback myapp 20260910120000-abc123
 ```
 
 Rollback updates the deployment config metadata with the new `currentReleaseId`.

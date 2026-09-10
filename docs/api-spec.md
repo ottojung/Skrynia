@@ -30,6 +30,7 @@ Response: `200 OK`
 - `X-Skrynia-Created`: creation timestamp
 
 Errors:
+- `400 Bad Request`: invalid namespace or key
 - `404 Not Found`: key does not exist
 
 #### POST - Create object
@@ -103,6 +104,7 @@ Serves static files from the currently active release for the namespace.
 Falls back to `index.html` for directory requests.
 
 Response: `200 OK` with static file content, or:
+- `400 Bad Request`: invalid namespace
 - `403 Forbidden`: path traversal attempt
 - `404 Not Found`: file not found
 - `503 Service Unavailable`: no active release
@@ -118,11 +120,21 @@ On create, server returns a 64-character hex capability string. Subsequent put/d
 ### public-write
 Anyone who knows the namespace and key may modify or delete the object. No capability required.
 
+## Namespace validation
+
+Namespaces must match `^[a-z0-9][a-z0-9_-]{0,63}$`:
+- Lowercase alphanumeric, hyphens, underscores only
+- Must start with a letter or digit
+- 1-64 characters
+
+The same validator is used for all HTTP and CLI namespace-derived paths.
+
 ## Key validation
 
 - Keys must be non-empty strings
 - Maximum length: 256 characters (configurable)
 - No null bytes, no `..`, no leading `/`, no double slashes
+- No forward slashes (`/`) are allowed in keys
 - Keys are URL-decoded before validation
 
 ## Namespace quotas
