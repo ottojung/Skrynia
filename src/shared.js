@@ -3,9 +3,6 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_QUOTA_BYTES = parseInt(process.env.SKRYNIA_DEFAULT_QUOTA_BYTES || '10485760', 10);
-const DEFAULT_MAX_OBJECTS = parseInt(process.env.SKRYNIA_MAX_OBJECT_COUNT || '10000', 10);
-
 // --- Namespace validator ---
 
 const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -24,6 +21,9 @@ function createShared(dataDir) {
   const RELEASES_DIR = path.join(dataDir, 'releases');
   const STORAGE_DIR = path.join(dataDir, 'storage');
   const STATE_DIR = path.join(dataDir, 'state');
+
+  const DEFAULT_QUOTA_BYTES = parseInt(process.env.SKRYNIA_DEFAULT_QUOTA_BYTES || '10485760', 10);
+  const DEFAULT_MAX_OBJECTS = parseInt(process.env.SKRYNIA_MAX_OBJECT_COUNT || '10000', 10);
 
   function nsStorageDir(ns) { return path.join(STORAGE_DIR, ns); }
   function nsObjPath(ns, key) { return path.join(nsStorageDir(ns), key + '.dat'); }
@@ -66,6 +66,8 @@ function createShared(dataDir) {
     RELEASES_DIR,
     STORAGE_DIR,
     STATE_DIR,
+    DEFAULT_QUOTA_BYTES,
+    DEFAULT_MAX_OBJECTS,
     nsStorageDir,
     nsObjPath,
     nsMetaPath,
@@ -84,7 +86,5 @@ module.exports = {
   NS_RE,
   validNs,
   ensureDir,
-  DEFAULT_QUOTA_BYTES,
-  DEFAULT_MAX_OBJECTS,
   createShared,
 };

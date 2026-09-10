@@ -8,6 +8,7 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 const { createServer } = require('../src/server.js');
 const { normalizeBasePath } = require('../src/base-path.js');
+const { createShared } = require('../src/shared.js');
 
 const SRC = path.join(__dirname, '..');
 const NODE = process.execPath;
@@ -929,6 +930,31 @@ async function test_base_path_server_uses_helper() {
   } finally { await stopServer(server); }
 }
 
+async function test_createShared_observes_env_at_call_time() {
+  const saved1 = process.env.SKRYNIA_DEFAULT_QUOTA_BYTES;
+  const saved2 = process.env.SKRYNIA_MAX_OBJECT_COUNT;
+  try {
+    process.env.SKRYNIA_DEFAULT_QUOTA_BYTES = '2048';
+    process.env.SKRYNIA_MAX_OBJECT_COUNT = '50';
+    const s1 = createShared('/tmp/skrynia-test-env1');
+    assert(s1.DEFAULT_QUOTA_BYTES === 2048, 'first call reads 2048, got ' + s1.DEFAULT_QUOTA_BYTES);
+    assert(s1.DEFAULT_MAX_OBJECTS === 50, 'first call reads 50, got ' + s1.DEFAULT_MAX_OBJECTS);
+
+    process.env.SKRYNIA_DEFAULT_QUOTA_BYTES = '4096';
+    process.env.SKRYNIA_MAX_OBJECT_COUNT = '99';
+    const s2 = createShared('/tmp/skrynia-test-env2');
+    assert(s2.DEFAULT_QUOTA_BYTES === 4096, 'second call reads 4096, got ' + s2.DEFAULT_QUOTA_BYTES);
+    assert(s2.DEFAULT_MAX_OBJECTS === 99, 'second call reads 99, got ' + s2.DEFAULT_MAX_OBJECTS);
+  } finally {
+    if (saved1 === undefined) delete process.env.SKRYNIA_DEFAULT_QUOTA_BYTES;
+    else process.env.SKRYNIA_DEFAULT_QUOTA_BYTES = saved1;
+    if (saved2 === undefined) delete process.env.SKRYNIA_MAX_OBJECT_COUNT;
+    else process.env.SKRYNIA_MAX_OBJECT_COUNT = saved2;
+    rmrf('/tmp/skrynia-test-env1');
+    rmrf('/tmp/skrynia-test-env2');
+  }
+}
+
 // --- Runner ---
 
 const tests = [
@@ -989,6 +1015,7 @@ const tests = [
   ['base_path_rejects_no_leading_slash', test_base_path_rejects_no_leading_slash],
   ['base_path_rejects_empty', test_base_path_rejects_empty],
   ['base_path_server_uses_helper', test_base_path_server_uses_helper],
+  ['createShared_observes_env', test_createShared_observes_env_at_call_time],
 ];
 
 let pass = 0, fail = 0;

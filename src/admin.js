@@ -12,7 +12,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { normalizeBasePath } = require('./base-path.js');
-const { NS_RE, validNs, ensureDir, DEFAULT_QUOTA_BYTES, DEFAULT_MAX_OBJECTS, createShared } = require('./shared.js');
+const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 const shared = createShared();
 
 const BUILDS_DIR = path.join(shared.dataDir, 'builds');
@@ -139,7 +139,7 @@ function ensureNamespace(ns, quotaBytes) {
   ensureDir(path.join(shared.STATE_DIR, ns));
   const p = shared.nsQuotaPath(ns);
   if (!fs.existsSync(p)) {
-    const q = { bytes: 0, count: 0, quotaBytes: quotaBytes || DEFAULT_QUOTA_BYTES, maxObjects: DEFAULT_MAX_OBJECTS };
+    const q = { bytes: 0, count: 0, quotaBytes: quotaBytes || shared.DEFAULT_QUOTA_BYTES, maxObjects: shared.DEFAULT_MAX_OBJECTS };
     fs.writeFileSync(p, JSON.stringify(q, null, 2));
     info('created namespace ' + ns + ' (quota: ' + q.quotaBytes + ' bytes)');
   }
@@ -398,10 +398,10 @@ function cmdNsCreate(args) {
   ensureDir(path.join(shared.STORAGE_DIR, ns));
   ensureDir(path.join(shared.STATE_DIR, ns));
 
-  const quotaBytes = quotaStr ? parseInt(quotaStr, 10) : DEFAULT_QUOTA_BYTES;
+  const quotaBytes = quotaStr ? parseInt(quotaStr, 10) : shared.DEFAULT_QUOTA_BYTES;
   const p = shared.nsQuotaPath(ns);
   if (!fs.existsSync(p)) {
-    const q = { bytes: 0, count: 0, quotaBytes, maxObjects: DEFAULT_MAX_OBJECTS };
+    const q = { bytes: 0, count: 0, quotaBytes, maxObjects: shared.DEFAULT_MAX_OBJECTS };
     fs.writeFileSync(p, JSON.stringify(q, null, 2));
     info('created namespace ' + ns + ' (quota: ' + quotaBytes + ' bytes)');
   } else {
