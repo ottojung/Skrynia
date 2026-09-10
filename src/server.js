@@ -10,9 +10,12 @@
 // simultaneously.
 //
 // Atomic filesystem primitives:
-//   - create: exclusive O_CREAT on .dat file (fails if exists)
+//   - create: exclusive O_CREAT on .dat file (fails if exists),
+//             then .cap, then atomic install of .meta (commit marker).
+//             Object is only visible after .meta exists on disk.
 //   - put: write to .tmp, fs.rename to .dat (atomic on POSIX)
-//   - delete: unlink .dat, .meta, .cap (individual unlinks)
+//   - delete: remove .meta first (object disappears immediately),
+//             then .dat, .cap
 //
 // Namespace policy: a namespace must exist (have a quota.json) before
 // the public store API will accept mutations.
@@ -126,7 +129,10 @@ function createServer(opts) {
     let bytes = 0, count = 0;
     if (existsSync(dir)) {
       for (const e of readdirSync(dir)) {
-        if (e.endsWith('.dat')) { bytes += statSync(path.join(dir, e)).size; count++; }
+        if (e.endsWith('.meta')) {
+          const dp = path.join(dir, e.slice(0, -5) + '.dat');
+          if (existsSync(dp)) { bytes += statSync(dp).size; count++; }
+        }
       }
     }
     const q = loadQuota(ns);
@@ -163,10 +169,10 @@ function createServer(opts) {
   // --- Storage handlers ---
 
   function handleGet(ns, key, res) {
-    const op = objPath(ns, key);
-    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
-    const meta = JSON.parse(readFileSync(metaPath(ns, key), 'utf8'));
-    const data = readFileSync(op);
+    const mp = metaPath(ns, key);
+    if (!existsSync(mp)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
+    const meta = JSON.parse(readFileSync(mp, 'utf8'));
+    const data = readFileSync(objPath(ns, key));
     res.writeHead(200, {'Content-Type': meta.contentType||'application/octet-stream', 'X-Skrynia-Mode': meta.mode, 'X-Skrynia-Created': meta.created});
     res.end(data);
   }
@@ -208,7 +214,12 @@ function createServer(opts) {
       resp.capability = cap;
     }
 
-    writeFileSync(metaPath(ns, key), JSON.stringify(meta, null, 2));
+    // Atomic commit: write complete .meta to a temp file then rename
+    // to the final path.  POSIX rename is atomic on the same filesystem,
+    // so a crash cannot leave a partial/corrupt .meta visible.
+    const metaTmp = metaPath(ns, key) + '.tmp.' + process.pid;
+    writeFileSync(metaTmp, JSON.stringify(meta, null, 2));
+    renameSync(metaTmp, metaPath(ns, key));
 
     q.bytes += body.length; q.count++;
     saveQuota(ns, q);
@@ -219,9 +230,9 @@ function createServer(opts) {
   function handlePut(ns, key, body, req, res) {
     if (!requireNs(ns, res)) return;
 
-    const op = objPath(ns, key);
-    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
-    const meta = JSON.parse(readFileSync(metaPath(ns, key), 'utf8'));
+    const mp = metaPath(ns, key);
+    if (!existsSync(mp)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
+    const meta = JSON.parse(readFileSync(mp, 'utf8'));
     if (meta.mode === 'immutable') { res.writeHead(403, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'immutable'})); return; }
     if (meta.mode === 'capability-write') {
       const cap = req.headers['x-skrynia-capability'];
@@ -243,12 +254,14 @@ function createServer(opts) {
       res.writeHead(507, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'namespace_full',detail:'quota_bytes'})); return;
     }
 
-    atomicReplace(op, body);
+    atomicReplace(objPath(ns, key), body);
 
     meta.size = body.length;
     meta.contentType = req.headers['content-type'] || meta.contentType;
     meta.modified = new Date().toISOString();
-    writeFileSync(metaPath(ns, key), JSON.stringify(meta, null, 2));
+    const putMetaTmp = metaPath(ns, key) + '.tmp.' + process.pid;
+    writeFileSync(putMetaTmp, JSON.stringify(meta, null, 2));
+    renameSync(putMetaTmp, metaPath(ns, key));
 
     q.bytes = newBytes;
     saveQuota(ns, q);
@@ -259,9 +272,9 @@ function createServer(opts) {
   function handleDelete(ns, key, req, res) {
     if (!requireNs(ns, res)) return;
 
-    const op = objPath(ns, key);
-    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
-    const meta = JSON.parse(readFileSync(metaPath(ns, key), 'utf8'));
+    const mp = metaPath(ns, key);
+    if (!existsSync(mp)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
+    const meta = JSON.parse(readFileSync(mp, 'utf8'));
     if (meta.mode === 'immutable') { res.writeHead(403, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'immutable'})); return; }
     if (meta.mode === 'capability-write') {
       const cap = req.headers['x-skrynia-capability'];
@@ -272,8 +285,12 @@ function createServer(opts) {
     }
 
     const q = recalcQuota(ns);
-    unlinkSync(op);
-    unlinkSync(metaPath(ns, key));
+    // Remove .meta first: the object becomes invisible immediately.
+    // If the process crashes after unlinking .meta but before unlinking
+    // .dat/.cap the orphaned data files are inert (not counted by quota,
+    // not served by handleGet).
+    unlinkSync(mp);
+    unlinkSync(objPath(ns, key));
     const cp = capPath(ns, key);
     if (existsSync(cp)) unlinkSync(cp);
     q.bytes -= meta.size; q.count--;

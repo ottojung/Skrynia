@@ -951,6 +951,38 @@ async function test_examples_path_is_singular() {
   assert(fs.existsSync(path.join(singular, 'birthday-list')), 'example/birthday-list exists');
 }
 
+async function test_partial_precommit_invisible() {
+  setup(); createNs('pc');
+  // Simulate crash after .dat written but before .meta (partial pre-commit).
+  fs.mkdirSync(path.join(TMP, 'storage', 'pc'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'pc', 'orphan.dat'), 'stale');
+  const { server, port } = await startServer();
+  try {
+    // GET must not expose the partial object.
+    let r = await get(port, '/_skrynia/store/orphan');
+    assert(r.status === 404, 'partial object not exposed via GET');
+    // PUT must not expose the partial object.
+    r = await req(port, 'PUT', '/_skrynia/store/orphan', 'x', {'Content-Type':'text/plain'});
+    assert(r.status === 404, 'partial object not exposed via PUT');
+    // DELETE must not expose the partial object.
+    r = await req(port, 'DELETE', '/_skrynia/store/orphan', null, {});
+    assert(r.status === 404, 'partial object not exposed via DELETE');
+    // Quota must not count the orphaned .dat.
+    r = await req(port, 'POST', '/_skrynia/store/pc/k', 'hi', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'create succeeds alongside orphan');
+    const dir = path.join(TMP, 'storage', 'pc');
+    let bytes = 0, count = 0;
+    for (const e of fs.readdirSync(dir)) {
+      if (e.endsWith('.meta')) {
+        const dp = path.join(dir, e.slice(0, -5) + '.dat');
+        if (fs.existsSync(dp)) { bytes += fs.statSync(dp).size; count++; }
+      }
+    }
+    assert(count === 1, 'orphan .dat not counted in quota count=' + count);
+    assert(bytes === 2, 'only committed .dat counted in bytes=' + bytes);
+  } finally { await stopServer(server); }
+}
+
 // --- Runner ---
 
 const tests = [
@@ -1013,6 +1045,7 @@ const tests = [
   ['base_path_server_uses_helper', test_base_path_server_uses_helper],
   ['birthday_list_npm_build', test_birthday_list_npm_build],
   ['examples_path_is_singular', test_examples_path_is_singular],
+  ['partial_precommit_invisible', test_partial_precommit_invisible],
 ];
 
 let pass = 0, fail = 0;
