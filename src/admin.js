@@ -253,7 +253,7 @@ function cmdDeploy(args) {
     }
     if (!fs.existsSync(appDir)) die('subdirectory not found: ' + subdir);
 
-    // 3. Build in container (repo RW, writable root FS, drop caps)
+    // 3. Build in disposable container (writable root FS for npm builds)
     ensureDir(stageDir);
     const absSubdir = path.relative(repoDir, appDir);
     const owner = fs.statSync(repoDir);
@@ -263,9 +263,6 @@ function cmdDeploy(args) {
       'run', '--rm',
       '--user', `${owner.uid}:${owner.gid}`,
       '--env', 'HOME=/tmp',
-      '--network', 'none',
-      '--security-opt', 'no-new-privileges',
-      '--cap-drop', 'ALL',
       '-v', repoDir + ':/repo',
       '-w', '/repo/' + absSubdir,
       builderImage,

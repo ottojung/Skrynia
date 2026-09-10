@@ -87,7 +87,7 @@ Deploy process:
 2. Clones the repo to a temporary workspace under `DATA_DIR/builds/`
 3. Checks out the exact commit and verifies HEAD matches
 4. Validates subdirectory stays inside repo (realpath check)
-5. Runs `make build` in a disposable container (repo mounted read-write, capabilities dropped)
+5. Runs `make build` in a disposable container (repo mounted read-write, writable root FS for npm)
 6. Validates build output (rejects symlinks and special files)
 7. Auto-creates namespace with default quota if absent (preserves existing on redeploy)
 8. Copies validated output to staging under `RELEASES_DIR/{ns}/.staging-{pid}`
@@ -155,10 +155,11 @@ node src/admin.js inspect --namespace myapp
 The builder image is a `node:20-alpine` image with `make`, `git`, and `npm`.
 The default image is published to GHCR from `builder/Dockerfile`.
 Local `make builder` builds the image locally as a developer convenience.
-Containers run with `--rm` (disposable), `--cap-drop ALL`,
-`--security-opt no-new-privileges`, and `HOME=/tmp` so npm works under
-arbitrary numeric UIDs. The root filesystem is writable so builds can
-produce output. The app repo is mounted read-write.
+Containers run with `--rm` (disposable), `--user` for output ownership,
+and `HOME=/tmp` so npm works under arbitrary numeric UIDs. The root
+filesystem is writable so builds (including npm) can produce output. The
+app repo is mounted read-write. Builds are disposable, not
+security-sandboxed; repositories may access the network during build.
 
 To build the builder image locally:
 

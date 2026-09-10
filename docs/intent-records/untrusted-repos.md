@@ -4,4 +4,4 @@ date: 2026/09/10
 source: @ottojung
 kind: requirement
 
-Git/source and builder behavior must be safe with untrusted app repositories: disposable workspace, bounded/controlled output, no secret injection, no privileged host mounts. Do not over-engineer a sandbox beyond the shared container model specified.
+Git/source repositories are untrusted in the ordinary sense: disposable workspace, bounded/controlled output, no secret injection, no privileged host mounts. Builds run in throwaway containers and may access the network; security isolation is not a build-time goal.

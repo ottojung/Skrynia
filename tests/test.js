@@ -868,7 +868,7 @@ async function test_release_timestamp_millis() {
 }
 
 async function test_docker_security_opts() {
-  // Verify admin.js uses correct Docker security flags:
+  // Verify admin.js uses correct Docker flags for disposable writable builds:
   const src = fs.readFileSync(path.join(SRC, 'src', 'admin.js'), 'utf8');
   // Must have --rm for disposable containers
   assert(src.includes("'--rm'"), 'must have --rm for disposable containers');
@@ -876,13 +876,13 @@ async function test_docker_security_opts() {
   assert(!src.includes("'--read-only'"), 'must not use --read-only (writable root FS for builds)');
   // Must set HOME=/tmp so npm works under arbitrary numeric UIDs
   assert(src.includes("'--env', 'HOME=/tmp'"), 'must set HOME=/tmp for npm under numeric UID');
-  // Must have --security-opt followed by no-new-privileges
-  assert(src.includes("'--security-opt', 'no-new-privileges'"), 'must use --security-opt no-new-privileges');
-  // Must have --cap-drop ALL
-  assert(src.includes("'--cap-drop', 'ALL'"), 'must have --cap-drop ALL');
-  // Must have --user with owner uid:gid
+  // Must have --user with owner uid:gid for output ownership
   assert(src.includes("'--user'"), 'must have --user flag');
   assert(src.includes('owner.uid') && src.includes('owner.gid'), 'must reference owner uid and gid');
+  // Must NOT have security sandbox flags (builds are disposable, not sandboxed)
+  assert(!src.includes("'--network'"), 'must not have --network flag');
+  assert(!src.includes("'--security-opt'"), 'must not have --security-opt flag');
+  assert(!src.includes("'--cap-drop'"), 'must not have --cap-drop flag');
 }
 
 async function test_base_path_strips_trailing_slashes() {
