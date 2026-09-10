@@ -6,5 +6,6 @@ builder: builder/Dockerfile
 
 test:
 	node tests/test.js
+	node tests/regression.js
 
 .PHONY: builder test
