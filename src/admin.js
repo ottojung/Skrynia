@@ -12,12 +12,10 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { normalizeBasePath } = require('./base-path.js');
+const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
+const shared = createShared();
 
-const DATA_DIR = process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
-const RELEASES_DIR = path.join(DATA_DIR, 'releases');
-const STORAGE_DIR = path.join(DATA_DIR, 'storage');
-const STATE_DIR = path.join(DATA_DIR, 'state');
-const BUILDS_DIR = path.join(DATA_DIR, 'builds');
+const BUILDS_DIR = path.join(shared.dataDir, 'builds');
 const BUILDER_IMAGE = process.env.SKRYNIA_BUILDER_IMAGE || 'skrynia-builder:0.1.0';
 
 // Configurable URL base path for app serving (informational only in admin CLI).
@@ -31,8 +29,6 @@ const APP_DIR = process.env.SKRYNIA_APP_DIR || '';
 
 // --- Utilities ---
 
-function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
-
 function rmrfDir(dir) {
   if (!fs.existsSync(dir)) return;
   fs.rmSync(dir, { recursive: true, force: true });
@@ -41,23 +37,18 @@ function rmrfDir(dir) {
 function die(msg) { throw new Error('skrynia: ' + msg); }
 function info(msg) { process.stderr.write('skrynia: ' + msg + '\n'); }
 
-function currentLink(ns) { return path.join(RELEASES_DIR, ns, 'current'); }
-function configPath(ns) { return path.join(STATE_DIR, ns, 'config.json'); }
-function quotaPath(ns) { return path.join(STATE_DIR, ns, 'quota.json'); }
-function stagingDir(ns) { return path.join(RELEASES_DIR, ns, '.staging-' + process.pid); }
-
 // --- Unified active link ---
 // When APP_DIR is configured, the active link lives there (for an external web
 // server to serve directly).  Otherwise it is the internal RELEASES_DIR/.../current.
 // Deploy and rollback always atomically swap this one symlink.
 
 function activeLink(ns) {
-  return APP_DIR ? path.join(APP_DIR, ns) : currentLink(ns);
+  return APP_DIR ? path.join(APP_DIR, ns) : shared.nsCurrentLink(ns);
 }
 
 function activateRelease(ns, releaseDir) {
   if (APP_DIR) ensureDir(APP_DIR);
-  else ensureDir(path.join(RELEASES_DIR, ns));
+  else ensureDir(path.join(shared.RELEASES_DIR, ns));
   const link = activeLink(ns);
   const tmpLink = link + '.tmp.' + process.pid;
   try { fs.unlinkSync(tmpLink); } catch {}
@@ -76,12 +67,6 @@ function currentReleaseId(ns) {
   const link = activeLink(ns);
   if (!fs.existsSync(link)) return null;
   try { return fs.basename(fs.readlinkSync(link)); } catch { return null; }
-}
-
-// --- Strict namespace validator ---
-const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-function validNs(ns) {
-  return typeof ns === 'string' && NS_RE.test(ns);
 }
 
 // --- Commit hash validator: must be 40 or 64 hex chars ---
@@ -110,34 +95,14 @@ function parseFlags(args) {
 }
 
 function loadConfig(ns) {
-  const p = configPath(ns);
+  const p = shared.nsConfigPath(ns);
   if (!fs.existsSync(p)) return null;
   return JSON.parse(fs.readFileSync(p, 'utf8'));
 }
 
 function saveConfig(ns, cfg) {
-  ensureDir(path.dirname(configPath(ns)));
-  fs.writeFileSync(configPath(ns), JSON.stringify(cfg, null, 2));
-}
-
-function loadQuota(ns) {
-  const p = quotaPath(ns);
-  if (!fs.existsSync(p)) return { bytes: 0, count: 0 };
-  return JSON.parse(fs.readFileSync(p, 'utf8'));
-}
-
-function recalcQuota(ns) {
-  const dir = path.join(STORAGE_DIR, ns);
-  let bytes = 0, count = 0;
-  if (fs.existsSync(dir)) {
-    for (const e of fs.readdirSync(dir)) {
-      if (e.endsWith('.dat')) { bytes += fs.statSync(path.join(dir, e)).size; count++; }
-    }
-  }
-  const q = loadQuota(ns);
-  q.bytes = bytes; q.count = count;
-  fs.writeFileSync(quotaPath(ns), JSON.stringify(q, null, 2));
-  return q;
+  ensureDir(path.dirname(shared.nsConfigPath(ns)));
+  fs.writeFileSync(shared.nsConfigPath(ns), JSON.stringify(cfg, null, 2));
 }
 
 // --- Build output validation ---
@@ -170,9 +135,9 @@ function safeSymlinkSync(target, linkPath) { fs.symlinkSync(target, linkPath); }
 // --- Namespace creation / ensure ---
 
 function ensureNamespace(ns, quotaBytes) {
-  ensureDir(path.join(STORAGE_DIR, ns));
-  ensureDir(path.join(STATE_DIR, ns));
-  const p = quotaPath(ns);
+  ensureDir(path.join(shared.STORAGE_DIR, ns));
+  ensureDir(path.join(shared.STATE_DIR, ns));
+  const p = shared.nsQuotaPath(ns);
   if (!fs.existsSync(p)) {
     const q = { bytes: 0, count: 0, quotaBytes: quotaBytes || 10485760, maxObjects: 10000 };
     fs.writeFileSync(p, JSON.stringify(q, null, 2));
@@ -183,7 +148,7 @@ function ensureNamespace(ns, quotaBytes) {
 // --- Release listing (excludes hidden staging dirs) ---
 
 function listReleases(ns) {
-  const relBase = path.join(RELEASES_DIR, ns);
+  const relBase = path.join(shared.RELEASES_DIR, ns);
   if (!fs.existsSync(relBase)) return [];
   return fs.readdirSync(relBase)
     .filter(d => !d.startsWith('.') && d !== 'current' && fs.statSync(path.join(relBase, d)).isDirectory())
@@ -233,7 +198,7 @@ function cmdDeploy(args) {
   // 1. Clone to temp workspace
   ensureDir(BUILDS_DIR);
   const workDir = fs.mkdtempSync(path.join(BUILDS_DIR, 'build-'));
-  const stageDir = stagingDir(ns);
+  const stageDir = shared.nsStagingDir(ns);
   try {
     info('cloning repository...');
     execFileSync('git', ['clone', '--quiet', repoUrl, path.join(workDir, 'repo')], { stdio: 'inherit' });
@@ -295,7 +260,7 @@ function cmdDeploy(args) {
     const ts = new Date(now).toISOString().replace(/[^0-9]/g, '').slice(0, 17);
     const rand = crypto.randomBytes(3).toString('hex');
     const releaseId = ts + '-' + rand;
-    const relDir = path.join(RELEASES_DIR, ns, releaseId);
+    const relDir = path.join(shared.RELEASES_DIR, ns, releaseId);
     ensureDir(path.dirname(relDir));
     safeRenameSync(stageDir, relDir);
 
@@ -317,7 +282,7 @@ function cmdDeploy(args) {
     const releases = listReleases(ns);
     if (releases.length > 3) {
       for (const old of releases.slice(0, releases.length - 3)) {
-        rmrfDir(path.join(RELEASES_DIR, ns, old));
+        rmrfDir(path.join(shared.RELEASES_DIR, ns, old));
         info('pruned old release ' + old);
       }
     }
@@ -339,13 +304,13 @@ function cmdUndeploy(args) {
 
   deactivateRelease(ns);
 
-  const relDir = path.join(RELEASES_DIR, ns);
+  const relDir = path.join(shared.RELEASES_DIR, ns);
   if (fs.existsSync(relDir)) { rmrfDir(relDir); info('removed releases'); }
 
-  const storageNs = path.join(STORAGE_DIR, ns);
+  const storageNs = path.join(shared.STORAGE_DIR, ns);
   if (fs.existsSync(storageNs)) { rmrfDir(storageNs); info('removed stored data'); }
 
-  const stateNs = path.join(STATE_DIR, ns);
+  const stateNs = path.join(shared.STATE_DIR, ns);
   if (fs.existsSync(stateNs)) { rmrfDir(stateNs); info('removed namespace state'); }
 
   info('undeploy complete for ' + APP_BASE_PATH + '/' + ns + '/');
@@ -359,7 +324,7 @@ function cmdRollback(args) {
   if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
 
-  const relBase = path.join(RELEASES_DIR, ns);
+  const relBase = path.join(shared.RELEASES_DIR, ns);
   if (!fs.existsSync(relBase)) die('no releases for namespace ' + ns);
 
   const releases = listReleases(ns);
@@ -394,7 +359,7 @@ function cmdReleases(args) {
   if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
 
-  const relBase = path.join(RELEASES_DIR, ns);
+  const relBase = path.join(shared.RELEASES_DIR, ns);
   if (!fs.existsSync(relBase)) die('no releases for namespace ' + ns);
 
   const current = currentReleaseId(ns) || '(none)';
@@ -430,11 +395,11 @@ function cmdNsCreate(args) {
   if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns + ' (must match ' + NS_RE + ')');
 
-  ensureDir(path.join(STORAGE_DIR, ns));
-  ensureDir(path.join(STATE_DIR, ns));
+  ensureDir(path.join(shared.STORAGE_DIR, ns));
+  ensureDir(path.join(shared.STATE_DIR, ns));
 
   const quotaBytes = quotaStr ? parseInt(quotaStr, 10) : 10485760;
-  const p = quotaPath(ns);
+  const p = shared.nsQuotaPath(ns);
   if (!fs.existsSync(p)) {
     const q = { bytes: 0, count: 0, quotaBytes, maxObjects: 10000 };
     fs.writeFileSync(p, JSON.stringify(q, null, 2));
@@ -451,8 +416,8 @@ function cmdNsRemove(args) {
   if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
 
-  rmrfDir(path.join(STORAGE_DIR, ns));
-  rmrfDir(path.join(STATE_DIR, ns));
+  rmrfDir(path.join(shared.STORAGE_DIR, ns));
+  rmrfDir(path.join(shared.STATE_DIR, ns));
   info('removed namespace ' + ns);
 }
 
@@ -463,20 +428,20 @@ function cmdNsInspect(args) {
   if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
 
-  const q = recalcQuota(ns);
+  const q = shared.recalcQuota(ns);
   const cfg = loadConfig(ns);
   console.log(JSON.stringify({ namespace: ns, quota: q, deployment: cfg || null }, null, 2));
 }
 
 function cmdNsList() {
-  if (!fs.existsSync(STORAGE_DIR)) { console.log('No namespaces.'); return; }
-  const entries = fs.readdirSync(STORAGE_DIR).filter(e => {
-    try { return fs.statSync(path.join(STORAGE_DIR, e)).isDirectory(); }
+  if (!fs.existsSync(shared.STORAGE_DIR)) { console.log('No namespaces.'); return; }
+  const entries = fs.readdirSync(shared.STORAGE_DIR).filter(e => {
+    try { return fs.statSync(path.join(shared.STORAGE_DIR, e)).isDirectory(); }
     catch { return false; }
   });
   if (entries.length === 0) { console.log('No namespaces.'); return; }
   for (const ns of entries.sort()) {
-    const q = recalcQuota(ns);
+    const q = shared.recalcQuota(ns);
     const cfg = loadConfig(ns);
     const deployed = cfg ? ' (repo=' + (cfg.commit || '').slice(0, 8) + '...)' : '';
     console.log(ns + ': ' + q.count + ' objects, ' + q.bytes + '/' + q.quotaBytes + ' bytes' + deployed);
