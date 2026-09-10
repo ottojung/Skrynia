@@ -108,7 +108,7 @@ See [docs/api-spec.md](docs/api-spec.md) for full details.
 
 - **Server**: Single-process Node.js HTTP server; event-loop serialization for safety
 - **Admin CLI**: Keyword-flag interface; all operations use `execFileSync` (no shell injection)
-- **Builder**: Local Docker image (`node:20-alpine` + make + git); runs with `--read-only`, `--cap-drop ALL`, `--no-new-privileges`
+- **Builder**: Local Docker image (`node:20-alpine` + make + git); runs with `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`
 - **Storage**: Filesystem-based; one `.dat`/`.meta`/`.cap` triplet per object per namespace
 - **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
 
