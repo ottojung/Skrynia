@@ -13,6 +13,14 @@ Response: `200 OK`
 { "ok": true }
 ```
 
+### Client library
+
+```
+GET /_skrynia/client/skrynia.js
+```
+
+Serves the installed browser client library. Returns `404` if not installed.
+
 ### Store operations
 
 Base path: `/_skrynia/store/{namespace}/{key}`
@@ -30,7 +38,7 @@ Response: `200 OK`
 - `X-Skrynia-Created`: creation timestamp
 
 Errors:
-- `400 Bad Request`: invalid namespace or key
+- `400 Bad Request`: invalid namespace, key, or percent-encoding
 - `404 Not Found`: key does not exist
 
 #### POST - Create object
@@ -48,22 +56,24 @@ Response: `201 Created`
 {
   "ok": true,
   "mode": "capability-write",
-  "capability": "64-char-hex-string"  // only for capability-write mode
+  "capability": "64-char-hex-string"
 }
 ```
+
+The `capability` field is only present for `capability-write` mode.
 
 Errors:
 - `400 Bad Request`: invalid mode
 - `409 Conflict`: key already exists
 - `413 Payload Too Large`: object exceeds max size
-- `507 Insufficient Storage`: namespace quota exceeded
+- `507 Insufficient Storage`: namespace quota exceeded (detail: `quota_bytes` or `max_objects`)
 
 #### PUT - Replace object
 
 ```
 PUT /_skrynia/store/{namespace}/{key}
 Content-Type: {object content type}
-X-Skrynia-Capability: {capability}  // required for capability-write mode
+X-Skrynia-Capability: {capability}
 
 {body}
 ```
@@ -76,13 +86,14 @@ Response: `200 OK`
 Errors:
 - `403 Forbidden`: immutable object, missing capability, or wrong capability
 - `404 Not Found`: key does not exist
-- `413 Payload Too Large`: object exceeds max size
+- `413 Payload Too Large`: replacement exceeds max size
+- `507 Insufficient Storage`: replacement would exceed namespace quota (detail: `quota_bytes`)
 
 #### DELETE - Remove object
 
 ```
 DELETE /_skrynia/store/{namespace}/{key}
-X-Skrynia-Capability: {capability}  // required for capability-write mode
+X-Skrynia-Capability: {capability}
 ```
 
 Response: `200 OK`
@@ -104,7 +115,7 @@ Serves static files from the currently active release for the namespace.
 Falls back to `index.html` for directory requests.
 
 Response: `200 OK` with static file content, or:
-- `400 Bad Request`: invalid namespace
+- `400 Bad Request`: invalid namespace or percent-encoding
 - `403 Forbidden`: path traversal attempt
 - `404 Not Found`: file not found
 - `503 Service Unavailable`: no active release
@@ -127,14 +138,11 @@ Namespaces must match `^[a-z0-9][a-z0-9_-]{0,63}$`:
 - Must start with a letter or digit
 - 1-64 characters
 
-The same validator is used for all HTTP and CLI namespace-derived paths.
-
 ## Key validation
 
 - Keys must be non-empty strings
 - Maximum length: 256 characters (configurable)
-- No null bytes, no `..`, no leading `/`, no double slashes
-- No forward slashes (`/`) are allowed in keys
+- No null bytes, no `..`, no leading `/`, no double slashes, no forward slashes
 - Keys are URL-decoded before validation
 
 ## Namespace quotas
@@ -145,7 +153,7 @@ Each namespace has:
 - `bytes`: current total size (recalculated on each mutation)
 - `count`: current object count (recalculated on each mutation)
 
-Quota enforcement happens atomically during create operations. Zero-byte objects count toward `maxObjects` to prevent abuse.
+Quota enforcement happens atomically during create and put operations. PUT enforces the new total quota *before* writing, returning `507` if the replacement would exceed the limit.
 
 ## Error response format
 

@@ -5,6 +5,9 @@ set -x
 PREFIX="$1"
 shift || true
 
+# Build the local builder image
+docker build -t skrynia-builder:0.1.0 ./builder/
+
 # Install server, admin CLI, and client library
 mkdir -p -- "$PREFIX/lib/skrynia"
 cp -r -T -- ./src/ "$PREFIX/lib/skrynia/src"

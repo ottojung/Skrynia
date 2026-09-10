@@ -25,7 +25,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, statSync, readdirSync, realpathSync, renameSync, lstatSync, openSync, closeSync } = fs;
+const { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, statSync, readdirSync, realpathSync, renameSync, openSync, closeSync } = fs;
 const { O_CREAT, O_EXCL, O_WRONLY } = fs.constants || {};
 
 function createServer(opts) {
@@ -34,6 +34,8 @@ function createServer(opts) {
   const RELEASES_DIR = path.join(DATA_DIR, 'releases');
   const STORAGE_DIR = path.join(DATA_DIR, 'storage');
   const STATE_DIR = path.join(DATA_DIR, 'state');
+  const PREFIX = process.env.SKRYNIA_PREFIX || '/usr/local';
+  const CLIENT_PATH = path.join(PREFIX, 'share/skrynia/client/skrynia.js');
 
   const DEFAULT_QUOTA_BYTES = parseInt(process.env.SKRYNIA_DEFAULT_QUOTA_BYTES || '10485760', 10);
   const MAX_OBJECT_COUNT = parseInt(process.env.SKRYNIA_MAX_OBJECT_COUNT || '10000', 10);
@@ -43,7 +45,6 @@ function createServer(opts) {
   function ensureDir(dir) { mkdirSync(dir, { recursive: true }); }
 
   // --- Strict namespace validator ---
-  // Used for all HTTP and CLI namespace-derived paths.
   const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
   function validNs(ns) {
     return typeof ns === 'string' && NS_RE.test(ns);
@@ -193,7 +194,6 @@ function createServer(opts) {
     if (mode === 'capability-write') {
       const cap = generateCapability();
       const verifier = sha256hex(cap);
-      // .cap file is the single source of truth for the verifier
       writeFileSync(capPath(ns, key), verifier);
       resp.capability = cap;
     }
@@ -229,7 +229,6 @@ function createServer(opts) {
     const oldSize = meta.size;
     const newBytes = q.bytes - oldSize + body.length;
 
-    // Enforce quota AFTER computing new total, BEFORE writing
     if (newBytes > q.quotaBytes) {
       res.writeHead(507, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'namespace_full',detail:'quota_bytes'})); return;
     }
@@ -285,16 +284,19 @@ function createServer(opts) {
     if (safe.includes('..')) { res.writeHead(403); res.end('Forbidden'); return; }
     const filePath = path.join(releaseRoot, safe);
 
-    // Path-safety: resolved path must stay inside releaseRoot.
-    // This catches symlink escapes after realpath resolution.
-    // Boundary check: path must equal root or start with root + path.sep.
+    // For missing files (no realpath possible), return 404.
+    // For existing files/symlinks, realpath to detect escapes.
+    if (!existsSync(filePath)) {
+      res.writeHead(404); res.end('Not found'); return;
+    }
+
     let resolved;
     try { resolved = realpathSync(filePath); } catch { resolved = null; }
     if (!resolved || (resolved !== releaseRoot && !resolved.startsWith(releaseRoot + path.sep))) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
 
-    if (!existsSync(resolved) || statSync(resolved).isDirectory()) {
+    if (statSync(resolved).isDirectory()) {
       const tryIndex = path.join(resolved, 'index.html');
       if (existsSync(tryIndex)) {
         const tryResolved = realpathSync(tryIndex);
@@ -316,25 +318,55 @@ function createServer(opts) {
 
   // --- Router ---
 
-  function readBody(req, cb) {
+  function readBody(req, res, cb) {
     const chunks = []; let size = 0;
-    req.on('data', c => { size += c.length; if (size > MAX_OBJECT_SIZE+1024) { req.destroy(); return; } chunks.push(c); });
-    req.on('end', () => cb(Buffer.concat(chunks)));
+    req.on('data', c => {
+      size += c.length;
+      if (size > MAX_OBJECT_SIZE) {
+        res.writeHead(413, {'Content-Type':'application/json'});
+        res.end(JSON.stringify({error:'request_too_large'}));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => { if (!res.writableEnded) cb(Buffer.concat(chunks)); });
   }
 
   function route(req, res) {
-    const p = new URL(req.url, 'http://'+req.headers.host).pathname;
+    let p;
+    try {
+      p = new URL(req.url, 'http://'+req.headers.host).pathname;
+    } catch {
+      res.writeHead(400); res.end('Bad request'); return;
+    }
+
+    // Client library
+    if (p === '/_skrynia/client/skrynia.js') {
+      if (existsSync(CLIENT_PATH)) {
+        res.writeHead(200, {'Content-Type':'application/javascript'});
+        res.end(readFileSync(CLIENT_PATH));
+      } else {
+        res.writeHead(404); res.end('Not found');
+      }
+      return;
+    }
 
     const storeMatch = req.url.match(/^\/_skrynia\/store\/([^/]+)\/(.+?)(?:\?.*)?$/);
     if (storeMatch) {
-      const ns = decodeURIComponent(storeMatch[1]);
+      let ns, sk;
+      try {
+        ns = decodeURIComponent(storeMatch[1]);
+        sk = safeKey(decodeURIComponent(storeMatch[2]));
+      } catch {
+        res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_percent_encoding'})); return;
+      }
       if (!validNs(ns)) { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_namespace'})); return; }
-      const sk = safeKey(decodeURIComponent(storeMatch[2]));
       if (!sk) { res.writeHead(400, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'invalid_key'})); return; }
       if (req.method === 'GET') { if (!requireNs(ns, res)) return; return handleGet(ns, sk, res); }
       if (req.method === 'DELETE') return handleDelete(ns, sk, req, res);
       if (req.method === 'PUT' || req.method === 'POST') {
-        return readBody(req, body => {
+        return readBody(req, res, body => {
           if (req.method === 'POST') handleCreate(ns, sk, body, req, res);
           else handlePut(ns, sk, body, req, res);
         });
@@ -344,7 +376,8 @@ function createServer(opts) {
 
     const appMatch = p.match(/^\/a\/([^/]+)(\/.*)?$/);
     if (appMatch) {
-      const ns = decodeURIComponent(appMatch[1]);
+      let ns;
+      try { ns = decodeURIComponent(appMatch[1]); } catch { res.writeHead(400); res.end('Bad namespace'); return; }
       if (!validNs(ns)) { res.writeHead(400); res.end('Bad namespace'); return; }
       return serveApp(ns, req, res);
     }

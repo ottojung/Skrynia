@@ -16,7 +16,7 @@ const DATA_DIR = process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
 const RELEASES_DIR = path.join(DATA_DIR, 'releases');
 const STORAGE_DIR = path.join(DATA_DIR, 'storage');
 const STATE_DIR = path.join(DATA_DIR, 'state');
-const BUILDER_IMAGE = process.env.SKRYNIA_BUILDER_IMAGE || 'ghcr.io/ottojung/skrynia-builder:0.1.0';
+const BUILDER_IMAGE = process.env.SKRYNIA_BUILDER_IMAGE || 'skrynia-builder:0.1.0';
 
 // --- Utilities ---
 
@@ -33,12 +33,19 @@ function info(msg) { process.stderr.write('skrynia: ' + msg + '\n'); }
 function currentLink(ns) { return path.join(RELEASES_DIR, ns, 'current'); }
 function configPath(ns) { return path.join(STATE_DIR, ns, 'config.json'); }
 function quotaPath(ns) { return path.join(STATE_DIR, ns, 'quota.json'); }
+function stagingDir(ns) { return path.join(RELEASES_DIR, ns, '.staging-' + process.pid); }
 
 // --- Strict namespace validator ---
-// Same rule as server.js: one canonical validator for all namespace-derived paths.
 const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 function validNs(ns) {
   return typeof ns === 'string' && NS_RE.test(ns);
+}
+
+// --- Commit hash validator: must be 40 or 64 hex chars ---
+const HEX40 = /^[0-9a-f]{40}$/;
+const HEX64 = /^[0-9a-f]{64}$/;
+function validCommit(h) {
+  return typeof h === 'string' && (HEX40.test(h) || HEX64.test(h));
 }
 
 // --- Flag parser (--key value pairs, returns flags map + remaining args) ---
@@ -112,15 +119,10 @@ function validateBuildOutput(buildDir) {
   return issues;
 }
 
-// --- Safe filesystem operations (no shell strings) ---
+// --- Safe filesystem operations ---
 
-function safeRenameSync(oldPath, newPath) {
-  fs.renameSync(oldPath, newPath);
-}
-
-function safeSymlinkSync(target, linkPath) {
-  fs.symlinkSync(target, linkPath);
-}
+function safeRenameSync(oldPath, newPath) { fs.renameSync(oldPath, newPath); }
+function safeSymlinkSync(target, linkPath) { fs.symlinkSync(target, linkPath); }
 
 // --- Namespace creation / ensure ---
 
@@ -135,12 +137,21 @@ function ensureNamespace(ns, quotaBytes) {
   }
 }
 
+// --- Release listing (excludes hidden staging dirs) ---
+
+function listReleases(ns) {
+  const relBase = path.join(RELEASES_DIR, ns);
+  if (!fs.existsSync(relBase)) return [];
+  return fs.readdirSync(relBase)
+    .filter(d => !d.startsWith('.') && d !== 'current' && fs.statSync(path.join(relBase, d)).isDirectory())
+    .sort();
+}
+
 // --- Commands ---
 
 function cmdDeploy(args) {
   const { flags, rest } = parseFlags(args);
 
-  // All four flags are required; positional args rejected.
   const repoUrl = flags['repo'];
   const commit = flags['commit'];
   const ns = flags['namespace'];
@@ -155,18 +166,14 @@ function cmdDeploy(args) {
     die('missing required flags: ' + missing.join(', ') + '\nusage: skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]');
   }
   if (rest.length > 0) {
-    die('unexpected positional arguments: ' + rest.join(' ') + '\nusage: skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]');
+    die('unexpected positional arguments: ' + rest.join(' '));
   }
 
   if (!validNs(ns)) die('invalid namespace: ' + ns + ' (must match ' + NS_RE + ')');
-
-  // Ensure namespace exists (auto-create with default quota on first deploy)
-  ensureNamespace(ns);
+  if (!validCommit(commit)) die('--commit must be a full 40 or 64 hex char git object id');
 
   let builderImage = BUILDER_IMAGE;
-  if (flags['builder']) {
-    builderImage = flags['builder'];
-  }
+  if (flags['builder']) builderImage = flags['builder'];
 
   info('deploying namespace=' + ns);
   info('  repo=' + repoUrl);
@@ -174,7 +181,7 @@ function cmdDeploy(args) {
   info('  subdir=' + subdir);
   info('  builder=' + builderImage);
 
-  // 0. Early subdir validation (before any clone/network work)
+  // 0. Early subdir validation
   if (path.isAbsolute(subdir)) die('subdirectory must be relative, got: ' + subdir);
   if (subdir.includes('..')) die('subdirectory must not contain ..: ' + subdir);
   if (subdir.includes('\0')) die('subdirectory must not contain null bytes');
@@ -182,11 +189,15 @@ function cmdDeploy(args) {
 
   // 1. Clone to temp workspace
   const workDir = fs.mkdtempSync('/tmp/skrynia-build-');
-  let buildSucceeded = false;
+  const stageDir = stagingDir(ns);
   try {
     info('cloning repository...');
     execFileSync('git', ['clone', '--quiet', repoUrl, path.join(workDir, 'repo')], { stdio: 'inherit' });
     execFileSync('git', ['-C', path.join(workDir, 'repo'), 'checkout', '--quiet', commit], { stdio: 'inherit' });
+
+    // Verify HEAD matches requested commit
+    const head = execFileSync('git', ['-C', path.join(workDir, 'repo'), 'rev-parse', 'HEAD'], { stdio: 'pipe' }).toString().trim();
+    if (head !== commit) die('checked-out HEAD ' + head + ' does not match requested commit ' + commit);
 
     // 2. Validate subdirectory stays inside clone
     const repoDir = path.join(workDir, 'repo');
@@ -198,23 +209,19 @@ function cmdDeploy(args) {
     }
     if (!fs.existsSync(appDir)) die('subdirectory not found: ' + subdir);
 
-    // 3. Build into a staging area (not the final release dir)
-    const stageDir = path.join(workDir, 'stage');
+    // 3. Build in container (repo RW, root FS ro, drop caps)
     ensureDir(stageDir);
-
-    // Mount the whole repo so monorepo parent paths (../shared etc) work
-    // but set working directory to the app subdirectory.
-    // Repo is mounted RW so make build can write build/ inside it.
-    const repoMount = repoDir;
     const absSubdir = path.relative(repoDir, appDir);
 
     info('building with container...');
     const dockerArgs = [
       'run', '--rm',
-      '--network', 'none',
+      '--read-only',
       '--tmpfs', '/tmp:size=256m',
-      '-v', repoMount + ':/repo',
-      '-v', stageDir + ':/stage',
+      '--network', 'none',
+      '--no-new-privileges',
+      '--cap-drop', 'ALL',
+      '-v', repoDir + ':/repo',
       '-w', '/repo/' + absSubdir,
       builderImage,
       'make', 'build',
@@ -225,35 +232,28 @@ function cmdDeploy(args) {
       die('build failed (exit ' + e.status + ')');
     }
 
-    // 4. Validate build output (no symlinks, no special files)
+    // 4. Validate build output
     const buildOutput = path.join(appDir, 'build');
-    if (!fs.existsSync(buildOutput)) {
-      die('build output directory not found: build/');
-    }
+    if (!fs.existsSync(buildOutput)) die('build output directory not found: build/');
 
-    // Copy validated output from build/ into stage
     fs.cpSync(buildOutput, stageDir, { recursive: true });
 
     const issues = validateBuildOutput(stageDir);
-    if (issues.length > 0) {
-      die('invalid build output:\n  ' + issues.join('\n  '));
-    }
+    if (issues.length > 0) die('invalid build output:\n  ' + issues.join('\n  '));
 
-    buildSucceeded = true;
+    // 5. Auto-create namespace ONLY after successful build validation
+    ensureNamespace(ns);
 
-    // 5. Create release directory only after successful build + validation
-    // Unique release ID with millisecond + random suffix for sub-second uniqueness.
+    // 6. Atomic rename: staging dir -> release dir (same filesystem)
     const now = Date.now();
     const ts = new Date(now).toISOString().replace(/[^0-9]/g, '').slice(0, 14);
     const rand = crypto.randomBytes(3).toString('hex');
     const releaseId = ts + '-' + rand;
     const relDir = path.join(RELEASES_DIR, ns, releaseId);
     ensureDir(path.dirname(relDir));
-
-    // Atomic: stage -> release dir (rename is atomic on same filesystem)
     safeRenameSync(stageDir, relDir);
 
-    // 6. Atomic activation
+    // 7. Atomic activation
     const link = currentLink(ns);
     ensureDir(path.dirname(link));
     const tmpLink = link + '.tmp.' + process.pid;
@@ -261,86 +261,65 @@ function cmdDeploy(args) {
     safeSymlinkSync(relDir, tmpLink);
     safeRenameSync(tmpLink, link);
 
-    // 7. Save deployment config with currentReleaseId
+    // 8. Save deployment config
     const cfg = loadConfig(ns) || {};
     Object.assign(cfg, {
-      namespace: ns,
-      repo: repoUrl,
-      commit,
-      subdir,
-      builder: builderImage,
-      currentReleaseId: releaseId,
+      namespace: ns, repo: repoUrl, commit, subdir,
+      builder: builderImage, currentReleaseId: releaseId,
       deployedAt: new Date().toISOString(),
     });
     saveConfig(ns, cfg);
 
     info('activated release ' + releaseId + ' for /a/' + ns + '/');
 
-    // 8. Prune old releases (keep last 3)
-    const relsDir = path.join(RELEASES_DIR, ns);
-    const releases = fs.readdirSync(relsDir)
-      .filter(d => d !== 'current' && fs.statSync(path.join(relsDir, d)).isDirectory())
-      .sort();
+    // 9. Prune old releases (keep last 3, skip hidden staging dirs)
+    const releases = listReleases(ns);
     if (releases.length > 3) {
       for (const old of releases.slice(0, releases.length - 3)) {
-        rmrfDir(path.join(relsDir, old));
+        rmrfDir(path.join(RELEASES_DIR, ns, old));
         info('pruned old release ' + old);
       }
     }
   } finally {
-    // Always clean workspace; if build failed, stage dir is removed by rmrfDir
     rmrfDir(workDir);
+    // Clean staging dir on failure
+    try { if (fs.existsSync(stageDir) && fs.lstatSync(stageDir).isDirectory()) rmrfDir(stageDir); } catch {}
   }
 }
 
 function cmdUndeploy(args) {
-  if (args.length < 1) {
-    die('usage: skrynia undeploy <namespace>');
-  }
-  const ns = args[0];
+  const { flags, rest } = parseFlags(args);
+  const ns = flags['namespace'];
+  if (!ns) die('missing required flag: --namespace\nusage: skrynia undeploy --namespace <name>');
+  if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
 
   info('undeploying namespace=' + ns);
 
-  // Remove releases
   const relDir = path.join(RELEASES_DIR, ns);
-  if (fs.existsSync(relDir)) {
-    rmrfDir(relDir);
-    info('removed releases');
-  }
+  if (fs.existsSync(relDir)) { rmrfDir(relDir); info('removed releases'); }
 
-  // Always remove stored data
   const storageNs = path.join(STORAGE_DIR, ns);
-  if (fs.existsSync(storageNs)) {
-    rmrfDir(storageNs);
-    info('removed stored data');
-  }
+  if (fs.existsSync(storageNs)) { rmrfDir(storageNs); info('removed stored data'); }
 
-  // Always remove namespace state
   const stateNs = path.join(STATE_DIR, ns);
-  if (fs.existsSync(stateNs)) {
-    rmrfDir(stateNs);
-    info('removed namespace state');
-  }
+  if (fs.existsSync(stateNs)) { rmrfDir(stateNs); info('removed namespace state'); }
 
   info('undeploy complete for /a/' + ns + '/');
 }
 
 function cmdRollback(args) {
-  if (args.length < 1) {
-    die('usage: skrynia rollback <namespace> [release-id]');
-  }
-  const ns = args[0];
+  const { flags, rest } = parseFlags(args);
+  const ns = flags['namespace'];
+  const target = flags['release'];
+  if (!ns) die('missing required flag: --namespace\nusage: skrynia rollback --namespace <name> [--release <id>]');
+  if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
-  const target = args[1];
 
   const relBase = path.join(RELEASES_DIR, ns);
   if (!fs.existsSync(relBase)) die('no releases for namespace ' + ns);
 
-  const releases = fs.readdirSync(relBase)
-    .filter(d => d !== 'current' && fs.statSync(path.join(relBase, d)).isDirectory())
-    .sort();
-
+  const releases = listReleases(ns);
   if (releases.length === 0) die('no releases for namespace ' + ns);
 
   let rollbackTo;
@@ -359,7 +338,6 @@ function cmdRollback(args) {
   safeSymlinkSync(targetDir, tmpLink);
   safeRenameSync(tmpLink, link);
 
-  // Update config with rollback target
   const cfg = loadConfig(ns);
   if (cfg) {
     cfg.currentReleaseId = rollbackTo;
@@ -371,9 +349,12 @@ function cmdRollback(args) {
 }
 
 function cmdReleases(args) {
-  if (args.length < 1) die('usage: skrynia releases <namespace>');
-  const ns = args[0];
+  const { flags, rest } = parseFlags(args);
+  const ns = flags['namespace'];
+  if (!ns) die('missing required flag: --namespace\nusage: skrynia releases --namespace <name>');
+  if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
+
   const relBase = path.join(RELEASES_DIR, ns);
   if (!fs.existsSync(relBase)) die('no releases for namespace ' + ns);
 
@@ -381,9 +362,7 @@ function cmdReleases(args) {
     ? fs.basename(fs.readlinkSync(currentLink(ns)))
     : '(none)';
 
-  const releases = fs.readdirSync(relBase)
-    .filter(d => d !== 'current' && fs.statSync(path.join(relBase, d)).isDirectory())
-    .sort();
+  const releases = listReleases(ns);
 
   console.log('Namespace: ' + ns);
   console.log('Current:   ' + current);
@@ -395,23 +374,29 @@ function cmdReleases(args) {
 }
 
 function cmdInspect(args) {
-  if (args.length < 1) die('usage: skrynia inspect <namespace>');
-  const ns = args[0];
+  const { flags, rest } = parseFlags(args);
+  const ns = flags['namespace'];
+  if (!ns) die('missing required flag: --namespace\nusage: skrynia inspect --namespace <name>');
+  if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
+
   const cfg = loadConfig(ns);
   if (!cfg) die('namespace ' + ns + ' not found');
   console.log(JSON.stringify(cfg, null, 2));
 }
 
 function cmdNsCreate(args) {
-  if (args.length < 1) die('usage: skrynia ns create <namespace> [--quota BYTES]');
-  const ns = args[0];
+  const { flags, rest } = parseFlags(args);
+  const ns = flags['namespace'];
+  const quotaStr = flags['quota'];
+  if (!ns) die('missing required flag: --namespace\nusage: skrynia ns create --namespace <name> [--quota BYTES]');
+  if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns + ' (must match ' + NS_RE + ')');
+
   ensureDir(path.join(STORAGE_DIR, ns));
   ensureDir(path.join(STATE_DIR, ns));
 
-  const qidx = args.indexOf('--quota');
-  const quotaBytes = qidx !== -1 ? parseInt(args[qidx + 1], 10) : 10485760;
+  const quotaBytes = quotaStr ? parseInt(quotaStr, 10) : 10485760;
   const p = quotaPath(ns);
   if (!fs.existsSync(p)) {
     const q = { bytes: 0, count: 0, quotaBytes, maxObjects: 10000 };
@@ -423,18 +408,24 @@ function cmdNsCreate(args) {
 }
 
 function cmdNsRemove(args) {
-  if (args.length < 1) die('usage: skrynia ns remove <namespace>');
-  const ns = args[0];
+  const { flags, rest } = parseFlags(args);
+  const ns = flags['namespace'];
+  if (!ns) die('missing required flag: --namespace\nusage: skrynia ns remove --namespace <name>');
+  if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
+
   rmrfDir(path.join(STORAGE_DIR, ns));
   rmrfDir(path.join(STATE_DIR, ns));
   info('removed namespace ' + ns);
 }
 
 function cmdNsInspect(args) {
-  if (args.length < 1) die('usage: skrynia ns inspect <namespace>');
-  const ns = args[0];
+  const { flags, rest } = parseFlags(args);
+  const ns = flags['namespace'];
+  if (!ns) die('missing required flag: --namespace\nusage: skrynia ns inspect --namespace <name>');
+  if (rest.length > 0) die('unexpected positional arguments: ' + rest.join(' '));
   if (!validNs(ns)) die('invalid namespace: ' + ns);
+
   const q = recalcQuota(ns);
   const cfg = loadConfig(ns);
   console.log(JSON.stringify({ namespace: ns, quota: q, deployment: cfg || null }, null, 2));
@@ -461,26 +452,28 @@ function cmdHelp() {
     '  skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name>\n' +
     '                        [--builder IMAGE]\n' +
     '                        Deploy app from git source\n' +
-    '  skrynia undeploy <ns>\n' +
+    '  skrynia undeploy --namespace <name>\n' +
     '                        Remove app, releases, namespace data and state\n' +
-    '  skrynia rollback <ns> [release-id]\n' +
+    '  skrynia rollback --namespace <name> [--release <id>]\n' +
     '                        Rollback to previous or specified release\n' +
-    '  skrynia releases <ns> List releases for a namespace\n' +
-    '  skrynia inspect <ns>  Show deployment config for a namespace\n' +
-    '\n  skrynia ns create <ns> [--quota BYTES]\n' +
+    '  skrynia releases --namespace <name>\n' +
+    '                        List releases for a namespace\n' +
+    '  skrynia inspect --namespace <name>\n' +
+    '                        Show deployment config for a namespace\n' +
+    '\n  skrynia ns create --namespace <name> [--quota BYTES]\n' +
     '                        Create a namespace with quota\n' +
-    '  skrynia ns remove <ns>\n' +
+    '  skrynia ns remove --namespace <name>\n' +
     '                        Delete namespace and all its data\n' +
-    '  skrynia ns inspect <ns>\n' +
+    '  skrynia ns inspect --namespace <name>\n' +
     '                        Show namespace usage and config\n' +
     '  skrynia ns list       List all namespaces with usage\n' +
     '\n  skrynia help          Show this help\n' +
     '\nExamples:\n' +
-    '  skrynia deploy --repo git@github.com:myorg/myapp.git --commit abc123def --subdir . --namespace myapp\n' +
-    '  skrynia deploy --repo git@github.com:myorg/mono.git --commit def456ghi --subdir frontend --namespace myapp\n' +
-    '  skrynia undeploy myapp\n' +
-    '  skrynia rollback myapp\n' +
-    '  skrynia releases myapp\n' +
+    '  skrynia deploy --repo git@github.com:myorg/myapp.git --commit abc123...def --subdir . --namespace myapp\n' +
+    '  skrynia deploy --repo git@github.com:myorg/mono.git --commit def456...ghi --subdir frontend --namespace myapp\n' +
+    '  skrynia undeploy --namespace myapp\n' +
+    '  skrynia rollback --namespace myapp\n' +
+    '  skrynia releases --namespace myapp\n' +
     '  skrynia ns list');
 }
 

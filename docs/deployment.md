@@ -8,103 +8,64 @@
 
 ## Installation
 
-### Via Config Server
-
-Skrynia is installed as a submodule of Config Server:
-
-```sh
-cd /path/to/config-server
-make skrynia
-```
-
-### Manual installation
-
 ```sh
 git clone git@github.com:ottojung/Skrynia.git
 cd Skrynia
 make install
 ```
 
-This installs:
-- `/usr/local/bin/skrynia-server` - Storage server
-- `/usr/local/bin/skrynia` - Admin CLI
-- `/usr/local/lib/skrynia/` - Server and admin code
-- `/usr/local/share/skrynia/` - Configuration and client library
-- `/etc/systemd/system/skrynia.service` - Systemd service (runs as `skrynia` user)
-
-## Configuration
-
-Edit `/usr/local/share/skrynia/skrynia.conf`:
-
-```sh
-SKRYNIA_PORT=17380
-SKRYNIA_DATA_DIR=/var/lib/skrynia
-SKRYNIA_BUILDER_IMAGE=ghcr.io/ottojung/skrynia-builder:0.1.0
-SKRYNIA_DEFAULT_QUOTA_BYTES=10485760
-```
-
-## Nginx integration
-
-Add to your nginx config for `vau.place`:
-
-```nginx
-# Skrynia storage API
-location /_skrynia/ {
-    proxy_pass http://127.0.0.1:17380;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-}
-
-# Skrynia app serving
-location /a/ {
-    proxy_pass http://127.0.0.1:17380;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-}
-```
+This builds the local builder Docker image and installs:
+- `/usr/local/bin/skrynia-server` — Storage server
+- `/usr/local/bin/skrynia` — Admin CLI
+- `/usr/local/lib/skrynia/` — Server and admin code
+- `/usr/local/share/skrynia/` — Configuration and client library
+- `/etc/systemd/system/skrynia.service` — Systemd service (runs as `skrynia` user)
 
 ## Deploying an app
 
 All deploy parameters are required keyword flags:
 
 ```sh
-# Deploy from repo root (repo root is the app)
+# Deploy a single-repo app
 skrynia deploy \
   --repo git@github.com:myorg/myapp.git \
-  --commit abc123def \
+  --commit abc123def456...789 \
   --subdir . \
   --namespace myapp
 
-# Deploy from subdirectory of monorepo
+# Deploy from a monorepo subdirectory
 skrynia deploy \
   --repo git@github.com:myorg/monorepo.git \
-  --commit def456ghi \
+  --commit def456ghi789...012 \
   --subdir frontend \
   --namespace myapp
 
 # Deploy with custom builder
 skrynia deploy \
   --repo git@github.com:myorg/myapp.git \
-  --commit abc123def \
+  --commit abc123def456...789 \
   --subdir . \
   --namespace myapp \
   --builder myregistry/builder:v2
 ```
 
-The deploy command:
-1. Validates namespace and subdirectory (no `..`, no absolute paths)
+The `--commit` must be a full 40 or 64 hex character git object id.
+
+Deploy process:
+1. Validates namespace and subdirectory
 2. Clones the repo to a temporary workspace
-3. Checks out the exact commit
+3. Checks out the exact commit and verifies HEAD matches
 4. Validates subdirectory stays inside repo (realpath check)
-5. Runs `make build` in the subdirectory via the builder container (whole repo mounted, workdir set to subdir)
+5. Runs `make build` in a read-only container (repo mounted read-write, capabilities dropped)
 6. Validates build output (rejects symlinks and special files)
-7. Stages validated output, then atomic rename to release directory
-8. Atomically activates the release
-9. Updates config with `currentReleaseId`
+7. Auto-creates namespace with default quota if absent (preserves existing on redeploy)
+8. Stages validated output under `RELEASES_DIR/{ns}/.staging-{pid}`
+9. Atomic rename to release directory (same filesystem)
+10. Atomically activates the release via symlink swap
 
 ### Included example
 
-The `examples/hello` directory contains a minimal deployable app with its own Makefile:
+`examples/hello` is a minimal deployable app:
 
 ```sh
 skrynia deploy \
@@ -114,75 +75,44 @@ skrynia deploy \
   --namespace hello-app
 ```
 
-The Makefile produces `build/index.html` with a simple HTML page.
-
 ## Rollback
 
 ```sh
-# Rollback to previous release
-skrynia rollback myapp
-
-# Rollback to specific release
-skrynia rollback myapp 20260910120000-abc123
+skrynia rollback --namespace myapp
+skrynia rollback --namespace myapp --release 20260910120000-abc123
 ```
-
-Rollback updates the deployment config metadata with the new `currentReleaseId`.
 
 ## Undeploy
 
 ```sh
-# Remove app, releases, namespace data and state (always destructive)
-skrynia undeploy myapp
+skrynia undeploy --namespace myapp
 ```
 
-Undeploy always removes releases, stored data, and namespace state. There is no preserve-data option in v1.
+Removes releases, stored data, and namespace state. Always destructive.
 
 ## Managing namespaces
 
 ```sh
-# Create namespace with custom quota
-skrynia ns create myns --quota 20971520
-
-# List all namespaces
+skrynia ns create --namespace myns --quota 20971520
 skrynia ns list
-
-# Inspect namespace usage
-skrynia ns inspect myns
-
-# Remove namespace and all data
-skrynia ns remove myns
+skrynia ns inspect --namespace myns
+skrynia ns remove --namespace myns
 ```
 
 ## Monitoring
 
 ```sh
-# Check server health
 curl http://127.0.0.1:17380/_skrynia/health
-
-# List releases for an app
-skrynia releases myapp
-
-# Inspect deployment config
-skrynia inspect myapp
+skrynia releases --namespace myapp
+skrynia inspect --namespace myapp
 ```
 
-## Troubleshooting
+## Builder
 
-### Build fails
-- Check builder image exists: `docker pull $SKRYNIA_BUILDER_IMAGE`
-- Verify `make build` works in the app subdirectory
-- Check container doesn't need host network or privileged mode
+The builder image is built locally during `make install`. It is a `node:20-alpine` image with `make` and `git`. Containers run with `--read-only` root filesystem, `--cap-drop ALL`, and `--no-new-privileges`. The app repo is mounted read-write so `make build` can write `build/`.
 
-### Namespace full
+To rebuild the builder image manually:
+
 ```sh
-skrynia ns inspect myns  # Check current usage
-# Either increase quota or remove old objects via storage API
+docker build -t skrynia-builder:0.1.0 builder/
 ```
-
-### Service won't start
-```sh
-journalctl -u skrynia -n 50
-systemctl status skrynia
-```
-
-The server runs as the dedicated `skrynia` user with `NoNewPrivileges` and `ProtectSystem=strict`.

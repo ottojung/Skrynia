@@ -1,3 +1,3 @@
 build:
 	mkdir -p build
-	echo '<!DOCTYPE html><html><head><title>Hello Skrynia</title></head><body><h1>Hello from Skrynia!</h1><p>Deployed successfully.</p></body></html>' > build/index.html
+	cp index.html build/

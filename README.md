@@ -1,130 +1,123 @@
 # Skrynia
 
-Platform for small JavaScript-heavy and static web apps, served canonically at `https://vau.place/a/<app-name>/`.
+A minimal platform for deploying and serving small web apps with durable key-value storage.
+
+## Features
+
+- **Deploy from git**: Clone, checkout exact commit, build via container, atomic release activation
+- **Storage API**: Namespace-scoped key-value store with immutable, capability-write, and public-write modes
+- **App serving**: Static file serving from active releases at `/a/{namespace}/`
+- **Admin CLI**: Full lifecycle management with keyword-flag interface
+- **Client library**: Tiny browser library for storage access at `/_skrynia/client/skrynia.js`
 
 ## Quick start
 
 ```sh
-# Deploy an app from a git repo
-skrynia deploy git@github.com:myorg/myapp.git abc123def . myapp
+# Install (builds local builder image, installs to /usr/local)
+make install
 
-# Rollback
-skrynia rollback myapp
+# Deploy an app
+skrynia deploy \
+  --repo git@github.com:myorg/myapp.git \
+  --commit abc123def456...789 \
+  --subdir . \
+  --namespace myapp
 
-# Undeploy (removes app, releases, namespace data and state)
-skrynia undeploy myapp
+# Check health
+curl http://127.0.0.1:17380/_skrynia/health
 ```
 
-## Architecture
+## Deployment
 
-- **Single-server process.** One Skrynia server handles all apps and storage. Node.js event-loop serialization makes concurrent request mutations safe.
-- **Namespace = app.** The namespace name is the URL suffix: `/a/<namespace>/`. Namespaces must be created administratively before the public API accepts writes.
-- **Versioned deploys.** Each deploy builds into a staging area, validates output, then atomically publishes to an immutable release directory.
-- **Shared durable storage.** Namespace + key -> opaque bytes. No list/enumeration API.
+All deploy parameters are required keyword flags:
+
+```sh
+skrynia deploy \
+  --repo <git-url> \
+  --commit <full-40-or-64-hex-sha> \
+  --subdir <path-within-repo> \
+  --namespace <app-name> \
+  [--builder <docker-image>]
+```
+
+The `--commit` must be a full git object id (40 or 64 hex characters). The deploy verifies the checked-out HEAD matches.
+
+Deploy process:
+1. Clones repo, checks out exact commit, verifies HEAD
+2. Validates subdirectory stays inside repo
+3. Runs `make build` in a read-only container (repo mounted read-write)
+4. Validates build output (no symlinks, no special files)
+5. Auto-creates namespace with default quota if absent (preserves existing)
+6. Atomic rename staging dir into release dir (same filesystem)
+7. Atomically activates release via symlink swap
+
+### Included example
+
+```sh
+# Deploy the hello example from this repo
+skrynia deploy \
+  --repo git@github.com:ottojung/Skrynia.git \
+  --commit $(git rev-parse HEAD) \
+  --subdir examples/hello \
+  --namespace hello-app
+```
+
+`examples/hello` is a minimal app with `index.html` and a Makefile that copies it to `build/`.
 
 ## CLI reference
 
 ```
-skrynia deploy <repo-url> <commit> <subdir> <namespace> [--builder IMAGE]
-    Deploy app from git source. Validates subdirectory stays inside
-    repository. Builds via container with whole repo mounted. Stages,
-    validates (no symlinks/special files), then publishes release.
-    Updates namespace config with currentReleaseId.
+skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]
+skrynia undeploy --namespace <name>
+skrynia rollback --namespace <name> [--release <id>]
+skrynia releases --namespace <name>
+skrynia inspect --namespace <name>
 
-skrynia undeploy <namespace>
-    Remove deployed releases, stored data, and namespace state.
-    Always destructive; no preserve-data option in v1.
-
-skrynia rollback <namespace> [release-id]
-    Rollback to previous or specified release. Updates config metadata.
-
-skrynia releases <namespace>
-    List releases for a namespace.
-
-skrynia inspect <namespace>
-    Show deployment config.
-
-skrynia ns create <namespace> [--quota BYTES]
-    Create a namespace.
-
-skrynia ns remove <namespace>
-    Delete namespace and all its data.
-
-skrynia ns inspect <namespace>
-    Show namespace usage and config.
-
+skrynia ns create --namespace <name> [--quota BYTES]
+skrynia ns remove --namespace <name>
+skrynia ns inspect --namespace <name>
 skrynia ns list
-    List all namespaces with usage.
+```
+
+Commands are positional words; all data arguments are keyword flags.
+
+## Configuration
+
+`/usr/local/share/skrynia/skrynia.conf`:
+
+```sh
+SKRYNIA_PORT=17380
+SKRYNIA_DATA_DIR=/var/lib/skrynia
+SKRYNIA_BUILDER_IMAGE=skrynia-builder:0.1.0
+SKRYNIA_DEFAULT_QUOTA_BYTES=10485760
 ```
 
 ## Storage API
 
-Base path: `/_skrynia/store/<namespace>/<key>`
+- `GET /_skrynia/health` — health check
+- `GET /_skrynia/client/skrynia.js` — browser client library
+- `GET /_skrynia/store/{ns}/{key}` — read object
+- `POST /_skrynia/store/{ns}/{key}` — create object
+- `PUT /_skrynia/store/{ns}/{key}` — replace object
+- `DELETE /_skrynia/store/{ns}/{key}` — delete object
+- `GET /a/{ns}/{path}` — serve app static files
 
-| Method | Description |
-|--------|-------------|
-| `GET` | Read object |
-| `POST` | Create object (fails if exists, requires existing namespace) |
-| `PUT` | Replace object (atomic, enforces quota after replacement) |
-| `DELETE` | Remove object |
+See [docs/api-spec.md](docs/api-spec.md) for full details.
 
-### Object modes
+## Architecture
 
-- **immutable** - Cannot be modified or deleted via public API.
-- **capability-write** (default) - Server returns a one-time write capability on create. Subsequent put/delete require it. Verifier stored in `.cap` file only (single source of truth).
-- **public-write** - Anyone who knows namespace/key may modify or delete.
+- **Server**: Single-process Node.js HTTP server; event-loop serialization for safety
+- **Admin CLI**: Keyword-flag interface; all operations use `execFileSync` (no shell injection)
+- **Builder**: Local Docker image (`node:20-alpine` + make + git); runs with `--read-only`, `--cap-drop ALL`, `--no-new-privileges`
+- **Storage**: Filesystem-based; one `.dat`/`.meta`/`.cap` triplet per object per namespace
+- **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
 
-### Headers
+## Running tests
 
-- `X-Skrynia-Mode` - Set on create (POST). Values: `immutable`, `capability-write`, `public-write`.
-- `X-Skrynia-Capability` - Required for put/delete on capability-write objects.
-
-### Client library
-
-Include `/_skrynia/client/skrynia.js` in your app:
-
-```js
-const store = Skrynia.store('my-namespace');
-const result = await store.get('key');
-if (result) {
-  const text = await result.bytes.text();
-  const json = await result.bytes.json();
-  const raw = await result.bytes.bytes(); // Uint8Array
-}
-await store.create('key', value, { mode: 'public-write' });
+```sh
+make test
 ```
 
-Binary-safe: GET returns `RawBytes` with `.text()`, `.json()`, `.bytes()` methods. No automatic response coercion.
+## License
 
-## Deployment model
-
-1. Clone repo to disposable temp workspace
-2. Validate subdirectory stays inside repository (no escape)
-3. Build inside container: whole repo mounted read-only, working directory set to subdirectory (monorepo `../shared` paths available)
-4. Validate build output: reject symlinks, block/char devices, FIFOs, sockets
-5. Stage validated output, then atomic rename to release directory
-6. Atomically switch `current` symlink
-7. Update config with `currentReleaseId`
-8. Prune old releases (keep last 3)
-
-## Configuration
-
-Environment variables (or `/usr/local/share/skrynia/skrynia.conf`):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SKRYNIA_PORT` | `17380` | Server listen port |
-| `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Data directory |
-| `SKRYNIA_BUILDER_IMAGE` | `ghcr.io/ottojung/skrynia-builder:0.1.0` | Builder container |
-| `SKRYNIA_DEFAULT_QUOTA_BYTES` | `10485760` | Default namespace quota (10 MiB) |
-| `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Max objects per namespace |
-| `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
-| `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max object size |
-
-## Runtime invariant
-
-Exactly ONE server process per data directory. The admin CLI and server must not modify the same data directory simultaneously. Atomic filesystem primitives (exclusive create, tmp+rename) provide per-operation safety within a single process.
-
-## Systemd
-
-Runs as dedicated `skrynia` user with `NoNewPrivileges`, `ProtectSystem=strict`, and `ReadWritePaths=/var/lib/skrynia`.
+See repository.
