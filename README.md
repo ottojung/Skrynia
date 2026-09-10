@@ -13,6 +13,9 @@ A minimal platform for deploying and serving small web apps with durable key-val
 ## Quick start
 
 ```sh
+# Build the builder image (required for deploys)
+make builder
+
 # Start the server
 node src/server.js
 
@@ -68,16 +71,16 @@ node src/admin.js deploy \
 ## CLI reference
 
 ```
-skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]
-skrynia undeploy --namespace <name>
-skrynia rollback --namespace <name> [--release <id>]
-skrynia releases --namespace <name>
-skrynia inspect --namespace <name>
+node src/admin.js deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]
+node src/admin.js undeploy --namespace <name>
+node src/admin.js rollback --namespace <name> [--release <id>]
+node src/admin.js releases --namespace <name>
+node src/admin.js inspect --namespace <name>
 
-skrynia ns create --namespace <name> [--quota BYTES]
-skrynia ns remove --namespace <name>
-skrynia ns inspect --namespace <name>
-skrynia ns list
+node src/admin.js ns create --namespace <name> [--quota BYTES]
+node src/admin.js ns remove --namespace <name>
+node src/admin.js ns inspect --namespace <name>
+node src/admin.js ns list
 ```
 
 Commands are positional words; all data arguments are keyword flags.

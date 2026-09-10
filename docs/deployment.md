@@ -58,21 +58,21 @@ All deploy parameters are required keyword flags:
 
 ```sh
 # Deploy a single-repo app
-skrynia deploy \
+node src/admin.js deploy \
   --repo git@github.com:myorg/myapp.git \
   --commit abc123def456...789 \
   --subdir . \
   --namespace myapp
 
 # Deploy from a monorepo subdirectory
-skrynia deploy \
+node src/admin.js deploy \
   --repo git@github.com:myorg/monorepo.git \
   --commit def456ghi789...012 \
   --subdir frontend \
   --namespace myapp
 
 # Deploy with custom builder
-skrynia deploy \
+node src/admin.js deploy \
   --repo git@github.com:myorg/myapp.git \
   --commit abc123def456...789 \
   --subdir . \
@@ -100,7 +100,7 @@ Deploy process:
 `examples/hello` is a minimal deployable app:
 
 ```sh
-skrynia deploy \
+node src/admin.js deploy \
   --repo git@github.com:ottojung/Skrynia.git \
   --commit $(git rev-parse HEAD) \
   --subdir examples/hello \
@@ -110,14 +110,14 @@ skrynia deploy \
 ## Rollback
 
 ```sh
-skrynia rollback --namespace myapp
-skrynia rollback --namespace myapp --release 20260910120000-abc123
+node src/admin.js rollback --namespace myapp
+node src/admin.js rollback --namespace myapp --release 20260910120000-abc123
 ```
 
 ## Undeploy
 
 ```sh
-skrynia undeploy --namespace myapp
+node src/admin.js undeploy --namespace myapp
 ```
 
 Removes releases, stored data, namespace state, and APP_DIR symlink.
@@ -126,18 +126,18 @@ Always destructive.
 ## Managing namespaces
 
 ```sh
-skrynia ns create --namespace myns --quota 20971520
-skrynia ns list
-skrynia ns inspect --namespace myns
-skrynia ns remove --namespace myns
+node src/admin.js ns create --namespace myns --quota 20971520
+node src/admin.js ns list
+node src/admin.js ns inspect --namespace myns
+node src/admin.js ns remove --namespace myns
 ```
 
 ## Monitoring
 
 ```sh
 curl http://127.0.0.1:17380/_skrynia/health
-skrynia releases --namespace myapp
-skrynia inspect --namespace myapp
+node src/admin.js releases --namespace myapp
+node src/admin.js inspect --namespace myapp
 ```
 
 ## Builder

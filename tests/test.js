@@ -7,6 +7,7 @@ const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
 const { createServer } = require('../src/server.js');
+const { normalizeBasePath } = require('../src/base-path.js');
 
 const SRC = path.join(__dirname, '..');
 const NODE = process.execPath;
@@ -883,6 +884,51 @@ async function test_docker_security_opts() {
   assert(src.includes('owner.uid') && src.includes('owner.gid'), 'must reference owner uid and gid');
 }
 
+async function test_base_path_strips_trailing_slashes() {
+  assert(normalizeBasePath('/apps/') === '/apps', 'strips single trailing slash');
+  assert(normalizeBasePath('/apps//') === '/apps', 'strips multiple trailing slashes');
+  assert(normalizeBasePath('/apps///') === '/apps', 'strips many trailing slashes');
+}
+
+async function test_base_path_keeps_root() {
+  assert(normalizeBasePath('/') === '/', 'root kept as-is');
+  assert(normalizeBasePath('///') === '/', 'multiple slashes on root normalizes to root');
+}
+
+async function test_base_path_rejects_no_leading_slash() {
+  let threw = false;
+  try { normalizeBasePath('apps'); } catch { threw = true; }
+  assert(threw, 'rejects missing leading slash');
+  threw = false;
+  try { normalizeBasePath('relative/path'); } catch { threw = true; }
+  assert(threw, 'rejects relative path');
+}
+
+async function test_base_path_rejects_empty() {
+  let threw = false;
+  try { normalizeBasePath(''); } catch { threw = true; }
+  assert(threw, 'rejects empty string');
+  threw = false;
+  try { normalizeBasePath(undefined); } catch { threw = true; }
+  assert(threw, 'rejects undefined');
+}
+
+async function test_base_path_server_uses_helper() {
+  setup(); createNs('bpns');
+  const relBase = path.join(TMP, 'releases', 'bpns');
+  fs.mkdirSync(relBase, { recursive: true });
+  fs.writeFileSync(path.join(relBase, 'index.html'), 'bp');
+  fs.symlinkSync(relBase, path.join(relBase, '..', 'bpns', 'current'));
+  const { server, port } = await startServer({ appBasePath: '/custom/' });
+  try {
+    let r = await get(port, '/custom/bpns/');
+    assert(r.status === 200, 'trailing-slash normalized, serves at /custom/bpns/');
+    assert(r.text === 'bp', 'body correct');
+    r = await get(port, '/custom/bpns/index.html');
+    assert(r.status === 200, 'explicit file works');
+  } finally { await stopServer(server); }
+}
+
 // --- Runner ---
 
 const tests = [
@@ -938,6 +984,11 @@ const tests = [
   ['readBody_oversized_413', test_readBody_oversized_413],
   ['release_timestamp_millis', test_release_timestamp_millis],
   ['docker_security_opts', test_docker_security_opts],
+  ['base_path_strips_trailing_slashes', test_base_path_strips_trailing_slashes],
+  ['base_path_keeps_root', test_base_path_keeps_root],
+  ['base_path_rejects_no_leading_slash', test_base_path_rejects_no_leading_slash],
+  ['base_path_rejects_empty', test_base_path_rejects_empty],
+  ['base_path_server_uses_helper', test_base_path_server_uses_helper],
 ];
 
 let pass = 0, fail = 0;

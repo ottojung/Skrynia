@@ -11,6 +11,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const { normalizeBasePath } = require('./base-path.js');
 
 const DATA_DIR = process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
 const RELEASES_DIR = path.join(DATA_DIR, 'releases');
@@ -22,7 +23,7 @@ const BUILDER_IMAGE = process.env.SKRYNIA_BUILDER_IMAGE || 'skrynia-builder:0.1.
 // Configurable URL base path for app serving (informational only in admin CLI).
 // There is no canonical prefix; the deployer sets this to match the
 // reverse proxy or web server configuration.
-const APP_BASE_PATH = (process.env.SKRYNIA_APP_BASE_PATH || '/apps').replace(/\/+$/, '');
+const APP_BASE_PATH = normalizeBasePath(process.env.SKRYNIA_APP_BASE_PATH || '/apps');
 
 // Optional separate filesystem directory where active app symlinks are exposed.
 // When set, admin deploy creates APP_DIR/{ns} -> release dir symlinks.

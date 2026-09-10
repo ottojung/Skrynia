@@ -25,6 +25,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { normalizeBasePath } = require('./base-path.js');
 const { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync, statSync, readdirSync, realpathSync, renameSync, openSync, closeSync } = fs;
 const { O_CREAT, O_EXCL, O_WRONLY } = fs.constants || {};
 
@@ -39,7 +40,7 @@ function createServer(opts) {
   // Configurable URL base path for app serving (default "/apps").
   // There is no canonical prefix; the deployer sets this to match the
   // reverse proxy or web server configuration (e.g. "/a", "/apps", "/s").
-  const APP_BASE_PATH = (opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps').replace(/\/+$/, '');
+  const APP_BASE_PATH = normalizeBasePath(opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps');
 
   // Optional separate filesystem directory where active app symlinks are
   // exposed for direct serving by an external web server (e.g. nginx).
