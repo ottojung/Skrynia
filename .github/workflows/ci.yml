@@ -41,6 +41,7 @@ jobs:
           fetch-depth: 0
 
       - name: Login to GHCR
+        if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -92,7 +93,7 @@ jobs:
 
       - name: Smoke test skrynia image
         run: |
-          docker run --rm ghcr.io/ottojung/skrynia:latest node -e "console.log('skrynia ok')"
+          docker run --rm --entrypoint node ghcr.io/ottojung/skrynia:latest /app/src/admin.js help
 
       - name: Smoke test skrynia-builder image
         run: |
