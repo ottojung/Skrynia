@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main, skrynia-platform]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: make test
+
+  builder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build builder image
+        run: docker build -t skrynia-builder:ci builder/
+      - name: Verify builder runs make
+        run: |
+          mkdir -p /tmp/test-app
+          printf 'build:\n\tmkdir -p build && echo ok > build/index.html\n' > /tmp/test-app/Makefile
+          docker run --rm --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp:size=256m --network none --security-opt no-new-privileges --cap-drop ALL -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
+          test -f /tmp/test-app/build/index.html

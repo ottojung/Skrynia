@@ -1,0 +1,17 @@
+[Unit]
+Description=Skrynia platform server
+After=network.target
+
+[Service]
+Type=simple
+User=skrynia
+Group=skrynia
+ExecStart=/usr/local/bin/skrynia-server
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/skrynia
+
+[Install]
+WantedBy=multi-user.target
