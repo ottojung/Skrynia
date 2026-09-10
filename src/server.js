@@ -259,9 +259,7 @@ function createServer(opts) {
     meta.size = body.length;
     meta.contentType = req.headers['content-type'] || meta.contentType;
     meta.modified = new Date().toISOString();
-    const putMetaTmp = metaPath(ns, key) + '.tmp.' + process.pid;
-    writeFileSync(putMetaTmp, JSON.stringify(meta, null, 2));
-    renameSync(putMetaTmp, metaPath(ns, key));
+    writeFileSync(metaPath(ns, key), JSON.stringify(meta, null, 2));
 
     q.bytes = newBytes;
     saveQuota(ns, q);

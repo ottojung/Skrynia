@@ -953,33 +953,31 @@ async function test_examples_path_is_singular() {
 
 async function test_partial_precommit_invisible() {
   setup(); createNs('pc');
-  // Simulate crash after .dat written but before .meta (partial pre-commit).
+  // Simulate crash during capability-write: .dat + .cap written, .meta absent.
+  // This is the representative incomplete state the commit marker must shield.
   fs.mkdirSync(path.join(TMP, 'storage', 'pc'), { recursive: true });
   fs.writeFileSync(path.join(TMP, 'storage', 'pc', 'orphan.dat'), 'stale');
+  fs.writeFileSync(path.join(TMP, 'storage', 'pc', 'orphan.cap'), 'deadbeef');
+  // Set a tight byte quota: 10 bytes total.  The orphan .dat is 5 bytes.
+  // If the orphan counted toward quota, creating a 6-byte object would
+  // exceed 10 bytes and return 507.  If it does NOT count, create succeeds.
+  fs.writeFileSync(path.join(TMP, 'state', 'pc', 'quota.json'),
+    JSON.stringify({quotaBytes:10,maxObjects:100}));
   const { server, port } = await startServer();
   try {
-    // GET must not expose the partial object.
     let r = await get(port, '/_skrynia/store/orphan');
-    assert(r.status === 404, 'partial object not exposed via GET');
-    // PUT must not expose the partial object.
+    assert(r.status === 404, 'GET orphan -> 404');
     r = await req(port, 'PUT', '/_skrynia/store/orphan', 'x', {'Content-Type':'text/plain'});
-    assert(r.status === 404, 'partial object not exposed via PUT');
-    // DELETE must not expose the partial object.
+    assert(r.status === 404, 'PUT orphan -> 404');
     r = await req(port, 'DELETE', '/_skrynia/store/orphan', null, {});
-    assert(r.status === 404, 'partial object not exposed via DELETE');
-    // Quota must not count the orphaned .dat.
-    r = await req(port, 'POST', '/_skrynia/store/pc/k', 'hi', {'X-Skrynia-Mode':'public-write'});
-    assert(r.status === 201, 'create succeeds alongside orphan');
-    const dir = path.join(TMP, 'storage', 'pc');
-    let bytes = 0, count = 0;
-    for (const e of fs.readdirSync(dir)) {
-      if (e.endsWith('.meta')) {
-        const dp = path.join(dir, e.slice(0, -5) + '.dat');
-        if (fs.existsSync(dp)) { bytes += fs.statSync(dp).size; count++; }
-      }
-    }
-    assert(count === 1, 'orphan .dat not counted in quota count=' + count);
-    assert(bytes === 2, 'only committed .dat counted in bytes=' + bytes);
+    assert(r.status === 404, 'DELETE orphan -> 404');
+    // Exercise the actual quota path: 6 bytes would exceed 10 if orphan counted.
+    r = await req(port, 'POST', '/_skrynia/store/pc/v', 'abcdef', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'create succeeds, orphan not counted, got ' + r.status);
+    // Persisted quota reflects only the committed object.
+    const q = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'pc', 'quota.json'), 'utf8'));
+    assert(q.count === 1, 'persisted count=1, got ' + q.count);
+    assert(q.bytes === 6, 'persisted bytes=6, got ' + q.bytes);
   } finally { await stopServer(server); }
 }
 
