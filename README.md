@@ -6,18 +6,21 @@ A minimal platform for deploying and serving small web apps with durable key-val
 
 - **Deploy from git**: Clone, checkout exact commit, build via container, atomic release activation
 - **Storage API**: Namespace-scoped key-value store with immutable, capability-write, and public-write modes
-- **App serving**: Static file serving from active releases at `/a/{namespace}/`
+- **App serving**: Static file serving from active releases under a configurable base path (no canonical default; set `SKRYNIA_APP_BASE_PATH` to match your proxy)
 - **Admin CLI**: Full lifecycle management with keyword-flag interface
 - **Client library**: Tiny browser library for storage access at `/_skrynia/client/skrynia.js`
 
 ## Quick start
 
 ```sh
-# Install (builds local builder image, installs to /usr/local)
-make install
+# Build the builder image (required for deploys)
+make builder
+
+# Start the server
+node src/server.js
 
 # Deploy an app
-skrynia deploy \
+node src/admin.js deploy \
   --repo git@github.com:myorg/myapp.git \
   --commit abc123def456...789 \
   --subdir . \
@@ -32,7 +35,7 @@ curl http://127.0.0.1:17380/_skrynia/health
 All deploy parameters are required keyword flags:
 
 ```sh
-skrynia deploy \
+node src/admin.js deploy \
   --repo <git-url> \
   --commit <full-40-or-64-hex-sha> \
   --subdir <path-within-repo> \
@@ -50,12 +53,13 @@ Deploy process:
 5. Auto-creates namespace with default quota if absent (preserves existing)
 6. Atomic rename staging dir into release dir (same filesystem)
 7. Atomically activates release via symlink swap
+8. If `SKRYNIA_APP_DIR` is set, atomically exposes `APP_DIR/{namespace}` symlink
 
 ### Included example
 
 ```sh
 # Deploy the hello example from this repo
-skrynia deploy \
+node src/admin.js deploy \
   --repo git@github.com:ottojung/Skrynia.git \
   --commit $(git rev-parse HEAD) \
   --subdir examples/hello \
@@ -67,30 +71,35 @@ skrynia deploy \
 ## CLI reference
 
 ```
-skrynia deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]
-skrynia undeploy --namespace <name>
-skrynia rollback --namespace <name> [--release <id>]
-skrynia releases --namespace <name>
-skrynia inspect --namespace <name>
+node src/admin.js deploy --repo <url> --commit <sha> --subdir <path> --namespace <name> [--builder IMAGE]
+node src/admin.js undeploy --namespace <name>
+node src/admin.js rollback --namespace <name> [--release <id>]
+node src/admin.js releases --namespace <name>
+node src/admin.js inspect --namespace <name>
 
-skrynia ns create --namespace <name> [--quota BYTES]
-skrynia ns remove --namespace <name>
-skrynia ns inspect --namespace <name>
-skrynia ns list
+node src/admin.js ns create --namespace <name> [--quota BYTES]
+node src/admin.js ns remove --namespace <name>
+node src/admin.js ns inspect --namespace <name>
+node src/admin.js ns list
 ```
 
 Commands are positional words; all data arguments are keyword flags.
 
 ## Configuration
 
-`/usr/local/share/skrynia/skrynia.conf`:
+Environment variables:
 
-```sh
-SKRYNIA_PORT=17380
-SKRYNIA_DATA_DIR=/var/lib/skrynia
-SKRYNIA_BUILDER_IMAGE=skrynia-builder:0.1.0
-SKRYNIA_DEFAULT_QUOTA_BYTES=10485760
-```
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SKRYNIA_PORT` | `17380` | Server listen port |
+| `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Mutable state directory |
+| `SKRYNIA_APP_BASE_PATH` | `/apps` | URL prefix for app serving (set to match your proxy) |
+| `SKRYNIA_APP_DIR` | (none) | Filesystem dir for exposed app symlinks |
+| `SKRYNIA_BUILDER_IMAGE` | `skrynia-builder:0.1.0` | Builder Docker image |
+| `SKRYNIA_DEFAULT_QUOTA_BYTES` | `10485760` | Default namespace quota |
+| `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Max objects per namespace |
+| `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
+| `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max object size |
 
 ## Storage API
 
@@ -100,7 +109,7 @@ SKRYNIA_DEFAULT_QUOTA_BYTES=10485760
 - `POST /_skrynia/store/{ns}/{key}` — create object
 - `PUT /_skrynia/store/{ns}/{key}` — replace object
 - `DELETE /_skrynia/store/{ns}/{key}` — delete object
-- `GET /a/{ns}/{path}` — serve app static files
+- `GET {base_path}/{ns}/{path}` — serve app static files (base_path configurable, no canonical default)
 
 See [docs/api-spec.md](docs/api-spec.md) for full details.
 
@@ -111,6 +120,7 @@ See [docs/api-spec.md](docs/api-spec.md) for full details.
 - **Builder**: Local Docker image (`node:20-alpine` + make + git); runs with `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges`
 - **Storage**: Filesystem-based; one `.dat`/`.meta`/`.cap` triplet per object per namespace
 - **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
+- **APP_DIR**: Optional external exposure; `APP_DIR/{ns}` symlink to release dir for direct web server access
 
 ## Running tests
 

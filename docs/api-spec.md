@@ -108,8 +108,12 @@ Errors:
 ### App serving
 
 ```
-GET /a/{namespace}/{path}
+GET {base_path}/{namespace}/{path}
 ```
+
+Where `base_path` defaults to `/apps` and is configurable via `SKRYNIA_APP_BASE_PATH`.
+There is no canonical prefix; the deployer sets this to match the reverse proxy
+or web server configuration.
 
 Serves static files from the currently active release for the namespace.
 Falls back to `index.html` for directory requests.

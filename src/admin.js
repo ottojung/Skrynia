@@ -11,12 +11,23 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
+const { normalizeBasePath } = require('./base-path.js');
 
 const DATA_DIR = process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
 const RELEASES_DIR = path.join(DATA_DIR, 'releases');
 const STORAGE_DIR = path.join(DATA_DIR, 'storage');
 const STATE_DIR = path.join(DATA_DIR, 'state');
+const BUILDS_DIR = path.join(DATA_DIR, 'builds');
 const BUILDER_IMAGE = process.env.SKRYNIA_BUILDER_IMAGE || 'skrynia-builder:0.1.0';
+
+// Configurable URL base path for app serving (informational only in admin CLI).
+// There is no canonical prefix; the deployer sets this to match the
+// reverse proxy or web server configuration.
+const APP_BASE_PATH = normalizeBasePath(process.env.SKRYNIA_APP_BASE_PATH || '/apps');
+
+// Optional separate filesystem directory where active app symlinks are exposed.
+// When set, admin deploy creates APP_DIR/{ns} -> release dir symlinks.
+const APP_DIR = process.env.SKRYNIA_APP_DIR || '';
 
 // --- Utilities ---
 
@@ -34,6 +45,38 @@ function currentLink(ns) { return path.join(RELEASES_DIR, ns, 'current'); }
 function configPath(ns) { return path.join(STATE_DIR, ns, 'config.json'); }
 function quotaPath(ns) { return path.join(STATE_DIR, ns, 'quota.json'); }
 function stagingDir(ns) { return path.join(RELEASES_DIR, ns, '.staging-' + process.pid); }
+
+// --- Unified active link ---
+// When APP_DIR is configured, the active link lives there (for an external web
+// server to serve directly).  Otherwise it is the internal RELEASES_DIR/.../current.
+// Deploy and rollback always atomically swap this one symlink.
+
+function activeLink(ns) {
+  return APP_DIR ? path.join(APP_DIR, ns) : currentLink(ns);
+}
+
+function activateRelease(ns, releaseDir) {
+  if (APP_DIR) ensureDir(APP_DIR);
+  else ensureDir(path.join(RELEASES_DIR, ns));
+  const link = activeLink(ns);
+  const tmpLink = link + '.tmp.' + process.pid;
+  try { fs.unlinkSync(tmpLink); } catch {}
+  safeSymlinkSync(releaseDir, tmpLink);
+  safeRenameSync(tmpLink, link);
+}
+
+function deactivateRelease(ns) {
+  const link = activeLink(ns);
+  if (fs.existsSync(link)) {
+    try { fs.unlinkSync(link); } catch {}
+  }
+}
+
+function currentReleaseId(ns) {
+  const link = activeLink(ns);
+  if (!fs.existsSync(link)) return null;
+  try { return fs.basename(fs.readlinkSync(link)); } catch { return null; }
+}
 
 // --- Strict namespace validator ---
 const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -188,7 +231,8 @@ function cmdDeploy(args) {
   if (subdir === '') die('subdirectory must not be empty');
 
   // 1. Clone to temp workspace
-  const workDir = fs.mkdtempSync('/tmp/skrynia-build-');
+  ensureDir(BUILDS_DIR);
+  const workDir = fs.mkdtempSync(path.join(BUILDS_DIR, 'build-'));
   const stageDir = stagingDir(ns);
   try {
     info('cloning repository...');
@@ -256,12 +300,7 @@ function cmdDeploy(args) {
     safeRenameSync(stageDir, relDir);
 
     // 7. Atomic activation
-    const link = currentLink(ns);
-    ensureDir(path.dirname(link));
-    const tmpLink = link + '.tmp.' + process.pid;
-    try { fs.unlinkSync(tmpLink); } catch {}
-    safeSymlinkSync(relDir, tmpLink);
-    safeRenameSync(tmpLink, link);
+    activateRelease(ns, relDir);
 
     // 8. Save deployment config
     const cfg = loadConfig(ns) || {};
@@ -272,7 +311,7 @@ function cmdDeploy(args) {
     });
     saveConfig(ns, cfg);
 
-    info('activated release ' + releaseId + ' for /a/' + ns + '/');
+    info('activated release ' + releaseId + ' for ' + APP_BASE_PATH + '/' + ns + '/');
 
     // 9. Prune old releases (keep last 3, skip hidden staging dirs)
     const releases = listReleases(ns);
@@ -298,6 +337,8 @@ function cmdUndeploy(args) {
 
   info('undeploying namespace=' + ns);
 
+  deactivateRelease(ns);
+
   const relDir = path.join(RELEASES_DIR, ns);
   if (fs.existsSync(relDir)) { rmrfDir(relDir); info('removed releases'); }
 
@@ -307,7 +348,7 @@ function cmdUndeploy(args) {
   const stateNs = path.join(STATE_DIR, ns);
   if (fs.existsSync(stateNs)) { rmrfDir(stateNs); info('removed namespace state'); }
 
-  info('undeploy complete for /a/' + ns + '/');
+  info('undeploy complete for ' + APP_BASE_PATH + '/' + ns + '/');
 }
 
 function cmdRollback(args) {
@@ -333,12 +374,8 @@ function cmdRollback(args) {
     rollbackTo = releases[releases.length - 2];
   }
 
-  const link = currentLink(ns);
-  const tmpLink = link + '.tmp.' + process.pid;
   const targetDir = path.join(relBase, rollbackTo);
-  try { fs.unlinkSync(tmpLink); } catch {}
-  safeSymlinkSync(targetDir, tmpLink);
-  safeRenameSync(tmpLink, link);
+  activateRelease(ns, targetDir);
 
   const cfg = loadConfig(ns);
   if (cfg) {
@@ -347,7 +384,7 @@ function cmdRollback(args) {
     saveConfig(ns, cfg);
   }
 
-  info('rolled back /a/' + ns + '/ to release ' + rollbackTo);
+  info('rolled back ' + APP_BASE_PATH + '/' + ns + '/ to release ' + rollbackTo);
 }
 
 function cmdReleases(args) {
@@ -360,9 +397,7 @@ function cmdReleases(args) {
   const relBase = path.join(RELEASES_DIR, ns);
   if (!fs.existsSync(relBase)) die('no releases for namespace ' + ns);
 
-  const current = fs.existsSync(currentLink(ns))
-    ? fs.basename(fs.readlinkSync(currentLink(ns)))
-    : '(none)';
+  const current = currentReleaseId(ns) || '(none)';
 
   const releases = listReleases(ns);
 
