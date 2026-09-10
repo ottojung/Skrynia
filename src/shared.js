@@ -42,11 +42,6 @@ function createShared(dataDir) {
     return JSON.parse(fs.readFileSync(p, 'utf8'));
   }
 
-  function saveQuota(ns, q) {
-    ensureDir(path.dirname(nsQuotaPath(ns)));
-    fs.writeFileSync(nsQuotaPath(ns), JSON.stringify(q, null, 2));
-  }
-
   function recalcQuota(ns) {
     const dir = nsStorageDir(ns);
     let bytes = 0, count = 0;
@@ -57,7 +52,6 @@ function createShared(dataDir) {
     }
     const q = loadQuota(ns);
     q.bytes = bytes; q.count = count;
-    saveQuota(ns, q);
     return q;
   }
 
@@ -77,7 +71,6 @@ function createShared(dataDir) {
     nsConfigPath,
     nsStagingDir,
     loadQuota,
-    saveQuota,
     recalcQuota,
   };
 }

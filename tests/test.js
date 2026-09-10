@@ -955,6 +955,54 @@ async function test_createShared_observes_env_at_call_time() {
   }
 }
 
+// --- Quota regression tests ---
+
+async function test_quota_bytes_enforced() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'bq'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'bq', 'quota.json'), JSON.stringify({quotaBytes:10,maxObjects:100}));
+  const { server, port } = await startServer();
+  try {
+    await req(port, 'POST', '/_skrynia/store/bq/k', 'short', {'X-Skrynia-Mode':'public-write'});
+    let r = await req(port, 'POST', '/_skrynia/store/bq/k2', 'a'.repeat(20), {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 507, 'bytes quota exceeded 507, got ' + r.status);
+    const j = JSON.parse(r.text);
+    assert(j.detail === 'quota_bytes', 'detail quota_bytes');
+  } finally { await stopServer(server); }
+}
+
+async function test_quota_derived_from_filesystem() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'dq'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'dq', 'quota.json'), JSON.stringify({quotaBytes:100,maxObjects:100}));
+  fs.mkdirSync(path.join(TMP, 'storage', 'dq'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'a.dat'), '12345');
+  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'a.meta'), '{}');
+  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'b.dat'), '67890');
+  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'b.meta'), '{}');
+  const { server, port } = await startServer();
+  try {
+    let r = await req(port, 'POST', '/_skrynia/store/dq/k', 'x'.repeat(90), {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'fits within remaining 90 bytes, got ' + r.status);
+    r = await req(port, 'POST', '/_skrynia/store/dq/k2', 'y', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 507, 'exceeds quota after derived usage, got ' + r.status);
+  } finally { await stopServer(server); }
+}
+
+async function test_stale_counters_ignored() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'sc'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'sc', 'quota.json'), JSON.stringify({bytes:999999,count:9999,quotaBytes:100,maxObjects:100}));
+  fs.mkdirSync(path.join(TMP, 'storage', 'sc'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'sc', 'only.dat'), 'data');
+  fs.writeFileSync(path.join(TMP, 'storage', 'sc', 'only.meta'), '{}');
+  const { server, port } = await startServer();
+  try {
+    let r = await req(port, 'POST', '/_skrynia/store/sc/k', 'hi', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'stale counts ignored, create succeeds, got ' + r.status);
+  } finally { await stopServer(server); }
+}
+
 // --- Runner ---
 
 const tests = [
@@ -1016,6 +1064,9 @@ const tests = [
   ['base_path_rejects_empty', test_base_path_rejects_empty],
   ['base_path_server_uses_helper', test_base_path_server_uses_helper],
   ['createShared_observes_env', test_createShared_observes_env_at_call_time],
+  ['quota_bytes_enforced', test_quota_bytes_enforced],
+  ['quota_derived_from_filesystem', test_quota_derived_from_filesystem],
+  ['stale_counters_ignored', test_stale_counters_ignored],
 ];
 
 let pass = 0, fail = 0;
