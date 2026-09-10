@@ -38,8 +38,13 @@ function createShared(dataDir) {
 
   function loadQuota(ns) {
     const p = nsQuotaPath(ns);
-    if (!fs.existsSync(p)) return { bytes: 0, count: 0, quotaBytes: DEFAULT_QUOTA_BYTES, maxObjects: DEFAULT_MAX_OBJECTS };
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (!fs.existsSync(p)) return { quotaBytes: DEFAULT_QUOTA_BYTES, maxObjects: DEFAULT_MAX_OBJECTS };
+    const q = JSON.parse(fs.readFileSync(p, 'utf8'));
+    let dirty = false;
+    if ('bytes' in q) { delete q.bytes; dirty = true; }
+    if ('count' in q) { delete q.count; dirty = true; }
+    if (dirty) fs.writeFileSync(p, JSON.stringify(q, null, 2));
+    return q;
   }
 
   function recalcQuota(ns) {

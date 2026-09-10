@@ -1000,6 +1000,11 @@ async function test_stale_counters_ignored() {
   try {
     let r = await req(port, 'POST', '/_skrynia/store/sc/k', 'hi', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'stale counts ignored, create succeeds, got ' + r.status);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'sc', 'quota.json'), 'utf8'));
+    assert(!('bytes' in onDisk), 'legacy bytes removed from persisted file');
+    assert(!('count' in onDisk), 'legacy count removed from persisted file');
+    assert(onDisk.quotaBytes === 100, 'quotaBytes preserved');
+    assert(onDisk.maxObjects === 100, 'maxObjects preserved');
   } finally { await stopServer(server); }
 }
 
