@@ -166,8 +166,6 @@ function createServer(opts) {
 
     writeFileSync(shared.nsMetaPath(ns, key), JSON.stringify(meta, null, 2));
 
-    q.bytes += body.length; q.count++;
-    shared.saveQuota(ns, q);
     res.writeHead(201, {'Content-Type':'application/json'});
     res.end(JSON.stringify(resp));
   }
@@ -206,8 +204,6 @@ function createServer(opts) {
     meta.modified = new Date().toISOString();
     writeFileSync(shared.nsMetaPath(ns, key), JSON.stringify(meta, null, 2));
 
-    q.bytes = newBytes;
-    shared.saveQuota(ns, q);
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ok:true}));
   }
@@ -227,13 +223,10 @@ function createServer(opts) {
       }
     }
 
-    const q = shared.recalcQuota(ns);
     unlinkSync(op);
     unlinkSync(shared.nsMetaPath(ns, key));
     const cp = shared.nsCapPath(ns, key);
     if (existsSync(cp)) unlinkSync(cp);
-    q.bytes -= meta.size; q.count--;
-    shared.saveQuota(ns, q);
     res.writeHead(200, {'Content-Type':'application/json'});
     res.end(JSON.stringify({ok:true}));
   }

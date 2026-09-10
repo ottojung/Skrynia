@@ -38,13 +38,13 @@ function createShared(dataDir) {
 
   function loadQuota(ns) {
     const p = nsQuotaPath(ns);
-    if (!fs.existsSync(p)) return { bytes: 0, count: 0, quotaBytes: DEFAULT_QUOTA_BYTES, maxObjects: DEFAULT_MAX_OBJECTS };
-    return JSON.parse(fs.readFileSync(p, 'utf8'));
-  }
-
-  function saveQuota(ns, q) {
-    ensureDir(path.dirname(nsQuotaPath(ns)));
-    fs.writeFileSync(nsQuotaPath(ns), JSON.stringify(q, null, 2));
+    if (!fs.existsSync(p)) return { quotaBytes: DEFAULT_QUOTA_BYTES, maxObjects: DEFAULT_MAX_OBJECTS };
+    const q = JSON.parse(fs.readFileSync(p, 'utf8'));
+    let dirty = false;
+    if ('bytes' in q) { delete q.bytes; dirty = true; }
+    if ('count' in q) { delete q.count; dirty = true; }
+    if (dirty) fs.writeFileSync(p, JSON.stringify(q, null, 2));
+    return q;
   }
 
   function recalcQuota(ns) {
@@ -57,7 +57,6 @@ function createShared(dataDir) {
     }
     const q = loadQuota(ns);
     q.bytes = bytes; q.count = count;
-    saveQuota(ns, q);
     return q;
   }
 
@@ -77,7 +76,6 @@ function createShared(dataDir) {
     nsConfigPath,
     nsStagingDir,
     loadQuota,
-    saveQuota,
     recalcQuota,
   };
 }
