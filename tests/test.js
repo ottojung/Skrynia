@@ -14,6 +14,7 @@ const SRC = path.join(__dirname, '..');
 const TMP = '/tmp/skrynia-test';
 const FAKE_BIN = path.join(os.homedir(), '.skrynia-test-bin');
 const TOKEN = 'test-management-token';
+const REPO_MAP = path.join(TMP, 'repo.map');
 
 function rmrf(d) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
 function assert(cond, msg) { if (!cond) throw new Error('ASSERT: ' + msg); }
@@ -23,6 +24,59 @@ function setup() {
   rmrf(FAKE_BIN);
   for (const name of ['releases', 'storage', 'state', 'builds']) fs.mkdirSync(path.join(TMP, name), { recursive: true });
   fs.mkdirSync(FAKE_BIN, { recursive: true });
+  installFakeGit();
+}
+
+function installFakeGit() {
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const script = path.join(FAKE_BIN, 'git');
+  fs.writeFileSync(script, [
+    '#!/bin/sh',
+    'set -eu',
+    'REAL_GIT=' + JSON.stringify(realGit),
+    'REPO_MAP=' + JSON.stringify(REPO_MAP),
+    'case "$1" in',
+    '  clone)',
+    '    shift; while [ "$1" = "--quiet" ] || [ "$1" = "-q" ]; do shift; done',
+    '    repo=""; destdir=""',
+    '    for arg in "$@"; do',
+    '      if [ -z "$repo" ]; then repo="$arg"',
+    '      elif [ -z "$destdir" ]; then destdir="$arg"; fi',
+    '    done',
+    '    case "$repo" in',
+    '      /*) exec "$REAL_GIT" clone --quiet "$repo" "$destdir" ;;',
+    '      *)',
+    '        repobasename="${repo##*:}"',
+    '        if [ -f "$REPO_MAP" ]; then',
+    '          localpath=$(grep -F "$repobasename" "$REPO_MAP" 2>/dev/null | head -1 | cut -d: -f2-)',
+    '        fi',
+    '        if [ -n "${localpath:-}" ] && [ -d "$localpath" ]; then',
+    '          exec "$REAL_GIT" clone --quiet "$localpath" "$destdir"',
+    '        else',
+    '          exec "$REAL_GIT" clone --quiet "$repo" "$destdir"',
+    '        fi',
+    '        ;;',
+    '    esac',
+    '    ;;',
+    '  checkout)',
+    '    shift; while [ "$1" = "--quiet" ] || [ "$1" = "-q" ]; do shift; done',
+    '    exec "$REAL_GIT" "$@"',
+    '    ;;',
+    '  *)',
+    '    exec "$REAL_GIT" "$@"',
+    '    ;;',
+    'esac',
+  ].join('\n'));
+  fs.chmodSync(script, 0o755);
+}
+
+function registerRepo(sshString, localPath) {
+  const name = sshString.split(':')[1];
+  let content = '';
+  try { content = fs.readFileSync(REPO_MAP, 'utf8'); } catch {}
+  const lines = content.split('\n').filter(l => l && !l.startsWith(name + ':'));
+  lines.push(name + ':' + localPath);
+  fs.writeFileSync(REPO_MAP, lines.join('\n') + '\n');
 }
 
 function createNs(ns, quotaBytes, maxObjects) {
@@ -325,13 +379,70 @@ async function test_deploy_validation() {
   setup();
   const { server, port } = await startServer();
   try {
-    let r = await managementGet(port, 'deploy', { repo: 'file:///repo', commit: 'abc', subdir: '.', namespace: 'app' });
+    let r = await managementGet(port, 'deploy', { repo: 'git@github.com:org/repo.git', commit: 'abc', subdir: '.', namespace: 'app' });
     assert(r.status === 400 && jsonBody(r).error === 'invalid_commit', 'short commit rejected');
-    r = await managementGet(port, 'deploy', { repo: 'file:///repo', commit: 'a'.repeat(40), subdir: '../x', namespace: 'app' });
+    r = await managementGet(port, 'deploy', { repo: 'git@github.com:org/repo.git', commit: 'a'.repeat(40), subdir: '../x', namespace: 'app' });
     assert(r.status === 400 && jsonBody(r).error === 'invalid_subdir', 'traversal subdir rejected');
-    r = await managementGet(port, 'deploy', { repo: 'file:///repo', commit: 'a'.repeat(40), subdir: '.', namespace: 'Bad' });
+    r = await managementGet(port, 'deploy', { repo: 'git@github.com:org/repo.git', commit: 'a'.repeat(40), subdir: '.', namespace: 'Bad' });
     assert(r.status === 400 && jsonBody(r).error === 'invalid_namespace', 'invalid namespace rejected');
   } finally { await stopServer(server); }
+}
+
+async function test_deploy_rejects_non_ssh_repo() {
+  setup();
+  const { server, port } = await startServer();
+  try {
+    const cases = [
+      ['/tmp/repo', 'absolute local path'],
+      ['file:///tmp/repo', 'file:// URL'],
+      ['http://github.com/org/repo.git', 'http:// URL'],
+      ['https://github.com/org/repo.git', 'https:// URL'],
+      ['ssh://git@github.com/org/repo.git', 'ssh:// URL'],
+      ['ftp://example.com/repo.git', 'ftp:// URL'],
+      ['../relative/path', 'relative local path'],
+      ['repo.git', 'bare name without @host:'],
+      ['user@host', 'scp-like without path after colon'],
+    ];
+    for (const [repo, desc] of cases) {
+      const r = await managementGet(port, 'deploy', {
+        repo,
+        commit: 'a'.repeat(40),
+        subdir: '.',
+        namespace: 'ns',
+      });
+      assert(r.status === 400 && jsonBody(r).error === 'invalid_repo', desc + ' rejected, got ' + r.status + ': ' + r.text);
+    }
+  } finally { await stopServer(server); }
+}
+
+async function test_deploy_accepts_ssh_repo() {
+  setup();
+  const repo = path.join(TMP, 'repo-accept');
+  const commit = makeRepo(repo, {
+    'index.html': '<h1>accept</h1>',
+    'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
+  });
+  const sshRepo = 'git@github.com:org/repo.git';
+  registerRepo(sshRepo, repo);
+
+  await withFakeDocker(async () => {
+    const { server, port } = await startServer({ appBasePath: '/apps' });
+    try {
+      let r = await managementGet(port, 'deploy', {
+        repo: sshRepo,
+        commit,
+        subdir: '.',
+        namespace: 'accept',
+      });
+      assert(r.status === 200, 'deploy via SSH-style repo: ' + r.text);
+      const deployed = jsonBody(r);
+      assert(deployed.ok && deployed.release, 'deploy result');
+      assert(deployed.path === '/apps/accept/', 'deploy path');
+
+      r = await get(port, '/apps/accept/');
+      assert(r.status === 200 && r.text.includes('accept'), 'app served');
+    } finally { await stopServer(server); }
+  });
 }
 
 async function test_deploy_inspect_releases_and_serving() {
@@ -341,12 +452,14 @@ async function test_deploy_inspect_releases_and_serving() {
     'index.html': '<h1>version one</h1>',
     'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
   });
+  const sshRepo = 'git@test.invalid:myrepo.git';
+  registerRepo(sshRepo, repo);
 
   await withFakeDocker(async () => {
     const { server, port } = await startServer({ appBasePath: '/site' });
     try {
       let r = await managementGet(port, 'deploy', {
-        repo: 'file://' + repo,
+        repo: sshRepo,
         commit,
         subdir: '.',
         namespace: 'birthday-list',
@@ -378,12 +491,14 @@ async function test_deploy_uses_disposable_writable_builder_shape() {
     'index.html': '<h1>x</h1>',
     'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
   });
+  const sshRepo = 'git@test.invalid:shape.git';
+  registerRepo(sshRepo, repo);
   const log = path.join(TMP, 'docker.log');
 
   await withFakeDocker(async () => {
     const { server, port } = await startServer();
     try {
-      const r = await managementGet(port, 'deploy', { repo: 'file://' + repo, commit, subdir: '.', namespace: 'shape' });
+      const r = await managementGet(port, 'deploy', { repo: sshRepo, commit, subdir: '.', namespace: 'shape' });
       assert(r.status === 200, 'deploy succeeds');
     } finally { await stopServer(server); }
   }, log);
@@ -403,16 +518,18 @@ async function test_rollback_and_undeploy_http() {
     'index.html': '<h1>one</h1>',
     'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
   });
+  const sshRepo = 'git@test.invalid:rb.git';
+  registerRepo(sshRepo, repo);
 
   await withFakeDocker(async () => {
     const { server, port } = await startServer({ appBasePath: '/apps' });
     try {
-      let r = await managementGet(port, 'deploy', { repo: 'file://' + repo, commit: first, subdir: '.', namespace: 'rb' });
+      let r = await managementGet(port, 'deploy', { repo: sshRepo, commit: first, subdir: '.', namespace: 'rb' });
       assert(r.status === 200, 'first deploy');
       const firstRelease = jsonBody(r).release;
 
       const second = commitRepo(repo, 'index.html', '<h1>two</h1>', 'two');
-      r = await managementGet(port, 'deploy', { repo: 'file://' + repo, commit: second, subdir: '.', namespace: 'rb' });
+      r = await managementGet(port, 'deploy', { repo: sshRepo, commit: second, subdir: '.', namespace: 'rb' });
       assert(r.status === 200, 'second deploy');
       const secondRelease = jsonBody(r).release;
       assert(firstRelease !== secondRelease, 'release ids differ');
@@ -445,11 +562,13 @@ async function test_external_app_dir_activation() {
     'index.html': '<h1>external</h1>',
     'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
   });
+  const sshRepo = 'git@test.invalid:external.git';
+  registerRepo(sshRepo, repo);
 
   await withFakeDocker(async () => {
     const { server, port } = await startServer({ appDir });
     try {
-      const r = await managementGet(port, 'deploy', { repo: 'file://' + repo, commit, subdir: '.', namespace: 'external' });
+      const r = await managementGet(port, 'deploy', { repo: sshRepo, commit, subdir: '.', namespace: 'external' });
       assert(r.status === 200, 'external deploy');
       const link = path.join(appDir, 'external');
       assert(fs.lstatSync(link).isSymbolicLink(), 'external active link exists');
@@ -572,6 +691,8 @@ const tests = [
   ['incomplete_create_is_reclaimed', test_incomplete_create_is_reclaimed],
   ['client_serving', test_client_serving],
   ['deploy_validation', test_deploy_validation],
+  ['deploy_rejects_non_ssh_repo', test_deploy_rejects_non_ssh_repo],
+  ['deploy_accepts_ssh_repo', test_deploy_accepts_ssh_repo],
   ['deploy_inspect_releases_and_serving', test_deploy_inspect_releases_and_serving],
   ['deploy_uses_disposable_writable_builder_shape', test_deploy_uses_disposable_writable_builder_shape],
   ['rollback_and_undeploy_http', test_rollback_and_undeploy_http],
