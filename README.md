@@ -4,7 +4,7 @@ A minimal platform for deploying and serving small web apps with durable key-val
 
 ## Features
 
-- **Deploy from git over HTTP**: Clone, checkout exact commit, build via container, atomic release activation
+- **Deploy from git over SSH**: Clone from an SSH scp-like repo URL, checkout exact commit, build via container, atomic release activation
 - **Storage API**: Namespace-scoped key-value store with immutable, capability-write, and public-write modes
 - **App serving**: Static file serving from active releases under a configurable base path
 - **HTTP management API**: Deployment, rollback, undeploy, release inspection, and namespace management under `/_skrynia/`
@@ -44,7 +44,7 @@ GET /_skrynia/ns/inspect?namespace=...&token=...
 GET /_skrynia/ns/list?token=...
 ```
 
-`release`, `builder`, and `quota` are optional where shown. Deploy requires `repo`, `commit`, `subdir`, and `namespace`. `commit` must be a full 40- or 64-character hexadecimal git object id, and Skrynia verifies that the checked-out HEAD exactly matches it.
+`release`, `builder`, and `quota` are optional where shown. Deploy requires `repo`, `commit`, `subdir`, and `namespace`. `repo` must be an SSH Git URL in scp-like form `user@host:path` (e.g. `git@github.com:myorg/myapp.git`). Local paths, `file://`, `http://`, `https://`, `ssh://`, and other URL schemes are rejected. `commit` must be a full 40- or 64-character hexadecimal git object id, and Skrynia verifies that the checked-out HEAD exactly matches it.
 
 If `SKRYNIA_TOKEN` is unset, management endpoints return `503 management_api_disabled`. Missing or incorrect tokens return `401 invalid_token`.
 
@@ -54,7 +54,7 @@ Management calls return JSON. A deployment request stays open while clone, build
 
 Deploy process:
 
-1. Validate namespace, exact commit id, and repository subdirectory.
+1. Validate SSH scp-like repo URL, namespace, exact commit id, and repository subdirectory.
 2. Clone the repository into a disposable workspace under `DATA_DIR/builds/`.
 3. Check out the exact commit and verify HEAD.
 4. Run `make build` in the configured builder container.

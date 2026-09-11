@@ -30,9 +30,12 @@ function createManagement(opts) {
   const HEX40 = /^[0-9a-f]{40}$/;
   const HEX64 = /^[0-9a-f]{64}$/;
 
+  const SCP_REPO = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+$/;
+
   function rmrfDir(dir) { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); }
   function fail(status, code, detail) { throw new ManagementError(status, code, detail); }
   function validCommit(commit) { return typeof commit === 'string' && (HEX40.test(commit) || HEX64.test(commit)); }
+  function validRepo(repo) { return typeof repo === 'string' && SCP_REPO.test(repo); }
 
   function loadConfig(ns) {
     const p = shared.nsConfigPath(ns);
@@ -114,6 +117,7 @@ function createManagement(opts) {
     const builder = params.builder || BUILDER_IMAGE;
 
     if (!repo) fail(400, 'missing_repo', 'repo is required');
+    if (!validRepo(repo)) fail(400, 'invalid_repo', 'repo must be an SSH git URL in scp-like form user@host:path');
     if (!commit) fail(400, 'missing_commit', 'commit is required');
     validateNamespace(ns);
     validateSubdir(subdir);

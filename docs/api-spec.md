@@ -125,10 +125,12 @@ Missing or incorrect tokens return `401` with `{"error":"invalid_token"}`.
 ### Deploy
 
 ```text
-GET /_skrynia/deploy?repo={git-url}&commit={sha}&subdir={path}&namespace={ns}&token={token}
+GET /_skrynia/deploy?repo={ssh-url}&commit={sha}&subdir={path}&namespace={ns}&token={token}
 ```
 
 Optional parameter: `builder={docker-image}`.
+
+`repo` must be an SSH Git repository URL in canonical scp-like form `user@host:path` (for example `git@github.com:myorg/myapp.git`). Local paths, `file://`, `http://`, `https://`, `ssh://`, and other URL schemes are rejected.
 
 Required constraints:
 
@@ -148,6 +150,10 @@ Successful response:
   "path": "/apps/myapp/"
 }
 ```
+
+Errors:
+
+- `400 invalid_repo`: repo is not a valid SSH scp-like URL
 
 ### Undeploy
 

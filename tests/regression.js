@@ -11,6 +11,7 @@ const { createServer } = require('../src/server.js');
 const TMP = '/tmp/skrynia-regression';
 const FAKE_BIN = path.join(os.homedir(), '.skrynia-regression-bin');
 const TOKEN = 'regression-token';
+const REPO_MAP = path.join(TMP, 'repo.map');
 
 function rmrf(p) { try { fs.rmSync(p, { recursive: true, force: true }); } catch {} }
 function assert(cond, msg) { if (!cond) throw new Error('ASSERT: ' + msg); }
@@ -20,6 +21,59 @@ function setup() {
   rmrf(FAKE_BIN);
   for (const name of ['releases', 'storage', 'state', 'builds']) fs.mkdirSync(path.join(TMP, name), { recursive: true });
   fs.mkdirSync(FAKE_BIN, { recursive: true });
+  installFakeGit();
+}
+
+function installFakeGit() {
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const script = path.join(FAKE_BIN, 'git');
+  fs.writeFileSync(script, [
+    '#!/bin/sh',
+    'set -eu',
+    'REAL_GIT=' + JSON.stringify(realGit),
+    'REPO_MAP=' + JSON.stringify(REPO_MAP),
+    'case "$1" in',
+    '  clone)',
+    '    shift; while [ "$1" = "--quiet" ] || [ "$1" = "-q" ]; do shift; done',
+    '    repo=""; destdir=""',
+    '    for arg in "$@"; do',
+    '      if [ -z "$repo" ]; then repo="$arg"',
+    '      elif [ -z "$destdir" ]; then destdir="$arg"; fi',
+    '    done',
+    '    case "$repo" in',
+    '      /*) exec "$REAL_GIT" clone --quiet "$repo" "$destdir" ;;',
+    '      *)',
+    '        repobasename="${repo##*:}"',
+    '        if [ -f "$REPO_MAP" ]; then',
+    '          localpath=$(grep -F "$repobasename" "$REPO_MAP" 2>/dev/null | head -1 | cut -d: -f2-)',
+    '        fi',
+    '        if [ -n "${localpath:-}" ] && [ -d "$localpath" ]; then',
+    '          exec "$REAL_GIT" clone --quiet "$localpath" "$destdir"',
+    '        else',
+    '          exec "$REAL_GIT" clone --quiet "$repo" "$destdir"',
+    '        fi',
+    '        ;;',
+    '    esac',
+    '    ;;',
+    '  checkout)',
+    '    shift; while [ "$1" = "--quiet" ] || [ "$1" = "-q" ]; do shift; done',
+    '    exec "$REAL_GIT" "$@"',
+    '    ;;',
+    '  *)',
+    '    exec "$REAL_GIT" "$@"',
+    '    ;;',
+    'esac',
+  ].join('\n'));
+  fs.chmodSync(script, 0o755);
+}
+
+function registerRepo(sshString, localPath) {
+  const name = sshString.split(':')[1];
+  let content = '';
+  try { content = fs.readFileSync(REPO_MAP, 'utf8'); } catch {}
+  const lines = content.split('\n').filter(l => l && !l.startsWith(name + ':'));
+  lines.push(name + ':' + localPath);
+  fs.writeFileSync(REPO_MAP, lines.join('\n') + '\n');
 }
 
 function createNs(ns, quotaBytes, maxObjects) {
@@ -166,13 +220,15 @@ async function test_deploy_failure_cleanup_and_no_namespace() {
   setup();
   const repo = path.join(TMP, 'repo');
   const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:fail.git';
+  registerRepo(sshRepo, repo);
   const staleDir = path.join(TMP, 'releases', 'fail', '.staging-stale');
   fs.mkdirSync(staleDir, { recursive:true });
   fs.writeFileSync(path.join(staleDir, 'sentinel'), 'keep');
   await withFakeDocker(['exit 17'], async () => {
     const { server, port } = await startServer();
     try {
-      const r = await get(port, managementUrl('deploy', { repo:'file://' + repo, commit, subdir:'.', namespace:'fail' }));
+      const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'fail' }));
       assert(r.status === 500, 'failed build returns 500');
       assert(JSON.parse(r.text).error === 'build_failed', 'failed build error code');
       assert(!fs.existsSync(path.join(TMP, 'state', 'fail', 'quota.json')), 'namespace not created on failed deploy');
@@ -188,6 +244,8 @@ async function test_stale_release_staging_is_not_reused() {
   setup();
   const repo = path.join(TMP, 'repo');
   const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:fresh.git';
+  registerRepo(sshRepo, repo);
   const releaseBase = path.join(TMP, 'releases', 'fresh');
   const staleDir = path.join(releaseBase, '.staging-stale');
   fs.mkdirSync(staleDir, { recursive:true });
@@ -201,7 +259,7 @@ async function test_stale_release_staging_is_not_reused() {
   ], async () => {
     const { server, port } = await startServer();
     try {
-      let r = await get(port, managementUrl('deploy', { repo:'file://' + repo, commit, subdir:'.', namespace:'fresh' }));
+      let r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'fresh' }));
       assert(r.status === 200, 'deploy succeeds with stale staging present: ' + r.text);
       const deployed = JSON.parse(r.text);
       const releaseDir = path.join(releaseBase, deployed.release);
@@ -220,6 +278,8 @@ async function test_invalid_build_output_rejected() {
   setup();
   const repo = path.join(TMP, 'repo');
   const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:badbuild.git';
+  registerRepo(sshRepo, repo);
   await withFakeDocker([
     'repo=""',
     'while [ "$#" -gt 0 ]; do if [ "$1" = "-v" ]; then repo="${2%%:*}"; shift 2; else shift; fi; done',
@@ -228,7 +288,7 @@ async function test_invalid_build_output_rejected() {
   ], async () => {
     const { server, port } = await startServer();
     try {
-      const r = await get(port, managementUrl('deploy', { repo:'file://' + repo, commit, subdir:'.', namespace:'badbuild' }));
+      const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'badbuild' }));
       assert(r.status === 500, 'invalid output returns 500');
       assert(JSON.parse(r.text).error === 'invalid_build_output', 'invalid output error code');
       assert(!fs.existsSync(path.join(TMP, 'state', 'badbuild', 'quota.json')), 'namespace not created for invalid output');
