@@ -157,6 +157,9 @@ function createManagement(opts) {
       const absSubdir = path.relative(repoDir, appDir);
       const dockerArgs = [
         'run', '--rm',
+        '--tmpfs', '/tmp:size=256m',
+        '--security-opt', 'no-new-privileges',
+        '--cap-drop', 'ALL',
         '--user', `${owner.uid}:${owner.gid}`,
         '--env', 'HOME=/tmp',
         '-v', repoDir + ':/repo',
