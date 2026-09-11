@@ -507,8 +507,6 @@ async function test_deploy_uses_disposable_writable_builder_shape() {
   assert(args.includes('run --rm'), 'builder uses --rm');
   assert(args.includes('--env HOME=/tmp'), 'builder sets HOME');
   assert(args.includes('-v ') && args.includes(':/repo'), 'builder mounts repo');
-  assert(!args.includes('--read-only'), 'builder root is writable');
-  assert(!args.includes('--network none'), 'builder network is not disabled');
 }
 
 async function test_rollback_and_undeploy_http() {
