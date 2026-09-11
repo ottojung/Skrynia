@@ -166,6 +166,9 @@ async function test_deploy_failure_cleanup_and_no_namespace() {
   setup();
   const repo = path.join(TMP, 'repo');
   const commit = makeRepo(repo);
+  const staleDir = path.join(TMP, 'releases', 'fail', '.staging-stale');
+  fs.mkdirSync(staleDir, { recursive:true });
+  fs.writeFileSync(path.join(staleDir, 'sentinel'), 'keep');
   await withFakeDocker(['exit 17'], async () => {
     const { server, port } = await startServer();
     try {
@@ -174,6 +177,41 @@ async function test_deploy_failure_cleanup_and_no_namespace() {
       assert(JSON.parse(r.text).error === 'build_failed', 'failed build error code');
       assert(!fs.existsSync(path.join(TMP, 'state', 'fail', 'quota.json')), 'namespace not created on failed deploy');
       assert(fs.readdirSync(path.join(TMP, 'builds')).filter(x => x.startsWith('build-')).length === 0, 'build workspace cleaned');
+      assert(fs.existsSync(path.join(staleDir, 'sentinel')), 'failed deploy cleanup leaves other staging directories alone');
+      const staging = fs.readdirSync(path.join(TMP, 'releases', 'fail')).filter(x => x.startsWith('.staging-'));
+      assert(staging.length === 1 && staging[0] === '.staging-stale', 'failed deploy removes only its own staging directory');
+    } finally { await stopServer(server); }
+  });
+}
+
+async function test_stale_release_staging_is_not_reused() {
+  setup();
+  const repo = path.join(TMP, 'repo');
+  const commit = makeRepo(repo);
+  const releaseBase = path.join(TMP, 'releases', 'fresh');
+  const staleDir = path.join(releaseBase, '.staging-stale');
+  fs.mkdirSync(staleDir, { recursive:true });
+  fs.writeFileSync(path.join(staleDir, 'stale.txt'), 'leftover');
+
+  await withFakeDocker([
+    'repo=""',
+    'while [ "$#" -gt 0 ]; do if [ "$1" = "-v" ]; then repo="${2%%:*}"; shift 2; else shift; fi; done',
+    'mkdir -p "$repo/build"',
+    'cp "$repo/index.html" "$repo/build/index.html"',
+  ], async () => {
+    const { server, port } = await startServer();
+    try {
+      let r = await get(port, managementUrl('deploy', { repo:'file://' + repo, commit, subdir:'.', namespace:'fresh' }));
+      assert(r.status === 200, 'deploy succeeds with stale staging present: ' + r.text);
+      const deployed = JSON.parse(r.text);
+      const releaseDir = path.join(releaseBase, deployed.release);
+      assert(fs.existsSync(path.join(releaseDir, 'index.html')), 'new release contains build output');
+      assert(!fs.existsSync(path.join(releaseDir, 'stale.txt')), 'stale staging content is absent from release');
+
+      r = await get(port, managementUrl('releases', { namespace:'fresh' }));
+      assert(r.status === 200, 'release listing succeeds');
+      const releases = JSON.parse(r.text).releases;
+      assert(releases.length === 1 && releases[0] === deployed.release, 'staging directories are excluded from release listing');
     } finally { await stopServer(server); }
   });
 }
@@ -218,6 +256,7 @@ const tests = [
   ['static_symlink_escape', test_static_symlink_escape],
   ['custom_base_path', test_custom_base_path],
   ['deploy_failure_cleanup_and_no_namespace', test_deploy_failure_cleanup_and_no_namespace],
+  ['stale_release_staging_is_not_reused', test_stale_release_staging_is_not_reused],
   ['invalid_build_output_rejected', test_invalid_build_output_rejected],
   ['capability_verifier_not_in_meta', test_capability_verifier_not_in_meta],
 ];
