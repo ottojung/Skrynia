@@ -359,6 +359,98 @@ async function test_incomplete_create_not_counted_towards_quota() {
   } finally { await stopServer(server); }
 }
 
+async function test_hostile_build_permissions_canonicalized() {
+  setup();
+  const repo = path.join(TMP, 'repo');
+  const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:permfix.git';
+  registerRepo(sshRepo, repo);
+  await withFakeDocker([
+    'repo=""',
+    'while [ "$#" -gt 0 ]; do if [ "$1" = "-v" ]; then repo="${2%%:*}"; shift 2; else shift; fi; done',
+    'mkdir -p "$repo/build"',
+    'mkdir -p "$repo/build/deep/nested"',
+    'echo root > "$repo/build/root.txt"',
+    'echo leaf > "$repo/build/deep/leaf.txt"',
+    'echo deep > "$repo/build/deep/nested/deep.txt"',
+    'chmod 0700 "$repo/build"',
+    'chmod 0700 "$repo/build/deep"',
+    'chmod 0700 "$repo/build/deep/nested"',
+    'chmod 0600 "$repo/build/root.txt"',
+    'chmod 0600 "$repo/build/deep/leaf.txt"',
+    'chmod 0600 "$repo/build/deep/nested/deep.txt"',
+  ], async () => {
+    const { server, port } = await startServer();
+    try {
+      const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'permfix' }));
+      assert(r.status === 200, 'deploy with hostile permissions succeeds: ' + r.text);
+      const deployed = JSON.parse(r.text);
+      const releaseDir = path.join(TMP, 'releases', 'permfix', deployed.release);
+      assert((fs.statSync(releaseDir).mode & 0o777) === 0o755, 'release root mode 0755, got ' + (fs.statSync(releaseDir).mode & 0o777).toString(8));
+      assert((fs.statSync(path.join(releaseDir, 'deep')).mode & 0o777) === 0o755, 'nested dir mode 0755');
+      assert((fs.statSync(path.join(releaseDir, 'deep', 'nested')).mode & 0o777) === 0o755, 'deep nested dir mode 0755');
+      assert((fs.statSync(path.join(releaseDir, 'root.txt')).mode & 0o777) === 0o644, 'root file mode 0644');
+      assert((fs.statSync(path.join(releaseDir, 'deep', 'leaf.txt')).mode & 0o777) === 0o644, 'nested file mode 0644');
+      assert((fs.statSync(path.join(releaseDir, 'deep', 'nested', 'deep.txt')).mode & 0o777) === 0o644, 'deep nested file mode 0644');
+    } finally { await stopServer(server); }
+  });
+}
+
+async function test_mkdtemp_root_permissions_canonicalized() {
+  setup();
+  const repo = path.join(TMP, 'repo');
+  const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:mkdtemp.git';
+  registerRepo(sshRepo, repo);
+  await withFakeDocker([
+    'repo=""',
+    'while [ "$#" -gt 0 ]; do if [ "$1" = "-v" ]; then repo="${2%%:*}"; shift 2; else shift; fi; done',
+    'mkdir -p "$repo/build"',
+    'echo data > "$repo/build/index.html"',
+  ], async () => {
+    const { server, port } = await startServer();
+    try {
+      const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'mkdt' }));
+      assert(r.status === 200, 'deploy succeeds: ' + r.text);
+      const deployed = JSON.parse(r.text);
+      const releaseDir = path.join(TMP, 'releases', 'mkdt', deployed.release);
+      assert((fs.statSync(releaseDir).mode & 0o777) === 0o755, 'mkdtemp root 0700 canonicalized to 0755, got ' + (fs.statSync(releaseDir).mode & 0o777).toString(8));
+      assert((fs.statSync(path.join(releaseDir, 'index.html')).mode & 0o777) === 0o644, 'file mode 0644');
+    } finally { await stopServer(server); }
+  });
+}
+
+async function test_no_activation_on_invalid_build_output() {
+  setup();
+  const repo = path.join(TMP, 'repo');
+  const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:noactv.git';
+  registerRepo(sshRepo, repo);
+  const releaseBase = path.join(TMP, 'releases', 'noactv');
+  const activeDir = path.join(releaseBase, 'r1');
+  fs.mkdirSync(activeDir, { recursive: true });
+  fs.writeFileSync(path.join(activeDir, 'index.html'), 'current');
+  fs.mkdirSync(releaseBase, { recursive: true });
+  fs.symlinkSync(activeDir, path.join(releaseBase, 'current'));
+  await withFakeDocker([
+    'repo=""',
+    'while [ "$#" -gt 0 ]; do if [ "$1" = "-v" ]; then repo="${2%%:*}"; shift 2; else shift; fi; done',
+    'mkdir -p "$repo/build"',
+    'cp "$repo/index.html" "$repo/build/index.html"',
+    'ln -s /etc "$repo/build/escape"',
+  ], async () => {
+    const { server, port } = await startServer();
+    try {
+      const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'noactv' }));
+      assert(r.status === 500, 'invalid output fails');
+      assert(JSON.parse(r.text).error === 'invalid_build_output', 'error code');
+      const link = path.join(releaseBase, 'current');
+      assert(fs.lstatSync(link).isSymbolicLink(), 'current symlink still exists');
+      assert(fs.readlinkSync(link) === activeDir, 'current still points to previous release');
+    } finally { await stopServer(server); }
+  });
+}
+
 const tests = [
   ['concurrent_create', test_concurrent_create],
   ['binary_roundtrip', test_binary_roundtrip],
@@ -372,6 +464,9 @@ const tests = [
   ['capability_verifier_not_in_meta', test_capability_verifier_not_in_meta],
   ['ns_create_normalizes_legacy_quota', test_ns_create_normalizes_legacy_quota],
   ['incomplete_create_not_counted_towards_quota', test_incomplete_create_not_counted_towards_quota],
+  ['hostile_build_permissions_canonicalized', test_hostile_build_permissions_canonicalized],
+  ['mkdtemp_root_permissions_canonicalized', test_mkdtemp_root_permissions_canonicalized],
+  ['no_activation_on_invalid_build_output', test_no_activation_on_invalid_build_output],
 ];
 
 (async () => {

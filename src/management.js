@@ -109,6 +109,40 @@ function createManagement(opts) {
     return issues;
   }
 
+  function canonicalizeTreePermissions(dir) {
+    fs.chmodSync(dir, 0o755);
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        canonicalizeTreePermissions(full);
+        fs.chmodSync(full, 0o755);
+      } else if (entry.isFile()) {
+        fs.chmodSync(full, 0o644);
+      }
+    }
+  }
+
+  function validateTreePermissions(dir) {
+    const issues = [];
+    function walk(d, rel) {
+      const st = fs.statSync(d);
+      if ((st.mode & 0o777) !== 0o755) issues.push('dir mode ' + octal(st.mode) + ': ' + (rel || '.'));
+      for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, entry.name);
+        const item = rel ? rel + '/' + entry.name : entry.name;
+        if (entry.isDirectory()) walk(full, item);
+        else if (entry.isFile()) {
+          const s = fs.statSync(full);
+          if ((s.mode & 0o777) !== 0o644) issues.push('file mode ' + octal(s.mode) + ': ' + item);
+        }
+      }
+    }
+    walk(dir, '');
+    return issues;
+  }
+
+  function octal(mode) { return '0' + (mode & 0o777).toString(8); }
+
   function deploy(params) {
     const repo = params.repo;
     const commit = params.commit;
@@ -176,6 +210,11 @@ function createManagement(opts) {
 
       const issues = validateBuildOutput(stageDir);
       if (issues.length) fail(500, 'invalid_build_output', issues.join('; '));
+
+      canonicalizeTreePermissions(stageDir);
+
+      const permIssues = validateTreePermissions(stageDir);
+      if (permIssues.length) fail(500, 'tree_permissions_invalid', permIssues.join('; '));
 
       ensureNamespace(ns);
 
