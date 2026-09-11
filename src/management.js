@@ -30,7 +30,7 @@ function createManagement(opts) {
   const HEX40 = /^[0-9a-f]{40}$/;
   const HEX64 = /^[0-9a-f]{64}$/;
 
-  const SCP_REPO = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:.+$/;
+  const SCP_REPO = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9._-]+:[^ \t\n\r\x00]+$/;
 
   function rmrfDir(dir) { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); }
   function fail(status, code, detail) { throw new ManagementError(status, code, detail); }

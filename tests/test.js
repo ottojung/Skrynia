@@ -417,16 +417,32 @@ async function test_deploy_rejects_non_ssh_repo() {
 
 async function test_deploy_accepts_ssh_repo() {
   setup();
-  const { server, port } = await startServer();
-  try {
-    const r = await managementGet(port, 'deploy', {
-      repo: 'git@test.invalid:myrepo.git',
-      commit: 'a'.repeat(40),
-      subdir: '.',
-      namespace: 'ns',
-    });
-    assert(r.status !== 400 || jsonBody(r).error !== 'invalid_repo', 'valid SCP-like repo accepted');
-  } finally { await stopServer(server); }
+  const repo = path.join(TMP, 'repo-accept');
+  const commit = makeRepo(repo, {
+    'index.html': '<h1>accept</h1>',
+    'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
+  });
+  const sshRepo = 'git@github.com:org/repo.git';
+  registerRepo(sshRepo, repo);
+
+  await withFakeDocker(async () => {
+    const { server, port } = await startServer({ appBasePath: '/apps' });
+    try {
+      let r = await managementGet(port, 'deploy', {
+        repo: sshRepo,
+        commit,
+        subdir: '.',
+        namespace: 'accept',
+      });
+      assert(r.status === 200, 'deploy via SSH-style repo: ' + r.text);
+      const deployed = jsonBody(r);
+      assert(deployed.ok && deployed.release, 'deploy result');
+      assert(deployed.path === '/apps/accept/', 'deploy path');
+
+      r = await get(port, '/apps/accept/');
+      assert(r.status === 200 && r.text.includes('accept'), 'app served');
+    } finally { await stopServer(server); }
+  });
 }
 
 async function test_deploy_inspect_releases_and_serving() {
