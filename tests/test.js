@@ -8,11 +8,13 @@ const os = require('os');
 const { execFileSync } = require('child_process');
 const { createServer } = require('../src/server.js');
 const { normalizeBasePath } = require('../src/base-path.js');
+const { createShared } = require('../src/shared.js');
 
 const SRC = path.join(__dirname, '..');
 const TMP = '/tmp/skrynia-test';
 const FAKE_BIN = path.join(os.homedir(), '.skrynia-test-bin');
 const TOKEN = 'test-management-token';
+const REPO_MAP = path.join(TMP, 'repo.map');
 
 function rmrf(d) { try { fs.rmSync(d, { recursive: true, force: true }); } catch {} }
 function assert(cond, msg) { if (!cond) throw new Error('ASSERT: ' + msg); }
@@ -22,14 +24,65 @@ function setup() {
   rmrf(FAKE_BIN);
   for (const name of ['releases', 'storage', 'state', 'builds']) fs.mkdirSync(path.join(TMP, name), { recursive: true });
   fs.mkdirSync(FAKE_BIN, { recursive: true });
+  installFakeGit();
+}
+
+function installFakeGit() {
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const script = path.join(FAKE_BIN, 'git');
+  fs.writeFileSync(script, [
+    '#!/bin/sh',
+    'set -eu',
+    'REAL_GIT=' + JSON.stringify(realGit),
+    'REPO_MAP=' + JSON.stringify(REPO_MAP),
+    'case "$1" in',
+    '  clone)',
+    '    shift; while [ "$1" = "--quiet" ] || [ "$1" = "-q" ]; do shift; done',
+    '    repo=""; destdir=""',
+    '    for arg in "$@"; do',
+    '      if [ -z "$repo" ]; then repo="$arg"',
+    '      elif [ -z "$destdir" ]; then destdir="$arg"; fi',
+    '    done',
+    '    case "$repo" in',
+    '      /*) exec "$REAL_GIT" clone --quiet "$repo" "$destdir" ;;',
+    '      *)',
+    '        repobasename="${repo##*:}"',
+    '        if [ -f "$REPO_MAP" ]; then',
+    '          localpath=$(grep -F "$repobasename" "$REPO_MAP" 2>/dev/null | head -1 | cut -d: -f2-)',
+    '        fi',
+    '        if [ -n "${localpath:-}" ] && [ -d "$localpath" ]; then',
+    '          exec "$REAL_GIT" clone --quiet "$localpath" "$destdir"',
+    '        else',
+    '          exec "$REAL_GIT" clone --quiet "$repo" "$destdir"',
+    '        fi',
+    '        ;;',
+    '    esac',
+    '    ;;',
+    '  checkout)',
+    '    shift; while [ "$1" = "--quiet" ] || [ "$1" = "-q" ]; do shift; done',
+    '    exec "$REAL_GIT" "$@"',
+    '    ;;',
+    '  *)',
+    '    exec "$REAL_GIT" "$@"',
+    '    ;;',
+    'esac',
+  ].join('\n'));
+  fs.chmodSync(script, 0o755);
+}
+
+function registerRepo(sshString, localPath) {
+  const name = sshString.split(':')[1];
+  let content = '';
+  try { content = fs.readFileSync(REPO_MAP, 'utf8'); } catch {}
+  const lines = content.split('\n').filter(l => l && !l.startsWith(name + ':'));
+  lines.push(name + ':' + localPath);
+  fs.writeFileSync(REPO_MAP, lines.join('\n') + '\n');
 }
 
 function createNs(ns, quotaBytes, maxObjects) {
   fs.mkdirSync(path.join(TMP, 'storage', ns), { recursive: true });
   fs.mkdirSync(path.join(TMP, 'state', ns), { recursive: true });
   fs.writeFileSync(path.join(TMP, 'state', ns, 'quota.json'), JSON.stringify({
-    bytes: 0,
-    count: 0,
     quotaBytes: quotaBytes || 10485760,
     maxObjects: maxObjects || 10000,
   }));
@@ -326,13 +379,70 @@ async function test_deploy_validation() {
   setup();
   const { server, port } = await startServer();
   try {
-    let r = await managementGet(port, 'deploy', { repo: 'file:///repo', commit: 'abc', subdir: '.', namespace: 'app' });
+    let r = await managementGet(port, 'deploy', { repo: 'git@github.com:org/repo.git', commit: 'abc', subdir: '.', namespace: 'app' });
     assert(r.status === 400 && jsonBody(r).error === 'invalid_commit', 'short commit rejected');
-    r = await managementGet(port, 'deploy', { repo: 'file:///repo', commit: 'a'.repeat(40), subdir: '../x', namespace: 'app' });
+    r = await managementGet(port, 'deploy', { repo: 'git@github.com:org/repo.git', commit: 'a'.repeat(40), subdir: '../x', namespace: 'app' });
     assert(r.status === 400 && jsonBody(r).error === 'invalid_subdir', 'traversal subdir rejected');
-    r = await managementGet(port, 'deploy', { repo: 'file:///repo', commit: 'a'.repeat(40), subdir: '.', namespace: 'Bad' });
+    r = await managementGet(port, 'deploy', { repo: 'git@github.com:org/repo.git', commit: 'a'.repeat(40), subdir: '.', namespace: 'Bad' });
     assert(r.status === 400 && jsonBody(r).error === 'invalid_namespace', 'invalid namespace rejected');
   } finally { await stopServer(server); }
+}
+
+async function test_deploy_rejects_non_ssh_repo() {
+  setup();
+  const { server, port } = await startServer();
+  try {
+    const cases = [
+      ['/tmp/repo', 'absolute local path'],
+      ['file:///tmp/repo', 'file:// URL'],
+      ['http://github.com/org/repo.git', 'http:// URL'],
+      ['https://github.com/org/repo.git', 'https:// URL'],
+      ['ssh://git@github.com/org/repo.git', 'ssh:// URL'],
+      ['ftp://example.com/repo.git', 'ftp:// URL'],
+      ['../relative/path', 'relative local path'],
+      ['repo.git', 'bare name without @host:'],
+      ['user@host', 'scp-like without path after colon'],
+    ];
+    for (const [repo, desc] of cases) {
+      const r = await managementGet(port, 'deploy', {
+        repo,
+        commit: 'a'.repeat(40),
+        subdir: '.',
+        namespace: 'ns',
+      });
+      assert(r.status === 400 && jsonBody(r).error === 'invalid_repo', desc + ' rejected, got ' + r.status + ': ' + r.text);
+    }
+  } finally { await stopServer(server); }
+}
+
+async function test_deploy_accepts_ssh_repo() {
+  setup();
+  const repo = path.join(TMP, 'repo-accept');
+  const commit = makeRepo(repo, {
+    'index.html': '<h1>accept</h1>',
+    'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
+  });
+  const sshRepo = 'git@github.com:org/repo.git';
+  registerRepo(sshRepo, repo);
+
+  await withFakeDocker(async () => {
+    const { server, port } = await startServer({ appBasePath: '/apps' });
+    try {
+      let r = await managementGet(port, 'deploy', {
+        repo: sshRepo,
+        commit,
+        subdir: '.',
+        namespace: 'accept',
+      });
+      assert(r.status === 200, 'deploy via SSH-style repo: ' + r.text);
+      const deployed = jsonBody(r);
+      assert(deployed.ok && deployed.release, 'deploy result');
+      assert(deployed.path === '/apps/accept/', 'deploy path');
+
+      r = await get(port, '/apps/accept/');
+      assert(r.status === 200 && r.text.includes('accept'), 'app served');
+    } finally { await stopServer(server); }
+  });
 }
 
 async function test_deploy_inspect_releases_and_serving() {
@@ -342,12 +452,14 @@ async function test_deploy_inspect_releases_and_serving() {
     'index.html': '<h1>version one</h1>',
     'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
   });
+  const sshRepo = 'git@test.invalid:myrepo.git';
+  registerRepo(sshRepo, repo);
 
   await withFakeDocker(async () => {
     const { server, port } = await startServer({ appBasePath: '/site' });
     try {
       let r = await managementGet(port, 'deploy', {
-        repo: 'file://' + repo,
+        repo: sshRepo,
         commit,
         subdir: '.',
         namespace: 'birthday-list',
@@ -379,12 +491,14 @@ async function test_deploy_uses_disposable_writable_builder_shape() {
     'index.html': '<h1>x</h1>',
     'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
   });
+  const sshRepo = 'git@test.invalid:shape.git';
+  registerRepo(sshRepo, repo);
   const log = path.join(TMP, 'docker.log');
 
   await withFakeDocker(async () => {
     const { server, port } = await startServer();
     try {
-      const r = await managementGet(port, 'deploy', { repo: 'file://' + repo, commit, subdir: '.', namespace: 'shape' });
+      const r = await managementGet(port, 'deploy', { repo: sshRepo, commit, subdir: '.', namespace: 'shape' });
       assert(r.status === 200, 'deploy succeeds');
     } finally { await stopServer(server); }
   }, log);
@@ -404,16 +518,18 @@ async function test_rollback_and_undeploy_http() {
     'index.html': '<h1>one</h1>',
     'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
   });
+  const sshRepo = 'git@test.invalid:rb.git';
+  registerRepo(sshRepo, repo);
 
   await withFakeDocker(async () => {
     const { server, port } = await startServer({ appBasePath: '/apps' });
     try {
-      let r = await managementGet(port, 'deploy', { repo: 'file://' + repo, commit: first, subdir: '.', namespace: 'rb' });
+      let r = await managementGet(port, 'deploy', { repo: sshRepo, commit: first, subdir: '.', namespace: 'rb' });
       assert(r.status === 200, 'first deploy');
       const firstRelease = jsonBody(r).release;
 
       const second = commitRepo(repo, 'index.html', '<h1>two</h1>', 'two');
-      r = await managementGet(port, 'deploy', { repo: 'file://' + repo, commit: second, subdir: '.', namespace: 'rb' });
+      r = await managementGet(port, 'deploy', { repo: sshRepo, commit: second, subdir: '.', namespace: 'rb' });
       assert(r.status === 200, 'second deploy');
       const secondRelease = jsonBody(r).release;
       assert(firstRelease !== secondRelease, 'release ids differ');
@@ -446,11 +562,13 @@ async function test_external_app_dir_activation() {
     'index.html': '<h1>external</h1>',
     'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
   });
+  const sshRepo = 'git@test.invalid:external.git';
+  registerRepo(sshRepo, repo);
 
   await withFakeDocker(async () => {
     const { server, port } = await startServer({ appDir });
     try {
-      const r = await managementGet(port, 'deploy', { repo: 'file://' + repo, commit, subdir: '.', namespace: 'external' });
+      const r = await managementGet(port, 'deploy', { repo: sshRepo, commit, subdir: '.', namespace: 'external' });
       assert(r.status === 200, 'external deploy');
       const link = path.join(appDir, 'external');
       assert(fs.lstatSync(link).isSymbolicLink(), 'external active link exists');
@@ -484,6 +602,80 @@ async function test_cli_deleted() {
   assert(!fs.existsSync(path.join(SRC, 'src', 'admin.js')), 'admin.js is deleted');
 }
 
+async function test_createShared_observes_env_at_call_time() {
+  const saved1 = process.env.SKRYNIA_DEFAULT_QUOTA_BYTES;
+  const saved2 = process.env.SKRYNIA_MAX_OBJECT_COUNT;
+  try {
+    process.env.SKRYNIA_DEFAULT_QUOTA_BYTES = '2048';
+    process.env.SKRYNIA_MAX_OBJECT_COUNT = '50';
+    const s1 = createShared('/tmp/skrynia-test-env1');
+    assert(s1.DEFAULT_QUOTA_BYTES === 2048, 'first call reads 2048, got ' + s1.DEFAULT_QUOTA_BYTES);
+    assert(s1.DEFAULT_MAX_OBJECTS === 50, 'first call reads 50, got ' + s1.DEFAULT_MAX_OBJECTS);
+
+    process.env.SKRYNIA_DEFAULT_QUOTA_BYTES = '4096';
+    process.env.SKRYNIA_MAX_OBJECT_COUNT = '99';
+    const s2 = createShared('/tmp/skrynia-test-env2');
+    assert(s2.DEFAULT_QUOTA_BYTES === 4096, 'second call reads 4096, got ' + s2.DEFAULT_QUOTA_BYTES);
+    assert(s2.DEFAULT_MAX_OBJECTS === 99, 'second call reads 99, got ' + s2.DEFAULT_MAX_OBJECTS);
+  } finally {
+    if (saved1 === undefined) delete process.env.SKRYNIA_DEFAULT_QUOTA_BYTES;
+    else process.env.SKRYNIA_DEFAULT_QUOTA_BYTES = saved1;
+    if (saved2 === undefined) delete process.env.SKRYNIA_MAX_OBJECT_COUNT;
+    else process.env.SKRYNIA_MAX_OBJECT_COUNT = saved2;
+    rmrf('/tmp/skrynia-test-env1');
+    rmrf('/tmp/skrynia-test-env2');
+  }
+}
+
+async function test_quota_derived_from_filesystem() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'dq'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'dq', 'quota.json'), JSON.stringify({quotaBytes:100,maxObjects:100}));
+  fs.mkdirSync(path.join(TMP, 'storage', 'dq'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'a.dat'), '12345');
+  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'a.meta'), '{}');
+  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'b.dat'), '67890');
+  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'b.meta'), '{}');
+  const { server, port } = await startServer();
+  try {
+    let r = await request(port, 'POST', '/_skrynia/store/dq/k', 'x'.repeat(90), {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'fits within remaining 90 bytes, got ' + r.status);
+    r = await request(port, 'POST', '/_skrynia/store/dq/k2', 'y', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 507, 'exceeds quota after derived usage, got ' + r.status);
+  } finally { await stopServer(server); }
+}
+
+async function test_stale_counters_ignored() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'sc'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'sc', 'quota.json'), JSON.stringify({bytes:999999,count:9999,quotaBytes:100,maxObjects:100}));
+  fs.mkdirSync(path.join(TMP, 'storage', 'sc'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'sc', 'only.dat'), 'data');
+  fs.writeFileSync(path.join(TMP, 'storage', 'sc', 'only.meta'), '{}');
+  const { server, port } = await startServer();
+  try {
+    let r = await request(port, 'POST', '/_skrynia/store/sc/k', 'hi', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'stale counts ignored, create succeeds, got ' + r.status);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'sc', 'quota.json'), 'utf8'));
+    assert(!('bytes' in onDisk), 'legacy bytes removed from persisted file');
+    assert(!('count' in onDisk), 'legacy count removed from persisted file');
+    assert(onDisk.quotaBytes === 100, 'quotaBytes preserved');
+    assert(onDisk.maxObjects === 100, 'maxObjects preserved');
+  } finally { await stopServer(server); }
+}
+
+async function test_ns_create_never_persists_derived() {
+  setup();
+  const { server, port } = await startServer();
+  try {
+    await managementGet(port, 'ns/create', { namespace: 'nderived', quota: 500 });
+    const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'nderived', 'quota.json'), 'utf8'));
+    assert(!('bytes' in onDisk), 'ns/create does not persist bytes');
+    assert(!('count' in onDisk), 'ns/create does not persist count');
+    assert(onDisk.quotaBytes === 500, 'quotaBytes set correctly');
+  } finally { await stopServer(server); }
+}
+
 const tests = [
   ['health', test_health],
   ['management_requires_configured_token', test_management_requires_configured_token],
@@ -499,6 +691,8 @@ const tests = [
   ['incomplete_create_is_reclaimed', test_incomplete_create_is_reclaimed],
   ['client_serving', test_client_serving],
   ['deploy_validation', test_deploy_validation],
+  ['deploy_rejects_non_ssh_repo', test_deploy_rejects_non_ssh_repo],
+  ['deploy_accepts_ssh_repo', test_deploy_accepts_ssh_repo],
   ['deploy_inspect_releases_and_serving', test_deploy_inspect_releases_and_serving],
   ['deploy_uses_disposable_writable_builder_shape', test_deploy_uses_disposable_writable_builder_shape],
   ['rollback_and_undeploy_http', test_rollback_and_undeploy_http],
@@ -506,6 +700,10 @@ const tests = [
   ['base_path_helpers', test_base_path_helpers],
   ['examples_build', test_examples_build],
   ['cli_deleted', test_cli_deleted],
+  ['createShared_observes_env', test_createShared_observes_env_at_call_time],
+  ['quota_derived_from_filesystem', test_quota_derived_from_filesystem],
+  ['stale_counters_ignored', test_stale_counters_ignored],
+  ['ns_create_never_persists_derived', test_ns_create_never_persists_derived],
 ];
 
 (async () => {

@@ -14,10 +14,10 @@ const path = require('path');
 const crypto = require('crypto');
 const { normalizeBasePath } = require('./base-path.js');
 const { createManagement, ManagementError } = require('./management.js');
+const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 
 const {
   existsSync,
-  mkdirSync,
   readFileSync,
   writeFileSync,
   unlinkSync,
@@ -33,35 +33,28 @@ const { O_CREAT, O_EXCL, O_WRONLY } = fs.constants || {};
 function createServer(opts) {
   opts = opts || {};
 
-  const DATA_DIR = opts.dataDir || process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
-  const RELEASES_DIR = path.join(DATA_DIR, 'releases');
-  const STORAGE_DIR = path.join(DATA_DIR, 'storage');
-  const STATE_DIR = path.join(DATA_DIR, 'state');
+  const shared = createShared(opts.dataDir);
+  const { RELEASES_DIR, STORAGE_DIR, STATE_DIR } = shared;
+
   const CLIENT_PATH = path.join(__dirname, 'client.js');
   const APP_BASE_PATH = normalizeBasePath(opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps');
   const APP_DIR = opts.appDir || process.env.SKRYNIA_APP_DIR || '';
   const TOKEN = opts.token !== undefined ? String(opts.token) : String(process.env.SKRYNIA_TOKEN || '');
 
-  const DEFAULT_QUOTA_BYTES = parseInt(process.env.SKRYNIA_DEFAULT_QUOTA_BYTES || '10485760', 10);
-  const MAX_OBJECT_COUNT = parseInt(process.env.SKRYNIA_MAX_OBJECT_COUNT || '10000', 10);
   const MAX_KEY_LENGTH = parseInt(process.env.SKRYNIA_MAX_KEY_LENGTH || '256', 10);
   const MAX_OBJECT_SIZE = parseInt(process.env.SKRYNIA_MAX_OBJECT_SIZE || '10485760', 10);
 
   const management = createManagement({
-    dataDir: DATA_DIR,
+    dataDir: shared.dataDir,
     appBasePath: APP_BASE_PATH,
     appDir: APP_DIR,
     builderImage: opts.builderImage,
   });
 
-  function ensureDir(dir) { mkdirSync(dir, { recursive: true }); }
   function json(res, status, body) {
     res.writeHead(status, {'Content-Type':'application/json'});
     res.end(JSON.stringify(body));
   }
-
-  const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-  function validNs(ns) { return typeof ns === 'string' && NS_RE.test(ns); }
 
   function safeKey(key) {
     if (typeof key !== 'string' || key.length === 0 || key.length > MAX_KEY_LENGTH) return null;
@@ -70,13 +63,7 @@ function createServer(opts) {
     return key;
   }
 
-  function nsDir(ns) { return path.join(STORAGE_DIR, ns); }
-  function objPath(ns, key) { return path.join(nsDir(ns), key + '.dat'); }
-  function metaPath(ns, key) { return path.join(nsDir(ns), key + '.meta'); }
-  function capPath(ns, key) { return path.join(nsDir(ns), key + '.cap'); }
-  function quotaFile(ns) { return path.join(STATE_DIR, ns, 'quota.json'); }
-
-  function nsExists(ns) { return existsSync(quotaFile(ns)); }
+  function nsExists(ns) { return existsSync(shared.nsQuotaPath(ns)); }
 
   function requireNs(ns, res) {
     if (!nsExists(ns)) {
@@ -113,37 +100,6 @@ function createServer(opts) {
     return crypto.timingSafeEqual(bufA, bufB);
   }
 
-  function loadQuota(ns) {
-    const p = quotaFile(ns);
-    if (!existsSync(p)) return { bytes: 0, count: 0, quotaBytes: DEFAULT_QUOTA_BYTES, maxObjects: MAX_OBJECT_COUNT };
-    return JSON.parse(readFileSync(p, 'utf8'));
-  }
-
-  function saveQuota(ns, q) {
-    ensureDir(path.dirname(quotaFile(ns)));
-    writeFileSync(quotaFile(ns), JSON.stringify(q, null, 2));
-  }
-
-  function recalcQuota(ns) {
-    const dir = nsDir(ns);
-    let bytes = 0;
-    let count = 0;
-    if (existsSync(dir)) {
-      for (const entry of readdirSync(dir)) {
-        if (!entry.endsWith('.meta')) continue;
-        const dataPath = path.join(dir, entry.slice(0, -5) + '.dat');
-        if (!existsSync(dataPath)) continue;
-        bytes += statSync(dataPath).size;
-        count++;
-      }
-    }
-    const q = loadQuota(ns);
-    q.bytes = bytes;
-    q.count = count;
-    saveQuota(ns, q);
-    return q;
-  }
-
   function exclusiveCreate(filePath, data) {
     try {
       const fd = openSync(filePath, O_CREAT | O_EXCL | O_WRONLY);
@@ -166,12 +122,10 @@ function createServer(opts) {
   }
 
   function handleGet(ns, key, res) {
-    const mp = metaPath(ns, key);
-    if (!existsSync(mp)) return json(res, 404, {error:'not_found'});
-    const meta = JSON.parse(readFileSync(mp, 'utf8'));
-    const dp = objPath(ns, key);
-    if (!existsSync(dp)) return json(res, 404, {error:'not_found'});
-    const data = readFileSync(dp);
+    const op = shared.nsObjPath(ns, key);
+    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
+    const meta = JSON.parse(readFileSync(shared.nsMetaPath(ns, key), 'utf8'));
+    const data = readFileSync(op);
     res.writeHead(200, {
       'Content-Type': meta.contentType || 'application/octet-stream',
       'X-Skrynia-Mode': meta.mode,
@@ -181,7 +135,7 @@ function createServer(opts) {
   }
 
   function cleanupIncompleteCreate(ns, key) {
-    for (const p of [objPath(ns, key), capPath(ns, key)]) {
+    for (const p of [shared.nsObjPath(ns, key), shared.nsCapPath(ns, key)]) {
       try { unlinkSync(p); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     }
   }
@@ -193,17 +147,17 @@ function createServer(opts) {
     if (!['immutable','capability-write','public-write'].includes(mode)) return json(res, 400, {error:'invalid_mode'});
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 
-    const q = recalcQuota(ns);
+    const q = shared.recalcQuota(ns);
     if (q.count >= q.maxObjects) return json(res, 507, {error:'namespace_full',detail:'max_objects'});
     if (q.bytes + body.length > q.quotaBytes) return json(res, 507, {error:'namespace_full',detail:'quota_bytes'});
 
-    ensureDir(nsDir(ns));
+    ensureDir(shared.nsStorageDir(ns));
 
     // A .meta file is the visibility/commit marker. If data exists without
     // metadata, it is residue from an interrupted create and can be reclaimed.
-    if (!existsSync(metaPath(ns, key)) && (existsSync(objPath(ns, key)) || existsSync(capPath(ns, key)))) cleanupIncompleteCreate(ns, key);
+    if (!existsSync(shared.nsMetaPath(ns, key)) && (existsSync(shared.nsObjPath(ns, key)) || existsSync(shared.nsCapPath(ns, key)))) cleanupIncompleteCreate(ns, key);
 
-    if (!exclusiveCreate(objPath(ns, key), body)) return json(res, 409, {error:'already_exists'});
+    if (!exclusiveCreate(shared.nsObjPath(ns, key), body)) return json(res, 409, {error:'already_exists'});
 
     const now = new Date().toISOString();
     const meta = {
@@ -217,76 +171,67 @@ function createServer(opts) {
     try {
       if (mode === 'capability-write') {
         const capability = generateCapability();
-        writeFileSync(capPath(ns, key), sha256hex(capability));
+        writeFileSync(shared.nsCapPath(ns, key), sha256hex(capability));
         response.capability = capability;
       }
-      const tmp = metaPath(ns, key) + '.tmp.' + process.pid;
+      const tmp = shared.nsMetaPath(ns, key) + '.tmp.' + process.pid;
       writeFileSync(tmp, JSON.stringify(meta, null, 2));
-      renameSync(tmp, metaPath(ns, key));
+      renameSync(tmp, shared.nsMetaPath(ns, key));
     } catch (e) {
       cleanupIncompleteCreate(ns, key);
       throw e;
     }
 
-    q.bytes += body.length;
-    q.count++;
-    saveQuota(ns, q);
     json(res, 201, response);
   }
 
   function handlePut(ns, key, body, req, res) {
     if (!requireNs(ns, res)) return;
 
-    const mp = metaPath(ns, key);
+    const mp = shared.nsMetaPath(ns, key);
     if (!existsSync(mp)) return json(res, 404, {error:'not_found'});
     const meta = JSON.parse(readFileSync(mp, 'utf8'));
     if (meta.mode === 'immutable') return json(res, 403, {error:'immutable'});
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
-      const storedHash = readFileSync(capPath(ns, key), 'utf8');
+      const storedHash = readFileSync(shared.nsCapPath(ns, key), 'utf8');
       if (!timingSafeEqualHex(sha256hex(capability), storedHash)) return json(res, 403, {error:'invalid_capability'});
     }
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 
-    const q = recalcQuota(ns);
+    const q = shared.recalcQuota(ns);
     const newBytes = q.bytes - meta.size + body.length;
     if (newBytes > q.quotaBytes) return json(res, 507, {error:'namespace_full',detail:'quota_bytes'});
 
-    atomicReplace(objPath(ns, key), body);
+    atomicReplace(shared.nsObjPath(ns, key), body);
     meta.size = body.length;
     meta.contentType = req.headers['content-type'] || meta.contentType;
     meta.modified = new Date().toISOString();
     writeFileSync(mp, JSON.stringify(meta, null, 2));
-    q.bytes = newBytes;
-    saveQuota(ns, q);
     json(res, 200, {ok:true});
   }
 
   function handleDelete(ns, key, req, res) {
     if (!requireNs(ns, res)) return;
 
-    const mp = metaPath(ns, key);
+    const mp = shared.nsMetaPath(ns, key);
     if (!existsSync(mp)) return json(res, 404, {error:'not_found'});
     const meta = JSON.parse(readFileSync(mp, 'utf8'));
     if (meta.mode === 'immutable') return json(res, 403, {error:'immutable'});
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
-      if (!timingSafeEqualHex(sha256hex(capability), readFileSync(capPath(ns, key), 'utf8'))) return json(res, 403, {error:'invalid_capability'});
+      if (!timingSafeEqualHex(sha256hex(capability), readFileSync(shared.nsCapPath(ns, key), 'utf8'))) return json(res, 403, {error:'invalid_capability'});
     }
 
-    const q = recalcQuota(ns);
     unlinkSync(mp);
-    try { unlinkSync(objPath(ns, key)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    try { unlinkSync(capPath(ns, key)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    q.bytes -= meta.size;
-    q.count--;
-    saveQuota(ns, q);
+    try { unlinkSync(shared.nsObjPath(ns, key)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    try { unlinkSync(shared.nsCapPath(ns, key)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     json(res, 200, {ok:true});
   }
 
-  function activeLink(ns) { return APP_DIR ? path.join(APP_DIR, ns) : path.join(RELEASES_DIR, ns, 'current'); }
+  function activeLink(ns) { return APP_DIR ? path.join(APP_DIR, ns) : shared.nsCurrentLink(ns); }
 
   function serveFile(filePath, res) {
     const types = {
@@ -453,7 +398,7 @@ function createServer(opts) {
   ensureDir(STATE_DIR);
 
   const server = http.createServer(route);
-  server._skrynia = { APP_BASE_PATH, APP_DIR, DATA_DIR, managementEnabled: Boolean(TOKEN) };
+  server._skrynia = { APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN) };
   return server;
 }
 

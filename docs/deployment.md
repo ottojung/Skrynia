@@ -61,7 +61,7 @@ curl http://127.0.0.1:17380/_skrynia/health
 
 ## Deploying an app
 
-Deployment is an authenticated HTTP request. The URL must be quoted in a shell because it contains `&` characters.
+Deployment is an authenticated HTTP request. The URL must be quoted in a shell because it contains `&` characters. The `repo` parameter must be an SSH Git URL in scp-like form `user@host:path`.
 
 ```sh
 curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
@@ -73,7 +73,7 @@ The request is synchronous: curl returns after clone, build, validation, activat
 
 Deploy process:
 
-1. Validate namespace, subdirectory, and full 40- or 64-hex commit id.
+1. Validate SSH scp-like repo URL, namespace, subdirectory, and full 40- or 64-hex commit id.
 2. Clone to `DATA_DIR/builds/build-*`.
 3. Check out the requested commit and verify exact HEAD equality.
 4. Resolve the requested subdirectory and reject escapes outside the clone.

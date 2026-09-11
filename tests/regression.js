@@ -11,6 +11,7 @@ const { createServer } = require('../src/server.js');
 const TMP = '/tmp/skrynia-regression';
 const FAKE_BIN = path.join(os.homedir(), '.skrynia-regression-bin');
 const TOKEN = 'regression-token';
+const REPO_MAP = path.join(TMP, 'repo.map');
 
 function rmrf(p) { try { fs.rmSync(p, { recursive: true, force: true }); } catch {} }
 function assert(cond, msg) { if (!cond) throw new Error('ASSERT: ' + msg); }
@@ -20,6 +21,59 @@ function setup() {
   rmrf(FAKE_BIN);
   for (const name of ['releases', 'storage', 'state', 'builds']) fs.mkdirSync(path.join(TMP, name), { recursive: true });
   fs.mkdirSync(FAKE_BIN, { recursive: true });
+  installFakeGit();
+}
+
+function installFakeGit() {
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const script = path.join(FAKE_BIN, 'git');
+  fs.writeFileSync(script, [
+    '#!/bin/sh',
+    'set -eu',
+    'REAL_GIT=' + JSON.stringify(realGit),
+    'REPO_MAP=' + JSON.stringify(REPO_MAP),
+    'case "$1" in',
+    '  clone)',
+    '    shift; while [ "$1" = "--quiet" ] || [ "$1" = "-q" ]; do shift; done',
+    '    repo=""; destdir=""',
+    '    for arg in "$@"; do',
+    '      if [ -z "$repo" ]; then repo="$arg"',
+    '      elif [ -z "$destdir" ]; then destdir="$arg"; fi',
+    '    done',
+    '    case "$repo" in',
+    '      /*) exec "$REAL_GIT" clone --quiet "$repo" "$destdir" ;;',
+    '      *)',
+    '        repobasename="${repo##*:}"',
+    '        if [ -f "$REPO_MAP" ]; then',
+    '          localpath=$(grep -F "$repobasename" "$REPO_MAP" 2>/dev/null | head -1 | cut -d: -f2-)',
+    '        fi',
+    '        if [ -n "${localpath:-}" ] && [ -d "$localpath" ]; then',
+    '          exec "$REAL_GIT" clone --quiet "$localpath" "$destdir"',
+    '        else',
+    '          exec "$REAL_GIT" clone --quiet "$repo" "$destdir"',
+    '        fi',
+    '        ;;',
+    '    esac',
+    '    ;;',
+    '  checkout)',
+    '    shift; while [ "$1" = "--quiet" ] || [ "$1" = "-q" ]; do shift; done',
+    '    exec "$REAL_GIT" "$@"',
+    '    ;;',
+    '  *)',
+    '    exec "$REAL_GIT" "$@"',
+    '    ;;',
+    'esac',
+  ].join('\n'));
+  fs.chmodSync(script, 0o755);
+}
+
+function registerRepo(sshString, localPath) {
+  const name = sshString.split(':')[1];
+  let content = '';
+  try { content = fs.readFileSync(REPO_MAP, 'utf8'); } catch {}
+  const lines = content.split('\n').filter(l => l && !l.startsWith(name + ':'));
+  lines.push(name + ':' + localPath);
+  fs.writeFileSync(REPO_MAP, lines.join('\n') + '\n');
 }
 
 function createNs(ns, quotaBytes, maxObjects) {
@@ -166,13 +220,15 @@ async function test_deploy_failure_cleanup_and_no_namespace() {
   setup();
   const repo = path.join(TMP, 'repo');
   const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:fail.git';
+  registerRepo(sshRepo, repo);
   const staleDir = path.join(TMP, 'releases', 'fail', '.staging-stale');
   fs.mkdirSync(staleDir, { recursive:true });
   fs.writeFileSync(path.join(staleDir, 'sentinel'), 'keep');
   await withFakeDocker(['exit 17'], async () => {
     const { server, port } = await startServer();
     try {
-      const r = await get(port, managementUrl('deploy', { repo:'file://' + repo, commit, subdir:'.', namespace:'fail' }));
+      const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'fail' }));
       assert(r.status === 500, 'failed build returns 500');
       assert(JSON.parse(r.text).error === 'build_failed', 'failed build error code');
       assert(!fs.existsSync(path.join(TMP, 'state', 'fail', 'quota.json')), 'namespace not created on failed deploy');
@@ -188,6 +244,8 @@ async function test_stale_release_staging_is_not_reused() {
   setup();
   const repo = path.join(TMP, 'repo');
   const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:fresh.git';
+  registerRepo(sshRepo, repo);
   const releaseBase = path.join(TMP, 'releases', 'fresh');
   const staleDir = path.join(releaseBase, '.staging-stale');
   fs.mkdirSync(staleDir, { recursive:true });
@@ -201,7 +259,7 @@ async function test_stale_release_staging_is_not_reused() {
   ], async () => {
     const { server, port } = await startServer();
     try {
-      let r = await get(port, managementUrl('deploy', { repo:'file://' + repo, commit, subdir:'.', namespace:'fresh' }));
+      let r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'fresh' }));
       assert(r.status === 200, 'deploy succeeds with stale staging present: ' + r.text);
       const deployed = JSON.parse(r.text);
       const releaseDir = path.join(releaseBase, deployed.release);
@@ -220,6 +278,8 @@ async function test_invalid_build_output_rejected() {
   setup();
   const repo = path.join(TMP, 'repo');
   const commit = makeRepo(repo);
+  const sshRepo = 'git@test.invalid:badbuild.git';
+  registerRepo(sshRepo, repo);
   await withFakeDocker([
     'repo=""',
     'while [ "$#" -gt 0 ]; do if [ "$1" = "-v" ]; then repo="${2%%:*}"; shift 2; else shift; fi; done',
@@ -228,7 +288,7 @@ async function test_invalid_build_output_rejected() {
   ], async () => {
     const { server, port } = await startServer();
     try {
-      const r = await get(port, managementUrl('deploy', { repo:'file://' + repo, commit, subdir:'.', namespace:'badbuild' }));
+      const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'badbuild' }));
       assert(r.status === 500, 'invalid output returns 500');
       assert(JSON.parse(r.text).error === 'invalid_build_output', 'invalid output error code');
       assert(!fs.existsSync(path.join(TMP, 'state', 'badbuild', 'quota.json')), 'namespace not created for invalid output');
@@ -248,6 +308,57 @@ async function test_capability_verifier_not_in_meta() {
   } finally { await stopServer(server); }
 }
 
+async function test_ns_create_normalizes_legacy_quota() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'legacy'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'legacy', 'quota.json'), JSON.stringify({
+    bytes: 999999, count: 9999, quotaBytes: 500, maxObjects: 50,
+  }));
+  fs.mkdirSync(path.join(TMP, 'storage', 'legacy'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'legacy', 'real.dat'), 'actual');
+  fs.writeFileSync(path.join(TMP, 'storage', 'legacy', 'real.meta'), '{}');
+  const { server, port } = await startServer();
+  try {
+    const r = await get(port, managementUrl('ns/create', { namespace: 'legacy', quota: 500 }));
+    assert(r.status === 200, 'ns/create on legacy namespace');
+    const body = JSON.parse(r.text);
+    assert(body.created === false, 'namespace already existed');
+    assert(body.quota.bytes === 6, 'derived bytes from filesystem, not legacy 999999');
+    assert(body.quota.count === 1, 'derived count from filesystem, not legacy 9999');
+    assert(body.quota.quotaBytes === 500, 'configured quota preserved');
+    const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'legacy', 'quota.json'), 'utf8'));
+    assert(!('bytes' in onDisk), 'legacy bytes removed from disk');
+    assert(!('count' in onDisk), 'legacy count removed from disk');
+    assert(onDisk.quotaBytes === 500, 'quotaBytes persisted');
+    assert(onDisk.maxObjects === 50, 'maxObjects persisted');
+  } finally { await stopServer(server); }
+}
+
+async function test_incomplete_create_not_counted_towards_quota() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'tight'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'tight', 'quota.json'), JSON.stringify({
+    quotaBytes: 100, maxObjects: 1,
+  }));
+  fs.mkdirSync(path.join(TMP, 'storage', 'tight'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'tight', 'k.dat'), 'dead data');
+  fs.writeFileSync(path.join(TMP, 'storage', 'tight', 'k.cap'), 'dead cap');
+  const { server, port } = await startServer();
+  try {
+    const r = await request(port, 'POST', '/_skrynia/store/tight/k', 'alive', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'create succeeds even with orphan .dat and maxObjects=1, got ' + r.status);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'tight', 'quota.json'), 'utf8'));
+    assert(!('bytes' in onDisk), 'no bytes persisted to disk');
+    assert(!('count' in onDisk), 'no count persisted to disk');
+    assert(fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.dat')), 'k.dat exists');
+    assert(fs.readFileSync(path.join(TMP, 'storage', 'tight', 'k.dat'), 'utf8') === 'alive', 'k.dat content is new value');
+    assert(fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.meta')), 'k.meta exists as commit marker');
+    assert(!fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.cap')), 'old k.cap removed for public-write');
+    const read = await get(port, '/_skrynia/store/tight/k');
+    assert(read.text === 'alive', 'created object readable');
+  } finally { await stopServer(server); }
+}
+
 const tests = [
   ['concurrent_create', test_concurrent_create],
   ['binary_roundtrip', test_binary_roundtrip],
@@ -259,6 +370,8 @@ const tests = [
   ['stale_release_staging_is_not_reused', test_stale_release_staging_is_not_reused],
   ['invalid_build_output_rejected', test_invalid_build_output_rejected],
   ['capability_verifier_not_in_meta', test_capability_verifier_not_in_meta],
+  ['ns_create_normalizes_legacy_quota', test_ns_create_normalizes_legacy_quota],
+  ['incomplete_create_not_counted_towards_quota', test_incomplete_create_not_counted_towards_quota],
 ];
 
 (async () => {
