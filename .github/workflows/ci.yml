@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main, skrynia-platform]
+    branches: [main, 'release/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']
 
 jobs:
   test:
@@ -26,5 +26,96 @@ jobs:
         run: |
           mkdir -p /tmp/test-app
           printf 'build:\n\tmkdir -p build && echo ok > build/index.html\n' > /tmp/test-app/Makefile
-          docker run --rm --user "$(id -u):$(id -g)" --read-only --tmpfs /tmp:size=256m --network none --security-opt no-new-privileges --cap-drop ALL -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
+          docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
           test -f /tmp/test-app/build/index.html
+      - name: Verify builder rootfs is writable
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" skrynia-builder:ci sh -c 'touch /var/tmp/rootfs-writable && rm /var/tmp/rootfs-writable'
+      - name: Verify builder runs npm and builds birthday-list
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp -v "$PWD":/repo -w /repo/example/birthday-list skrynia-builder:ci sh -c 'npm --version && npm run build'
+          test -f example/birthday-list/build/index.html
+
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Login to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive version from git describe
+        id: gitver
+        shell: bash
+        run: |
+          VERSION="$(git describe | sed 's/^v//')"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Using version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push skrynia image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          load: ${{ github.ref != 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/ottojung/skrynia:${{ steps.gitver.outputs.version }}
+            ghcr.io/ottojung/skrynia:latest
+          cache-from: type=gha,scope=docker-skrynia
+          cache-to: type=gha,mode=max,scope=docker-skrynia
+
+      - name: Build and push skrynia-builder image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: builder/Dockerfile
+          load: ${{ github.ref != 'refs/heads/main' }}
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/ottojung/skrynia-builder:${{ steps.gitver.outputs.version }}
+            ghcr.io/ottojung/skrynia-builder:latest
+          cache-from: type=gha,scope=docker-skrynia-builder
+          cache-to: type=gha,mode=max,scope=docker-skrynia-builder
+
+      - name: Pull images for smoke test (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker pull ghcr.io/ottojung/skrynia:latest
+          docker pull ghcr.io/ottojung/skrynia-builder:latest
+
+      - name: Smoke test skrynia HTTP image
+        run: |
+          docker rm -f skrynia-smoke >/dev/null 2>&1 || true
+          docker run -d --name skrynia-smoke \
+            --read-only \
+            --tmpfs /tmp \
+            --tmpfs /var/lib/skrynia \
+            --network host \
+            --env SKRYNIA_TOKEN=smoke-token \
+            ghcr.io/ottojung/skrynia:latest
+          trap 'docker rm -f skrynia-smoke >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 20); do
+            curl -fsS http://127.0.0.1:17380/_skrynia/health && break
+            sleep 0.2
+          done
+          curl -fsS 'http://127.0.0.1:17380/_skrynia/ns/list?token=smoke-token' | grep '"namespaces"'
+
+      - name: Smoke test skrynia-builder image
+        run: |
+          docker run --rm ghcr.io/ottojung/skrynia-builder:latest make --version
+          docker run --rm ghcr.io/ottojung/skrynia-builder:latest npm --version

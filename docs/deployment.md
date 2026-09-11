@@ -2,117 +2,137 @@
 
 ## Prerequisites
 
-- Node.js 20+ on the server
-- Docker (for builder container)
-- git (for cloning app repositories)
+- Node.js 20+ when running Skrynia directly
+- Docker (the server launches builder containers during deploy)
+- git and an SSH client for cloning app repositories
 
-## Installation
+The published Skrynia runtime image already includes git, OpenSSH client, and the Docker CLI.
+
+## Configuration
+
+Skrynia is configured via environment variables or `createServer()` options:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SKRYNIA_PORT` | `17380` | Server listen port |
+| `SKRYNIA_TOKEN` | (none) | Management API token; management is disabled when unset |
+| `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Mutable state: releases, storage, namespace state, build workspaces |
+| `SKRYNIA_APP_BASE_PATH` | `/apps` | URL prefix for app serving (set to match your proxy) |
+| `SKRYNIA_APP_DIR` | (none) | Filesystem dir for exposed app symlinks |
+| `SKRYNIA_BUILDER_IMAGE` | `skrynia-builder:0.1.0` | Docker image for building apps |
+| `SKRYNIA_DEFAULT_QUOTA_BYTES` | `10485760` | Default namespace quota (10 MiB) |
+| `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Default max objects per namespace |
+| `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
+| `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max single object size (10 MiB) |
+
+When `SKRYNIA_APP_DIR` is set, deployment atomically creates or replaces `APP_DIR/{namespace}` as the one active-release symlink. An external web server such as nginx can serve that directory directly.
+
+## Runtime container mounts
+
+When the server runs in Docker, deployment happens inside the long-lived Skrynia server process. The runtime therefore needs explicit access to:
+
+- `SKRYNIA_DATA_DIR` read-write;
+- `SKRYNIA_APP_DIR` read-write when configured, because activation replaces symlinks there;
+- `/var/run/docker.sock` so the server can launch the builder container;
+- repository credentials such as `/root/.ssh` read-only when private SSH repositories are used.
+
+The Skrynia runtime root filesystem can remain `--read-only`; give it a writable `/tmp` tmpfs. The separate builder container is intentionally writable and disposable.
+
+## Staging areas
+
+Skrynia uses two staging locations during deploy:
+
+- **Build workspace** (`DATA_DIR/builds/build-*`): disposable clone/workspace. Removed after every deployment attempt.
+- **Release staging** (`RELEASES_DIR/{ns}/.staging-*`): a fresh unique directory for each deploy, containing validated build output before atomic rename into the immutable release directory. Existing staging directories are never reused and are excluded from release listings.
+
+Both are under `DATA_DIR` so the path is visible to the server and to builder containers through the Docker host bind mount.
+
+## Running
 
 ```sh
-git clone git@github.com:ottojung/Skrynia.git
-cd Skrynia
-make install
+SKRYNIA_TOKEN=replace-me node src/server.js
 ```
 
-This builds the local builder Docker image and installs:
-- `/usr/local/bin/skrynia-server` — Storage server
-- `/usr/local/bin/skrynia` — Admin CLI
-- `/usr/local/lib/skrynia/` — Server and admin code
-- `/usr/local/share/skrynia/` — Configuration and client library
-- `/etc/systemd/system/skrynia.service` — Systemd service (runs as `skrynia` user)
+Health remains public:
+
+```sh
+curl http://127.0.0.1:17380/_skrynia/health
+```
 
 ## Deploying an app
 
-All deploy parameters are required keyword flags:
+Deployment is an authenticated HTTP request. The URL must be quoted in a shell because it contains `&` characters. The `repo` parameter must be an SSH Git URL in scp-like form `user@host:path`.
 
 ```sh
-# Deploy a single-repo app
-skrynia deploy \
-  --repo git@github.com:myorg/myapp.git \
-  --commit abc123def456...789 \
-  --subdir . \
-  --namespace myapp
-
-# Deploy from a monorepo subdirectory
-skrynia deploy \
-  --repo git@github.com:myorg/monorepo.git \
-  --commit def456ghi789...012 \
-  --subdir frontend \
-  --namespace myapp
-
-# Deploy with custom builder
-skrynia deploy \
-  --repo git@github.com:myorg/myapp.git \
-  --commit abc123def456...789 \
-  --subdir . \
-  --namespace myapp \
-  --builder myregistry/builder:v2
+curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
 ```
 
-The `--commit` must be a full 40 or 64 hex character git object id.
+A custom builder can be supplied with `builder=...`.
+
+The request is synchronous: curl returns after clone, build, validation, activation, and cleanup complete.
 
 Deploy process:
-1. Validates namespace and subdirectory
-2. Clones the repo to a temporary workspace
-3. Checks out the exact commit and verifies HEAD matches
-4. Validates subdirectory stays inside repo (realpath check)
-5. Runs `make build` in a read-only container (repo mounted read-write, capabilities dropped)
-6. Validates build output (rejects symlinks and special files)
-7. Auto-creates namespace with default quota if absent (preserves existing on redeploy)
-8. Stages validated output under `RELEASES_DIR/{ns}/.staging-{pid}`
-9. Atomic rename to release directory (same filesystem)
-10. Atomically activates the release via symlink swap
 
-### Included example
+1. Validate SSH scp-like repo URL, namespace, subdirectory, and full 40- or 64-hex commit id.
+2. Clone to `DATA_DIR/builds/build-*`.
+3. Check out the requested commit and verify exact HEAD equality.
+4. Resolve the requested subdirectory and reject escapes outside the clone.
+5. Run `make build` in the builder container.
+6. Require `build/` and reject symlinks/special files in output.
+7. Auto-create the namespace only after a valid build.
+8. Copy output to a fresh unique release staging directory and atomically rename it to the release directory.
+9. Atomically replace the one active-release symlink.
+10. Save deployment metadata and retain the newest three releases.
 
-`examples/hello` is a minimal deployable app:
+### Included examples
 
 ```sh
-skrynia deploy \
-  --repo git@github.com:ottojung/Skrynia.git \
-  --commit $(git rev-parse HEAD) \
-  --subdir examples/hello \
-  --namespace hello-app
+curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/hello&namespace=hello-app&token=replace-me'
+
+curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/birthday-list&namespace=birthday-list&token=replace-me'
 ```
 
-## Rollback
+## Rollback and releases
 
 ```sh
-skrynia rollback --namespace myapp
-skrynia rollback --namespace myapp --release 20260910120000-abc123
+# Roll back to the previous release
+curl 'http://127.0.0.1:17380/_skrynia/rollback?namespace=myapp&token=replace-me'
+
+# Roll back to a named release
+curl 'http://127.0.0.1:17380/_skrynia/rollback?namespace=myapp&release=20260910120000000-abc123&token=replace-me'
+
+# List releases
+curl 'http://127.0.0.1:17380/_skrynia/releases?namespace=myapp&token=replace-me'
+
+# Inspect deployment metadata
+curl 'http://127.0.0.1:17380/_skrynia/inspect?namespace=myapp&token=replace-me'
 ```
 
 ## Undeploy
 
 ```sh
-skrynia undeploy --namespace myapp
+curl 'http://127.0.0.1:17380/_skrynia/undeploy?namespace=myapp&token=replace-me'
 ```
 
-Removes releases, stored data, and namespace state. Always destructive.
+Undeploy is destructive: it removes the active link, releases, stored data, and namespace state.
 
 ## Managing namespaces
 
 ```sh
-skrynia ns create --namespace myns --quota 20971520
-skrynia ns list
-skrynia ns inspect --namespace myns
-skrynia ns remove --namespace myns
-```
-
-## Monitoring
-
-```sh
-curl http://127.0.0.1:17380/_skrynia/health
-skrynia releases --namespace myapp
-skrynia inspect --namespace myapp
+curl 'http://127.0.0.1:17380/_skrynia/ns/create?namespace=myns&quota=20971520&token=replace-me'
+curl 'http://127.0.0.1:17380/_skrynia/ns/list?token=replace-me'
+curl 'http://127.0.0.1:17380/_skrynia/ns/inspect?namespace=myns&token=replace-me'
+curl 'http://127.0.0.1:17380/_skrynia/ns/remove?namespace=myns&token=replace-me'
 ```
 
 ## Builder
 
-The builder image is built locally during `make install`. It is a `node:20-alpine` image with `make` and `git`. Containers run with `--read-only` root filesystem, `--cap-drop ALL`, and `--no-new-privileges`. The app repo is mounted read-write so `make build` can write `build/`.
+The default builder is a `node:20-alpine` image containing `make`, `git`, and `npm`, published to GHCR from `builder/Dockerfile`.
 
-To rebuild the builder image manually:
+Builder containers are deliberately simple: writable root filesystem, normal network access, repository mounted read-write, `HOME=/tmp`, and `--rm` so each build container is thrown away. Skrynia does not present the builder as a security sandbox.
+
+To build the builder image locally:
 
 ```sh
-docker build -t skrynia-builder:0.1.0 builder/
+make builder
 ```

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Birthday Wishlist</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; }
+h1 { margin-bottom: .5rem; }
+p.hint { color: #666; margin-bottom: 1.5rem; font-size: .9rem; }
+ul { list-style: none; }
+li { border: 1px solid #ddd; border-radius: 6px; padding: .75rem 1rem; margin-bottom: .5rem; display: flex; justify-content: space-between; align-items: center; }
+li .info { flex: 1; }
+li .info strong { display: block; }
+li .info small { color: #666; }
+.reserved { background: #f0fdf4; border-color: #86efac; }
+button { padding: .4rem .8rem; border: none; border-radius: 4px; cursor: pointer; font-size: .85rem; }
+.btn-reserve { background: #2563eb; color: #fff; }
+.btn-reserve:hover { background: #1d4ed8; }
+.btn-reserve:disabled { background: #93c5fd; cursor: default; }
+.btn-update { background: #d97706; color: #fff; margin-left: .25rem; }
+.btn-update:hover { background: #b45309; }
+.status { font-size: .85rem; margin-top: 1rem; padding: .5rem; background: #f8fafc; border-radius: 4px; }
+.error { color: #dc2626; }
+</style>
+</head>
+<body>
+<h1>Birthday Wishlist</h1>
+<p class="hint">Reserve a gift. Your name is saved in shared storage. Only one reservation per item.</p>
+<ul id="list"></ul>
+<div class="status" id="status">Loading...</div>
+<script src="/_skrynia/client/skrynia.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  var NS = 'birthday-list';
+
+  // Predetermined item keys and labels.
+  var ITEMS = [
+    { key: 'gift-1', label: 'Novel' },
+    { key: 'gift-2', label: 'Board game' },
+    { key: 'gift-3', label: 'Wireless earbuds' },
+    { key: 'gift-4', label: 'Cookbook' },
+    { key: 'gift-5', label: 'Gift card' },
+  ];
+
+  var store = Skrynia.store(NS);
+  var state = {}; // key -> { reserved: bool, name: str, cap: str|null }
+
+  function setStatus(msg, cls) {
+    var el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'status' + (cls ? ' ' + cls : '');
+  }
+
+  function render() {
+    var ul = document.getElementById('list');
+    ul.innerHTML = '';
+    ITEMS.forEach(function(item) {
+      var s = state[item.key] || {};
+      var li = document.createElement('li');
+      if (s.reserved) li.className = 'reserved';
+
+      var info = document.createElement('div');
+      info.className = 'info';
+      var strong = document.createElement('strong');
+      strong.textContent = item.label;
+      info.appendChild(strong);
+      var small = document.createElement('small');
+      small.textContent = s.reserved ? ('Reserved by ' + s.name) : 'Available';
+      info.appendChild(small);
+      li.appendChild(info);
+
+      if (!s.reserved) {
+        var btn = document.createElement('button');
+        btn.className = 'btn-reserve';
+        btn.textContent = 'Reserve';
+        btn.onclick = function() { reserve(item.key); };
+        li.appendChild(btn);
+      } else if (s.cap) {
+        var upBtn = document.createElement('button');
+        upBtn.className = 'btn-update';
+        upBtn.textContent = 'Change name';
+        upBtn.onclick = function() { updateName(item.key); };
+        li.appendChild(upBtn);
+      }
+      ul.appendChild(li);
+    });
+  }
+
+  function loadAll() {
+    setStatus('Loading...');
+    var pending = ITEMS.length;
+    var done = 0;
+    ITEMS.forEach(function(item) {
+      store.get(item.key).then(function(result) {
+        if (result) {
+          var data = result.bytes.text();
+          state[item.key] = { reserved: true, name: data, cap: null };
+        }
+        done++;
+        if (done === pending) { render(); setStatus('Ready.'); }
+      }).catch(function() {
+        done++;
+        if (done === pending) { render(); setStatus('Ready.'); }
+      });
+    });
+  }
+
+  function reserve(key) {
+    var name = prompt('Your name:');
+    if (!name) return;
+    setStatus('Reserving...');
+    store.create(key, name, { mode: 'capability-write', contentType: 'text/plain' })
+      .then(function(resp) {
+        state[key] = { reserved: true, name: name, cap: resp.capability };
+        render();
+        setStatus('Reserved!');
+      })
+      .catch(function(err) {
+        setStatus('Could not reserve: ' + err.message, 'error');
+      });
+  }
+
+  function updateName(key) {
+    var name = prompt('New name:');
+    if (!name) return;
+    var cap = state[key] && state[key].cap;
+    if (!cap) { setStatus('No capability to update.', 'error'); return; }
+    setStatus('Updating...');
+    store.put(key, name, { capability: cap, contentType: 'text/plain' })
+      .then(function() {
+        state[key].name = name;
+        render();
+        setStatus('Updated!');
+      })
+      .catch(function(err) {
+        setStatus('Update failed: ' + err.message, 'error');
+      });
+  }
+
+  loadAll();
+})();
+</script>
+</body>
+</html>

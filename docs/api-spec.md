@@ -1,49 +1,42 @@
-# Skrynia Storage API Specification
+# Skrynia HTTP API Specification
 
-## Endpoints
+## Public endpoints
 
 ### Health check
 
-```
+```text
 GET /_skrynia/health
 ```
 
 Response: `200 OK`
+
 ```json
 { "ok": true }
 ```
 
 ### Client library
 
-```
+```text
 GET /_skrynia/client/skrynia.js
 ```
 
-Serves the installed browser client library. Returns `404` if not installed.
+Serves the browser client library.
 
 ### Store operations
 
 Base path: `/_skrynia/store/{namespace}/{key}`
 
-#### GET - Read object
+#### Read object
 
-```
+```text
 GET /_skrynia/store/{namespace}/{key}
 ```
 
-Response: `200 OK`
-- Body: raw object bytes
-- `Content-Type`: from object metadata
-- `X-Skrynia-Mode`: object mode
-- `X-Skrynia-Created`: creation timestamp
+Response `200` body is the raw object bytes. Response headers include `Content-Type`, `X-Skrynia-Mode`, and `X-Skrynia-Created`.
 
-Errors:
-- `400 Bad Request`: invalid namespace, key, or percent-encoding
-- `404 Not Found`: key does not exist
+#### Create object
 
-#### POST - Create object
-
-```
+```text
 POST /_skrynia/store/{namespace}/{key}
 Content-Type: {object content type}
 X-Skrynia-Mode: {immutable|capability-write|public-write}
@@ -52,6 +45,7 @@ X-Skrynia-Mode: {immutable|capability-write|public-write}
 ```
 
 Response: `201 Created`
+
 ```json
 {
   "ok": true,
@@ -60,17 +54,11 @@ Response: `201 Created`
 }
 ```
 
-The `capability` field is only present for `capability-write` mode.
+The capability is returned only for `capability-write` mode.
 
-Errors:
-- `400 Bad Request`: invalid mode
-- `409 Conflict`: key already exists
-- `413 Payload Too Large`: object exceeds max size
-- `507 Insufficient Storage`: namespace quota exceeded (detail: `quota_bytes` or `max_objects`)
+#### Replace object
 
-#### PUT - Replace object
-
-```
+```text
 PUT /_skrynia/store/{namespace}/{key}
 Content-Type: {object content type}
 X-Skrynia-Capability: {capability}
@@ -78,91 +66,226 @@ X-Skrynia-Capability: {capability}
 {body}
 ```
 
-Response: `200 OK`
+Response:
+
 ```json
 { "ok": true }
 ```
 
-Errors:
-- `403 Forbidden`: immutable object, missing capability, or wrong capability
-- `404 Not Found`: key does not exist
-- `413 Payload Too Large`: replacement exceeds max size
-- `507 Insufficient Storage`: replacement would exceed namespace quota (detail: `quota_bytes`)
+#### Delete object
 
-#### DELETE - Remove object
-
-```
+```text
 DELETE /_skrynia/store/{namespace}/{key}
 X-Skrynia-Capability: {capability}
 ```
 
-Response: `200 OK`
+Response:
+
 ```json
 { "ok": true }
 ```
 
-Errors:
-- `403 Forbidden`: immutable object, missing capability, or wrong capability
-- `404 Not Found`: key does not exist
+Store errors include:
+
+- `400`: invalid namespace, key, percent encoding, or mode
+- `403`: immutable object, missing capability, or wrong capability
+- `404`: object or namespace does not exist
+- `409`: create conflicts with an existing object or namespace has not been created
+- `413`: object/request exceeds the configured maximum
+- `507`: namespace byte/object quota exceeded
 
 ### App serving
 
-```
-GET /a/{namespace}/{path}
+```text
+GET {base_path}/{namespace}/{path}
 ```
 
-Serves static files from the currently active release for the namespace.
-Falls back to `index.html` for directory requests.
+`base_path` defaults to `/apps` and is configurable via `SKRYNIA_APP_BASE_PATH`. There is no canonical application URL prefix.
 
-Response: `200 OK` with static file content, or:
-- `400 Bad Request`: invalid namespace or percent-encoding
-- `403 Forbidden`: path traversal attempt
-- `404 Not Found`: file not found
-- `503 Service Unavailable`: no active release
+Static files are served from the currently active release. Directory requests use `index.html` when present.
+
+## Management endpoints
+
+Skrynia has no administrative CLI. All lifecycle/namespace administration is exposed over HTTP by the same server process.
+
+Every management request is a `GET` under `/_skrynia/` and must contain a `token` query parameter exactly equal to `SKRYNIA_TOKEN`.
+
+If `SKRYNIA_TOKEN` is unset, management requests return:
+
+```http
+503 Service Unavailable
+```
+
+```json
+{ "error": "management_api_disabled", "detail": "SKRYNIA_TOKEN is not configured" }
+```
+
+Missing or incorrect tokens return `401` with `{"error":"invalid_token"}`.
+
+### Deploy
+
+```text
+GET /_skrynia/deploy?repo={ssh-url}&commit={sha}&subdir={path}&namespace={ns}&token={token}
+```
+
+Optional parameter: `builder={docker-image}`.
+
+`repo` must be an SSH Git repository URL in canonical scp-like form `user@host:path` (for example `git@github.com:myorg/myapp.git`). Local paths, `file://`, `http://`, `https://`, `ssh://`, and other URL schemes are rejected.
+
+Required constraints:
+
+- `commit` is a full 40- or 64-hex git object id;
+- `subdir` is relative and cannot contain `..`;
+- namespace matches the normal namespace grammar.
+
+The request is synchronous and returns after clone, build, validation, release activation, and cleanup.
+
+Successful response:
+
+```json
+{
+  "ok": true,
+  "namespace": "myapp",
+  "release": "20260910120000000-abc123",
+  "path": "/apps/myapp/"
+}
+```
+
+Errors:
+
+- `400 invalid_repo`: repo is not a valid SSH scp-like URL
+
+### Undeploy
+
+```text
+GET /_skrynia/undeploy?namespace={ns}&token={token}
+```
+
+Deletes the active link, all releases, all stored namespace data, and namespace state.
+
+```json
+{ "ok": true, "namespace": "myapp" }
+```
+
+### Rollback
+
+```text
+GET /_skrynia/rollback?namespace={ns}&token={token}
+GET /_skrynia/rollback?namespace={ns}&release={release-id}&token={token}
+```
+
+Without `release`, activates the previous release. With `release`, activates that exact retained release.
+
+```json
+{ "ok": true, "namespace": "myapp", "release": "20260910120000000-abc123" }
+```
+
+### Releases
+
+```text
+GET /_skrynia/releases?namespace={ns}&token={token}
+```
+
+```json
+{
+  "namespace": "myapp",
+  "current": "20260910120000000-abc123",
+  "releases": ["20260910110000000-def456", "20260910120000000-abc123"]
+}
+```
+
+### Deployment inspection
+
+```text
+GET /_skrynia/inspect?namespace={ns}&token={token}
+```
+
+Returns the saved deployment metadata for the namespace.
+
+### Namespace create
+
+```text
+GET /_skrynia/ns/create?namespace={ns}&token={token}
+GET /_skrynia/ns/create?namespace={ns}&quota={bytes}&token={token}
+```
+
+Creating an existing namespace preserves its existing quota.
+
+### Namespace remove
+
+```text
+GET /_skrynia/ns/remove?namespace={ns}&token={token}
+```
+
+Removes namespace storage and state. This operation is distinct from undeploy and does not manage retained release directories.
+
+### Namespace inspect
+
+```text
+GET /_skrynia/ns/inspect?namespace={ns}&token={token}
+```
+
+Returns namespace quota/usage plus deployment metadata when present.
+
+### Namespace list
+
+```text
+GET /_skrynia/ns/list?token={token}
+```
+
+Returns:
+
+```json
+{
+  "namespaces": [
+    {
+      "namespace": "myapp",
+      "quota": { "bytes": 0, "count": 0, "quotaBytes": 10485760, "maxObjects": 10000 },
+      "deployment": null
+    }
+  ]
+}
+```
 
 ## Object modes
 
 ### immutable
-Object cannot be modified or deleted via public API. Use for static assets, versioned data.
+
+Object cannot be modified or deleted through the store API.
 
 ### capability-write (default)
-On create, server returns a 64-character hex capability string. Subsequent put/delete operations must include `X-Skrynia-Capability` header with this value. The capability is stored as a SHA-256 hash server-side; the plaintext capability is never stored.
+
+Create returns a 64-character hexadecimal capability. PUT/DELETE require that value in `X-Skrynia-Capability`. Only its SHA-256 verifier is stored server-side.
 
 ### public-write
-Anyone who knows the namespace and key may modify or delete the object. No capability required.
+
+Anyone who knows namespace and key may replace or delete the object.
 
 ## Namespace validation
 
-Namespaces must match `^[a-z0-9][a-z0-9_-]{0,63}$`:
-- Lowercase alphanumeric, hyphens, underscores only
-- Must start with a letter or digit
-- 1-64 characters
+Namespaces match `^[a-z0-9][a-z0-9_-]{0,63}$`.
 
 ## Key validation
 
-- Keys must be non-empty strings
-- Maximum length: 256 characters (configurable)
-- No null bytes, no `..`, no leading `/`, no double slashes, no forward slashes
-- Keys are URL-decoded before validation
+- non-empty;
+- maximum configured length (default 256);
+- no NUL, `..`, leading slash, double slash, or slash;
+- URL-decoded before validation.
 
 ## Namespace quotas
 
-Each namespace has:
-- `quotaBytes`: maximum total size of stored objects (default 10 MiB)
-- `maxObjects`: maximum number of objects (default 10,000)
-- `bytes`: current total size (recalculated on each mutation)
-- `count`: current object count (recalculated on each mutation)
-
-Quota enforcement happens atomically during create and put operations. PUT enforces the new total quota *before* writing, returning `507` if the replacement would exceed the limit.
+Each namespace records `quotaBytes`, `maxObjects`, current `bytes`, and current `count`. Usage is recalculated from committed object metadata before mutations/inspection.
 
 ## Error response format
 
-All error responses use JSON:
+Errors are JSON:
+
 ```json
 { "error": "error_code" }
 ```
 
-Some errors include additional detail:
+and may include `detail`:
+
 ```json
-{ "error": "namespace_full", "detail": "quota_bytes" }
+{ "error": "invalid_commit", "detail": "commit must be a full 40 or 64 hex git object id" }
 ```
