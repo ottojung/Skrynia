@@ -171,7 +171,7 @@ function createManagement(opts) {
 
     ensureDir(BUILDS_DIR);
     const workDir = fs.mkdtempSync(path.join(BUILDS_DIR, 'build-'));
-    const stageDir = path.join(RELEASES_DIR, ns, '.staging-' + process.pid);
+    let stageDir = null;
 
     try {
       const repoDir = path.join(workDir, 'repo');
@@ -196,7 +196,9 @@ function createManagement(opts) {
       }
       if (appReal !== repoReal && !appReal.startsWith(repoReal + path.sep)) fail(400, 'invalid_subdir', 'subdir escapes repository');
 
-      ensureDir(stageDir);
+      const releaseBase = path.join(RELEASES_DIR, ns);
+      ensureDir(releaseBase);
+      stageDir = fs.mkdtempSync(path.join(releaseBase, '.staging-'));
       const owner = fs.statSync(repoDir);
       const absSubdir = path.relative(repoDir, appDir);
       const dockerArgs = [
@@ -228,6 +230,7 @@ function createManagement(opts) {
       const releaseDir = path.join(RELEASES_DIR, ns, releaseId);
       ensureDir(path.dirname(releaseDir));
       fs.renameSync(stageDir, releaseDir);
+      stageDir = null;
       activateRelease(ns, releaseDir);
 
       const cfg = loadConfig(ns) || {};
@@ -248,7 +251,7 @@ function createManagement(opts) {
       return { ok: true, namespace: ns, release: releaseId, path: APP_BASE_PATH + '/' + ns + '/' };
     } finally {
       rmrfDir(workDir);
-      try { if (fs.existsSync(stageDir) && fs.lstatSync(stageDir).isDirectory()) rmrfDir(stageDir); } catch {}
+      try { if (stageDir && fs.existsSync(stageDir) && fs.lstatSync(stageDir).isDirectory()) rmrfDir(stageDir); } catch {}
     }
   }
 
