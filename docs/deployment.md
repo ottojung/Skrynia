@@ -43,7 +43,7 @@ The Skrynia runtime root filesystem can remain `--read-only`; give it a writable
 Skrynia uses two staging locations during deploy:
 
 - **Build workspace** (`DATA_DIR/builds/build-*`): disposable clone/workspace. Removed after every deployment attempt.
-- **Release staging** (`RELEASES_DIR/{ns}/.staging-{pid}`): validated build output before atomic rename into the immutable release directory.
+- **Release staging** (`RELEASES_DIR/{ns}/.staging-*`): a fresh unique directory for each deploy, containing validated build output before atomic rename into the immutable release directory. Existing staging directories are never reused and are excluded from release listings.
 
 Both are under `DATA_DIR` so the path is visible to the server and to builder containers through the Docker host bind mount.
 
@@ -80,7 +80,7 @@ Deploy process:
 5. Run `make build` in the builder container.
 6. Require `build/` and reject symlinks/special files in output.
 7. Auto-create the namespace only after a valid build.
-8. Copy output to release staging and atomically rename it to the release directory.
+8. Copy output to a fresh unique release staging directory and atomically rename it to the release directory.
 9. Atomically replace the one active-release symlink.
 10. Save deployment metadata and retain the newest three releases.
 
