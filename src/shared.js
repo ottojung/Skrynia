@@ -52,7 +52,11 @@ function createShared(dataDir) {
     let bytes = 0, count = 0;
     if (fs.existsSync(dir)) {
       for (const e of fs.readdirSync(dir)) {
-        if (e.endsWith('.dat')) { bytes += fs.statSync(path.join(dir, e)).size; count++; }
+        if (!e.endsWith('.meta')) continue;
+        const dp = path.join(dir, e.slice(0, -5) + '.dat');
+        if (!fs.existsSync(dp)) continue;
+        bytes += fs.statSync(dp).size;
+        count++;
       }
     }
     const q = loadQuota(ns);

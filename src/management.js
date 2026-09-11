@@ -263,10 +263,8 @@ function createManagement(opts) {
     ensureDir(path.join(STATE_DIR, ns));
     const p = shared.nsQuotaPath(ns);
     if (fs.existsSync(p)) {
-      const existing = JSON.parse(fs.readFileSync(p, 'utf8'));
-      delete existing.bytes;
-      delete existing.count;
-      return { created: false, quota: existing };
+      shared.loadQuota(ns);
+      return { created: false, quota: shared.recalcQuota(ns) };
     }
     const q = {
       quotaBytes: quotaBytes || shared.DEFAULT_QUOTA_BYTES,

@@ -248,6 +248,57 @@ async function test_capability_verifier_not_in_meta() {
   } finally { await stopServer(server); }
 }
 
+async function test_ns_create_normalizes_legacy_quota() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'legacy'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'legacy', 'quota.json'), JSON.stringify({
+    bytes: 999999, count: 9999, quotaBytes: 500, maxObjects: 50,
+  }));
+  fs.mkdirSync(path.join(TMP, 'storage', 'legacy'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'legacy', 'real.dat'), 'actual');
+  fs.writeFileSync(path.join(TMP, 'storage', 'legacy', 'real.meta'), '{}');
+  const { server, port } = await startServer();
+  try {
+    const r = await get(port, managementUrl('ns/create', { namespace: 'legacy', quota: 500 }));
+    assert(r.status === 200, 'ns/create on legacy namespace');
+    const body = JSON.parse(r.text);
+    assert(body.created === false, 'namespace already existed');
+    assert(body.quota.bytes === 6, 'derived bytes from filesystem, not legacy 999999');
+    assert(body.quota.count === 1, 'derived count from filesystem, not legacy 9999');
+    assert(body.quota.quotaBytes === 500, 'configured quota preserved');
+    const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'legacy', 'quota.json'), 'utf8'));
+    assert(!('bytes' in onDisk), 'legacy bytes removed from disk');
+    assert(!('count' in onDisk), 'legacy count removed from disk');
+    assert(onDisk.quotaBytes === 500, 'quotaBytes persisted');
+    assert(onDisk.maxObjects === 50, 'maxObjects persisted');
+  } finally { await stopServer(server); }
+}
+
+async function test_incomplete_create_not_counted_towards_quota() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'state', 'tight'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'state', 'tight', 'quota.json'), JSON.stringify({
+    quotaBytes: 100, maxObjects: 1,
+  }));
+  fs.mkdirSync(path.join(TMP, 'storage', 'tight'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', 'tight', 'k.dat'), 'dead data');
+  fs.writeFileSync(path.join(TMP, 'storage', 'tight', 'k.cap'), 'dead cap');
+  const { server, port } = await startServer();
+  try {
+    const r = await request(port, 'POST', '/_skrynia/store/tight/k', 'alive', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'create succeeds even with orphan .dat and maxObjects=1, got ' + r.status);
+    const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'tight', 'quota.json'), 'utf8'));
+    assert(!('bytes' in onDisk), 'no bytes persisted to disk');
+    assert(!('count' in onDisk), 'no count persisted to disk');
+    assert(fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.dat')), 'k.dat exists');
+    assert(fs.readFileSync(path.join(TMP, 'storage', 'tight', 'k.dat'), 'utf8') === 'alive', 'k.dat content is new value');
+    assert(fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.meta')), 'k.meta exists as commit marker');
+    assert(!fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.cap')), 'old k.cap removed for public-write');
+    const read = await get(port, '/_skrynia/store/tight/k');
+    assert(read.text === 'alive', 'created object readable');
+  } finally { await stopServer(server); }
+}
+
 const tests = [
   ['concurrent_create', test_concurrent_create],
   ['binary_roundtrip', test_binary_roundtrip],
@@ -259,6 +310,8 @@ const tests = [
   ['stale_release_staging_is_not_reused', test_stale_release_staging_is_not_reused],
   ['invalid_build_output_rejected', test_invalid_build_output_rejected],
   ['capability_verifier_not_in_meta', test_capability_verifier_not_in_meta],
+  ['ns_create_normalizes_legacy_quota', test_ns_create_normalizes_legacy_quota],
+  ['incomplete_create_not_counted_towards_quota', test_incomplete_create_not_counted_towards_quota],
 ];
 
 (async () => {
