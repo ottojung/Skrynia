@@ -3,7 +3,7 @@
 const fs = require('fs');
 
 function input(name) {
-  const val = process.env['INPUT_' + name.toUpperCase().replace(/-/g, '_')] || '';
+  const val = process.env['INPUT_' + name.toUpperCase().replace(/ /g, '_')] || '';
   return val.trim();
 }
 
