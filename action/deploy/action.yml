@@ -9,7 +9,7 @@ inputs:
     description: Skrynia management token. Pass as a GitHub secret, never hard-code.
     required: true
   skrynia-url:
-    description: Skrynia management API root (for example https://vau.place/_skrynia).
+    description: Complete Skrynia HTTP root, including any path component (for example https://example.com/platform).
     required: true
   repo:
     description: SSH scp-like Git URL. Defaults to the calling GitHub repository.

@@ -53,9 +53,7 @@ function deriveCommit() {
 function buildUrl(baseUrl, params) {
   const url = new URL(baseUrl);
   const basePath = url.pathname.replace(/\/+$/, '');
-  url.pathname = basePath.endsWith('/_skrynia')
-    ? basePath + '/deploy'
-    : basePath + '/_skrynia/deploy';
+  url.pathname = basePath + '/deploy';
   url.search = '';
   url.hash = '';
   for (const [key, value] of Object.entries(params)) {

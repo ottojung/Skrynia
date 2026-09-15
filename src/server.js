@@ -40,6 +40,14 @@ function createServer(opts) {
   const APP_BASE_PATH = normalizeBasePath(opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps');
   const APP_DIR = opts.appDir || process.env.SKRYNIA_APP_DIR || '';
   const TOKEN = opts.token !== undefined ? String(opts.token) : String(process.env.SKRYNIA_TOKEN || '');
+  const SKRYNIA_URL = opts.skryniaUrl !== undefined ? String(opts.skryniaUrl) : String(process.env.SKRYNIA_URL || '');
+  if (!SKRYNIA_URL) throw new Error('SKRYNIA_URL is required');
+  let publicUrl;
+  try { publicUrl = new URL(SKRYNIA_URL); }
+  catch { throw new Error('SKRYNIA_URL must be an absolute URL'); }
+  if (publicUrl.protocol !== 'http:' && publicUrl.protocol !== 'https:') throw new Error('SKRYNIA_URL must use http or https');
+  if (publicUrl.search || publicUrl.hash) throw new Error('SKRYNIA_URL must not contain query or fragment components');
+  const HTTP_BASE_PATH = normalizeBasePath(publicUrl.pathname || '/');
 
   const MAX_KEY_LENGTH = parseInt(process.env.SKRYNIA_MAX_KEY_LENGTH || '256', 10);
   const MAX_OBJECT_SIZE = parseInt(process.env.SKRYNIA_MAX_OBJECT_SIZE || '10485760', 10);
@@ -75,7 +83,7 @@ function createServer(opts) {
 
   function requireNsCreate(ns, res) {
     if (!nsExists(ns)) {
-      json(res, 409, {error:'namespace_not_created', detail:'create the namespace through /_skrynia/ns/create first'});
+      json(res, 409, {error:'namespace_not_created', detail:'create the namespace through the ns/create endpoint first'});
       return false;
     }
     return true;
@@ -310,33 +318,40 @@ function createServer(opts) {
   }
 
   const managementRoutes = {
-    '/_skrynia/deploy': params => management.deploy(params),
-    '/_skrynia/undeploy': params => management.undeploy(params),
-    '/_skrynia/rollback': params => management.rollback(params),
-    '/_skrynia/releases': params => management.releases(params),
-    '/_skrynia/inspect': params => management.inspect(params),
-    '/_skrynia/ns/create': params => management.namespaceCreate(params),
-    '/_skrynia/ns/remove': params => management.namespaceRemove(params),
-    '/_skrynia/ns/inspect': params => management.namespaceInspect(params),
-    '/_skrynia/ns/list': () => management.namespaceList(),
+    '/deploy': params => management.deploy(params),
+    '/undeploy': params => management.undeploy(params),
+    '/rollback': params => management.rollback(params),
+    '/releases': params => management.releases(params),
+    '/inspect': params => management.inspect(params),
+    '/ns/create': params => management.namespaceCreate(params),
+    '/ns/remove': params => management.namespaceRemove(params),
+    '/ns/inspect': params => management.namespaceInspect(params),
+    '/ns/list': () => management.namespaceList(),
   };
+
+  function routePath(pathname) {
+    if (HTTP_BASE_PATH === '/') return pathname;
+    if (pathname === HTTP_BASE_PATH) return '/';
+    if (!pathname.startsWith(HTTP_BASE_PATH + '/')) return null;
+    return pathname.slice(HTTP_BASE_PATH.length);
+  }
 
   function route(req, res) {
     let url;
     try { url = new URL(req.url, 'http://' + req.headers.host); }
     catch { res.writeHead(400); res.end('Bad request'); return; }
-    const p = url.pathname;
+    const p = routePath(url.pathname);
 
-    if (p === '/_skrynia/health') return json(res, 200, {ok:true});
+    if (p === '/health') return json(res, 200, {ok:true});
 
-    if (p === '/_skrynia/client/skrynia.js') {
+    if (p === '/client/skrynia.js') {
       if (!existsSync(CLIENT_PATH)) { res.writeHead(404); res.end('Not found'); return; }
       res.writeHead(200, {'Content-Type':'application/javascript'});
       res.end(readFileSync(CLIENT_PATH));
       return;
     }
 
-    const managementHandler = managementRoutes[p];
+    const managementHandler = p === null ? undefined : managementRoutes[p];
     if (managementHandler) {
       if (req.method !== 'GET') { res.writeHead(405); res.end('Method not allowed'); return; }
       if (!requireManagementToken(url, res)) return;
@@ -351,7 +366,7 @@ function createServer(opts) {
       }
     }
 
-    const storeMatch = p.match(/^\/_skrynia\/store\/([^/]+)\/(.+)$/);
+    const storeMatch = p === null ? null : p.match(/^\/store\/([^/]+)\/(.+)$/);
     if (storeMatch) {
       let ns;
       let key;
@@ -380,7 +395,7 @@ function createServer(opts) {
     }
 
     const baseRe = APP_BASE_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const appMatch = p.match(new RegExp('^' + baseRe + '/([^/]+)(/.*)?$'));
+    const appMatch = url.pathname.match(new RegExp('^' + baseRe + '/([^/]+)(/.*)?$'));
     if (appMatch) {
       let ns;
       try { ns = decodeURIComponent(appMatch[1]); }
@@ -398,7 +413,7 @@ function createServer(opts) {
   ensureDir(STATE_DIR);
 
   const server = http.createServer(route);
-  server._skrynia = { APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN) };
+  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN) };
   return server;
 }
 

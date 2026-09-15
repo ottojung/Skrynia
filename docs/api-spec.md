@@ -1,11 +1,13 @@
 # Skrynia HTTP API Specification
 
+All endpoints in this document are relative to `SKRYNIA_URL`. `SKRYNIA_URL` is the complete externally visible root and may contain any path component; Skrynia adds no reserved prefix.
+
 ## Public endpoints
 
 ### Health check
 
 ```text
-GET /_skrynia/health
+GET {SKRYNIA_URL}/health
 ```
 
 Response: `200 OK`
@@ -17,19 +19,19 @@ Response: `200 OK`
 ### Client library
 
 ```text
-GET /_skrynia/client/skrynia.js
+GET {SKRYNIA_URL}/client/skrynia.js
 ```
 
 Serves the browser client library.
 
 ### Store operations
 
-Base path: `/_skrynia/store/{namespace}/{key}`
+Base path: `{SKRYNIA_URL}/store/{namespace}/{key}`
 
 #### Read object
 
 ```text
-GET /_skrynia/store/{namespace}/{key}
+GET {SKRYNIA_URL}/store/{namespace}/{key}
 ```
 
 Response `200` body is the raw object bytes. Response headers include `Content-Type`, `X-Skrynia-Mode`, and `X-Skrynia-Created`.
@@ -37,7 +39,7 @@ Response `200` body is the raw object bytes. Response headers include `Content-T
 #### Create object
 
 ```text
-POST /_skrynia/store/{namespace}/{key}
+POST {SKRYNIA_URL}/store/{namespace}/{key}
 Content-Type: {object content type}
 X-Skrynia-Mode: {immutable|capability-write|public-write}
 
@@ -59,7 +61,7 @@ The capability is returned only for `capability-write` mode.
 #### Replace object
 
 ```text
-PUT /_skrynia/store/{namespace}/{key}
+PUT {SKRYNIA_URL}/store/{namespace}/{key}
 Content-Type: {object content type}
 X-Skrynia-Capability: {capability}
 
@@ -75,7 +77,7 @@ Response:
 #### Delete object
 
 ```text
-DELETE /_skrynia/store/{namespace}/{key}
+DELETE {SKRYNIA_URL}/store/{namespace}/{key}
 X-Skrynia-Capability: {capability}
 ```
 
@@ -108,7 +110,7 @@ Static files are served from the currently active release. Directory requests us
 
 Skrynia has no administrative CLI. All lifecycle/namespace administration is exposed over HTTP by the same server process.
 
-Every management request is a `GET` under `/_skrynia/` and must contain a `token` query parameter exactly equal to `SKRYNIA_TOKEN`.
+Every management request is a `GET` under `{SKRYNIA_URL}/` and must contain a `token` query parameter exactly equal to `SKRYNIA_TOKEN`.
 
 If `SKRYNIA_TOKEN` is unset, management requests return:
 
@@ -125,7 +127,7 @@ Missing or incorrect tokens return `401` with `{"error":"invalid_token"}`.
 ### Deploy
 
 ```text
-GET /_skrynia/deploy?repo={ssh-url}&commit={sha}&subdir={path}&namespace={ns}&token={token}
+GET {SKRYNIA_URL}/deploy?repo={ssh-url}&commit={sha}&subdir={path}&namespace={ns}&token={token}
 ```
 
 Optional parameter: `builder={docker-image}`.
@@ -158,7 +160,7 @@ Errors:
 ### Undeploy
 
 ```text
-GET /_skrynia/undeploy?namespace={ns}&token={token}
+GET {SKRYNIA_URL}/undeploy?namespace={ns}&token={token}
 ```
 
 Deletes the active link, all releases, all stored namespace data, and namespace state.
@@ -170,8 +172,8 @@ Deletes the active link, all releases, all stored namespace data, and namespace 
 ### Rollback
 
 ```text
-GET /_skrynia/rollback?namespace={ns}&token={token}
-GET /_skrynia/rollback?namespace={ns}&release={release-id}&token={token}
+GET {SKRYNIA_URL}/rollback?namespace={ns}&token={token}
+GET {SKRYNIA_URL}/rollback?namespace={ns}&release={release-id}&token={token}
 ```
 
 Without `release`, activates the previous release. With `release`, activates that exact retained release.
@@ -183,7 +185,7 @@ Without `release`, activates the previous release. With `release`, activates tha
 ### Releases
 
 ```text
-GET /_skrynia/releases?namespace={ns}&token={token}
+GET {SKRYNIA_URL}/releases?namespace={ns}&token={token}
 ```
 
 ```json
@@ -197,7 +199,7 @@ GET /_skrynia/releases?namespace={ns}&token={token}
 ### Deployment inspection
 
 ```text
-GET /_skrynia/inspect?namespace={ns}&token={token}
+GET {SKRYNIA_URL}/inspect?namespace={ns}&token={token}
 ```
 
 Returns the saved deployment metadata for the namespace.
@@ -205,8 +207,8 @@ Returns the saved deployment metadata for the namespace.
 ### Namespace create
 
 ```text
-GET /_skrynia/ns/create?namespace={ns}&token={token}
-GET /_skrynia/ns/create?namespace={ns}&quota={bytes}&token={token}
+GET {SKRYNIA_URL}/ns/create?namespace={ns}&token={token}
+GET {SKRYNIA_URL}/ns/create?namespace={ns}&quota={bytes}&token={token}
 ```
 
 Creating an existing namespace preserves its existing quota.
@@ -214,7 +216,7 @@ Creating an existing namespace preserves its existing quota.
 ### Namespace remove
 
 ```text
-GET /_skrynia/ns/remove?namespace={ns}&token={token}
+GET {SKRYNIA_URL}/ns/remove?namespace={ns}&token={token}
 ```
 
 Removes namespace storage and state. This operation is distinct from undeploy and does not manage retained release directories.
@@ -222,7 +224,7 @@ Removes namespace storage and state. This operation is distinct from undeploy an
 ### Namespace inspect
 
 ```text
-GET /_skrynia/ns/inspect?namespace={ns}&token={token}
+GET {SKRYNIA_URL}/ns/inspect?namespace={ns}&token={token}
 ```
 
 Returns namespace quota/usage plus deployment metadata when present.
@@ -230,7 +232,7 @@ Returns namespace quota/usage plus deployment metadata when present.
 ### Namespace list
 
 ```text
-GET /_skrynia/ns/list?token={token}
+GET {SKRYNIA_URL}/ns/list?token={token}
 ```
 
 Returns:

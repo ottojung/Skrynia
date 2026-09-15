@@ -88,7 +88,7 @@ function createNs(ns, quotaBytes, maxObjects) {
 }
 
 function startServer(extra) {
-  const server = createServer(Object.assign({ dataDir: TMP, token: TOKEN }, extra || {}));
+  const server = createServer(Object.assign({ dataDir: TMP, token: TOKEN, skryniaUrl: 'https://example.test/platform' }, extra || {}));
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port })));
 }
 function stopServer(server) { return new Promise(resolve => server.close(resolve)); }
@@ -116,7 +116,7 @@ function get(port, p) { return request(port, 'GET', p); }
 function managementUrl(endpoint, params) {
   const q = new URLSearchParams(params || {});
   q.set('token', TOKEN);
-  return '/_skrynia/' + endpoint + '?' + q.toString();
+  return '/platform/' + endpoint + '?' + q.toString();
 }
 
 function makeRepo(dir) {
@@ -148,7 +148,7 @@ async function test_concurrent_create() {
   setup(); createNs('c');
   const { server, port } = await startServer();
   try {
-    const rs = await Promise.all(Array.from({length:10}, (_, i) => request(port, 'POST', '/_skrynia/store/c/same', 'v' + i, {'X-Skrynia-Mode':'public-write'})));
+    const rs = await Promise.all(Array.from({length:10}, (_, i) => request(port, 'POST', '/platform/store/c/same', 'v' + i, {'X-Skrynia-Mode':'public-write'})));
     assert(rs.filter(r => r.status === 201).length === 1, 'one concurrent create wins');
     assert(rs.filter(r => r.status === 409).length === 9, 'other concurrent creates conflict');
   } finally { await stopServer(server); }
@@ -159,9 +159,9 @@ async function test_binary_roundtrip() {
   const { server, port } = await startServer();
   try {
     const data = Buffer.from(Array.from({length:256}, (_, i) => i));
-    let r = await request(port, 'POST', '/_skrynia/store/bin/raw', data, {'Content-Type':'application/octet-stream','X-Skrynia-Mode':'public-write'});
+    let r = await request(port, 'POST', '/platform/store/bin/raw', data, {'Content-Type':'application/octet-stream','X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'binary create');
-    r = await get(port, '/_skrynia/store/bin/raw');
+    r = await get(port, '/platform/store/bin/raw');
     assert(r.status === 200 && r.body.equals(data), 'binary bytes round-trip');
   } finally { await stopServer(server); }
 }
@@ -170,7 +170,7 @@ async function test_malformed_percent_encoding() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
   try {
-    const r = await get(port, '/_skrynia/store/ns/%zz');
+    const r = await get(port, '/platform/store/ns/%zz');
     assert(r.status === 400, 'bad percent encoding rejected');
   } finally { await stopServer(server); }
 }
@@ -179,7 +179,7 @@ async function test_oversized_body_413() {
   setup(); createNs('big');
   const { server, port } = await startServer();
   try {
-    const r = await request(port, 'POST', '/_skrynia/store/big/x', Buffer.alloc(10485761), {'X-Skrynia-Mode':'public-write'});
+    const r = await request(port, 'POST', '/platform/store/big/x', Buffer.alloc(10485761), {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 413, 'oversized request rejected');
     assert(JSON.parse(r.text).error === 'request_too_large', 'oversized error code');
   } finally { await stopServer(server); }
@@ -300,7 +300,7 @@ async function test_capability_verifier_not_in_meta() {
   setup(); createNs('cap');
   const { server, port } = await startServer();
   try {
-    const r = await request(port, 'POST', '/_skrynia/store/cap/k', 'v', {'X-Skrynia-Mode':'capability-write'});
+    const r = await request(port, 'POST', '/platform/store/cap/k', 'v', {'X-Skrynia-Mode':'capability-write'});
     assert(r.status === 201, 'capability create');
     const meta = JSON.parse(fs.readFileSync(path.join(TMP, 'storage', 'cap', 'k.meta')));
     assert(!Object.prototype.hasOwnProperty.call(meta, 'capVerifier'), 'verifier absent from metadata');
@@ -345,7 +345,7 @@ async function test_incomplete_create_not_counted_towards_quota() {
   fs.writeFileSync(path.join(TMP, 'storage', 'tight', 'k.cap'), 'dead cap');
   const { server, port } = await startServer();
   try {
-    const r = await request(port, 'POST', '/_skrynia/store/tight/k', 'alive', {'X-Skrynia-Mode':'public-write'});
+    const r = await request(port, 'POST', '/platform/store/tight/k', 'alive', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'create succeeds even with orphan .dat and maxObjects=1, got ' + r.status);
     const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'tight', 'quota.json'), 'utf8'));
     assert(!('bytes' in onDisk), 'no bytes persisted to disk');
@@ -354,7 +354,7 @@ async function test_incomplete_create_not_counted_towards_quota() {
     assert(fs.readFileSync(path.join(TMP, 'storage', 'tight', 'k.dat'), 'utf8') === 'alive', 'k.dat content is new value');
     assert(fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.meta')), 'k.meta exists as commit marker');
     assert(!fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.cap')), 'old k.cap removed for public-write');
-    const read = await get(port, '/_skrynia/store/tight/k');
+    const read = await get(port, '/platform/store/tight/k');
     assert(read.text === 'alive', 'created object readable');
   } finally { await stopServer(server); }
 }

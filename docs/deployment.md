@@ -1,5 +1,7 @@
 # Skrynia Deployment Guide
 
+> `SKRYNIA_URL` is the complete public root for Skrynia. The `/platform` path used in examples below is only an example deployment choice; Skrynia itself does not define a prefix.
+
 ## Prerequisites
 
 - Node.js 20+ when running Skrynia directly
@@ -50,13 +52,13 @@ Both are under `DATA_DIR` so the path is visible to the server and to builder co
 ## Running
 
 ```sh
-SKRYNIA_TOKEN=replace-me node src/server.js
+SKRYNIA_URL=http://127.0.0.1:17380/platform SKRYNIA_TOKEN=replace-me node src/server.js
 ```
 
 Health remains public:
 
 ```sh
-curl http://127.0.0.1:17380/_skrynia/health
+curl http://127.0.0.1:17380/platform/health
 ```
 
 ## Deploying an app
@@ -64,7 +66,7 @@ curl http://127.0.0.1:17380/_skrynia/health
 Deployment is an authenticated HTTP request. The URL must be quoted in a shell because it contains `&` characters. The `repo` parameter must be an SSH Git URL in scp-like form `user@host:path`.
 
 ```sh
-curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
 ```
 
 A custom builder can be supplied with `builder=...`.
@@ -90,7 +92,7 @@ jobs:
         with:
           namespace: my-app
           token: ${{ secrets.SKRYNIA_TOKEN }}
-          skrynia-url: https://skrynia.example.com/_skrynia
+          skrynia-url: https://skrynia.example.com/platform
 ```
 
 For production use, pin to a known commit SHA or published tag instead of `@main` for reproducibility.
@@ -99,7 +101,7 @@ For production use, pin to a known commit SHA or published tag instead of `@main
 |-------|----------|---------|-------------|
 | `namespace` | yes | — | Skrynia namespace (app name and URL suffix) |
 | `token` | yes | — | Management token; store as a GitHub secret |
-| `skrynia-url` | yes | — | Skrynia management API root, e.g. `https://vau.place/_skrynia` |
+| `skrynia-url` | yes | — | complete Skrynia HTTP root, e.g. `https://vau.place/platform` |
 | `repo` | no | calling GitHub repository | SSH scp-like Git URL |
 | `commit` | no | calling workflow commit | Full commit SHA |
 | `subdir` | no | `.` | Subdirectory within the repo containing the app |
@@ -123,31 +125,31 @@ Deploy process:
 ### Included examples
 
 ```sh
-curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/hello&namespace=hello-app&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/hello&namespace=hello-app&token=replace-me'
 
-curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/birthday-list&namespace=birthday-list&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/birthday-list&namespace=birthday-list&token=replace-me'
 ```
 
 ## Rollback and releases
 
 ```sh
 # Roll back to the previous release
-curl 'http://127.0.0.1:17380/_skrynia/rollback?namespace=myapp&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/rollback?namespace=myapp&token=replace-me'
 
 # Roll back to a named release
-curl 'http://127.0.0.1:17380/_skrynia/rollback?namespace=myapp&release=20260910120000000-abc123&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/rollback?namespace=myapp&release=20260910120000000-abc123&token=replace-me'
 
 # List releases
-curl 'http://127.0.0.1:17380/_skrynia/releases?namespace=myapp&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/releases?namespace=myapp&token=replace-me'
 
 # Inspect deployment metadata
-curl 'http://127.0.0.1:17380/_skrynia/inspect?namespace=myapp&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/inspect?namespace=myapp&token=replace-me'
 ```
 
 ## Undeploy
 
 ```sh
-curl 'http://127.0.0.1:17380/_skrynia/undeploy?namespace=myapp&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/undeploy?namespace=myapp&token=replace-me'
 ```
 
 Undeploy is destructive: it removes the active link, releases, stored data, and namespace state.
@@ -155,10 +157,10 @@ Undeploy is destructive: it removes the active link, releases, stored data, and 
 ## Managing namespaces
 
 ```sh
-curl 'http://127.0.0.1:17380/_skrynia/ns/create?namespace=myns&quota=20971520&token=replace-me'
-curl 'http://127.0.0.1:17380/_skrynia/ns/list?token=replace-me'
-curl 'http://127.0.0.1:17380/_skrynia/ns/inspect?namespace=myns&token=replace-me'
-curl 'http://127.0.0.1:17380/_skrynia/ns/remove?namespace=myns&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/ns/create?namespace=myns&quota=20971520&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/ns/list?token=replace-me'
+curl 'http://127.0.0.1:17380/platform/ns/inspect?namespace=myns&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/ns/remove?namespace=myns&token=replace-me'
 ```
 
 ## Builder
