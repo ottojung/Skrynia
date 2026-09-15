@@ -244,6 +244,27 @@ async function test_token_not_in_output() {
   } finally { await stopServer(srv.server); }
 }
 
+async function test_error_body_token_redacted() {
+  var srv = await startServer(function (req, res) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'invalid_token', detail: 'token ' + TOKEN + ' rejected' }));
+  });
+  try {
+    var r = await run({
+      INPUT_NAMESPACE: 'ns',
+      INPUT_TOKEN: TOKEN,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
+      INPUT_REPO: 'git@github.com:org/repo.git',
+    });
+    assert(r.exit !== 0, 'should fail on 400');
+    assert(!r.stdout.includes(TOKEN), 'token not in stdout');
+    assert(!r.stderr.includes(TOKEN), 'token not in stderr');
+    assert(r.stderr.includes('***'), 'redacted token present');
+    pass++; console.log('  error_body_token_redacted ... ok');
+  } finally { await stopServer(srv.server); }
+}
+
 rmrf(TMP);
 fs.mkdirSync(TMP, { recursive: true });
 
@@ -259,6 +280,7 @@ fs.mkdirSync(TMP, { recursive: true });
     test_builder_param,
     test_subdir_param,
     test_token_not_in_output,
+    test_error_body_token_redacted,
   ];
 
   console.log('Action tests:');

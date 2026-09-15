@@ -29,10 +29,8 @@ inputs:
 outputs:
   release:
     description: The activated release identifier.
-    value: ${{ steps.deploy.outputs.release }}
   path:
     description: The app serving path.
-    value: ${{ steps.deploy.outputs.path }}
 
 runs:
   using: node20

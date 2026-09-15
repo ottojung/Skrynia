@@ -1,11 +1,19 @@
 'use strict';
 
 const fs = require('fs');
-const path = require('path');
 
 function input(name) {
   const val = process.env['INPUT_' + name.toUpperCase().replace(/-/g, '_')] || '';
   return val.trim();
+}
+
+function redact(text, token) {
+  if (!token || !text) return text;
+  var safe = text.split(token).join('***');
+  try {
+    safe = safe.split(encodeURIComponent(token)).join('***');
+  } catch {}
+  return safe;
 }
 
 function fail(message) {
@@ -69,20 +77,19 @@ async function deploy() {
 
   const url = buildUrl(skryniaUrl, params);
 
-  const maskedUrl = url.href.replace(token, '***');
   console.log('Deploying ' + repo + '@' + commit.substring(0, 8) + ' (subdir: ' + subdir + ') to ' + skryniaUrl + ' namespace ' + namespace);
 
   let res;
   try {
     res = await fetch(url.href);
   } catch (err) {
-    fail('Network error connecting to Skrynia: ' + err.message);
+    fail('Network error connecting to Skrynia: ' + redact(err.message, token));
   }
 
   const body = await res.text();
 
   if (!res.ok) {
-    console.error('HTTP ' + res.status + ': ' + body);
+    console.error(redact('HTTP ' + res.status + ': ' + body, token));
     fail('Deploy failed with HTTP ' + res.status);
   }
 
@@ -94,7 +101,7 @@ async function deploy() {
   }
 
   if (!data.ok) {
-    fail('Deploy returned ok=false: ' + JSON.stringify(data));
+    fail('Deploy returned ok=false: ' + redact(JSON.stringify(data), token));
   }
 
   setOutput('release', data.release);
