@@ -86,12 +86,14 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: ottojung/Skrynia/action/deploy@v1
+      - uses: ottojung/Skrynia/action/deploy@main
         with:
           namespace: my-app
           token: ${{ secrets.SKRYNIA_TOKEN }}
           skrynia-url: https://skrynia.example.com
 ```
+
+For production use, pin to a known commit SHA or published tag instead of `@main` for reproducibility.
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
