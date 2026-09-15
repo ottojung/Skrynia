@@ -89,7 +89,7 @@ function createNs(ns, quotaBytes, maxObjects) {
 }
 
 function startServer(extraOpts) {
-  const server = createServer(Object.assign({ dataDir: TMP, token: TOKEN }, extraOpts || {}));
+  const server = createServer(Object.assign({ dataDir: TMP, token: TOKEN, skryniaUrl: 'https://example.test/platform' }, extraOpts || {}));
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port })));
 }
 
@@ -122,7 +122,7 @@ function managementUrl(endpoint, params, token) {
     if (value != null) q.set(key, String(value));
   }
   q.set('token', token === undefined ? TOKEN : token);
-  return '/_skrynia/' + endpoint + '?' + q.toString();
+  return '/platform/' + endpoint + '?' + q.toString();
 }
 
 function managementGet(port, endpoint, params, token) {
@@ -201,9 +201,23 @@ async function test_health() {
   setup();
   const { server, port } = await startServer();
   try {
-    const r = await get(port, '/_skrynia/health');
+    let r = await get(port, '/platform/health');
     assert(r.status === 200, 'health status');
     assert(jsonBody(r).ok === true, 'health body');
+    r = await get(port, '/health');
+    assert(r.status === 404, 'nested root rejects out-of-base health path');
+  } finally { await stopServer(server); }
+}
+
+
+async function test_root_url() {
+  setup();
+  const { server, port } = await startServer({ skryniaUrl: 'https://example.test/' });
+  try {
+    let r = await get(port, '/health');
+    assert(r.status === 200 && jsonBody(r).ok === true, 'root URL health');
+    r = await get(port, '/platform/health');
+    assert(r.status === 404, 'root URL does not invent nested prefix');
   } finally { await stopServer(server); }
 }
 
@@ -211,7 +225,7 @@ async function test_management_requires_configured_token() {
   setup();
   const { server, port } = await startServer({ token: '' });
   try {
-    const r = await get(port, '/_skrynia/ns/list?token=anything');
+    const r = await get(port, '/platform/ns/list?token=anything');
     assert(r.status === 503, 'disabled management status');
     assert(jsonBody(r).error === 'management_api_disabled', 'disabled management error');
   } finally { await stopServer(server); }
@@ -221,7 +235,7 @@ async function test_management_rejects_missing_or_bad_token() {
   setup();
   const { server, port } = await startServer();
   try {
-    let r = await get(port, '/_skrynia/ns/list');
+    let r = await get(port, '/platform/ns/list');
     assert(r.status === 401, 'missing token rejected');
     r = await managementGet(port, 'ns/list', {}, 'wrong');
     assert(r.status === 401, 'bad token rejected');
@@ -270,10 +284,10 @@ async function test_store_requires_namespace() {
   setup();
   const { server, port } = await startServer();
   try {
-    let r = await request(port, 'POST', '/_skrynia/store/missing/x', 'x', {'X-Skrynia-Mode':'public-write'});
+    let r = await request(port, 'POST', '/platform/store/missing/x', 'x', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 409, 'missing namespace blocks create');
     await managementGet(port, 'ns/create', { namespace: 'created' });
-    r = await request(port, 'POST', '/_skrynia/store/created/x', 'x', {'X-Skrynia-Mode':'public-write'});
+    r = await request(port, 'POST', '/platform/store/created/x', 'x', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'HTTP-created namespace accepts store write');
   } finally { await stopServer(server); }
 }
@@ -282,17 +296,17 @@ async function test_store_crud() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
   try {
-    let r = await request(port, 'POST', '/_skrynia/store/ns/hello', 'world', {'Content-Type':'text/plain','X-Skrynia-Mode':'public-write'});
+    let r = await request(port, 'POST', '/platform/store/ns/hello', 'world', {'Content-Type':'text/plain','X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'create');
-    r = await get(port, '/_skrynia/store/ns/hello');
+    r = await get(port, '/platform/store/ns/hello');
     assert(r.status === 200 && r.text === 'world', 'read');
-    r = await request(port, 'PUT', '/_skrynia/store/ns/hello', 'updated', {'Content-Type':'text/plain'});
+    r = await request(port, 'PUT', '/platform/store/ns/hello', 'updated', {'Content-Type':'text/plain'});
     assert(r.status === 200, 'put');
-    r = await get(port, '/_skrynia/store/ns/hello');
+    r = await get(port, '/platform/store/ns/hello');
     assert(r.text === 'updated', 'updated read');
-    r = await request(port, 'DELETE', '/_skrynia/store/ns/hello');
+    r = await request(port, 'DELETE', '/platform/store/ns/hello');
     assert(r.status === 200, 'delete');
-    r = await get(port, '/_skrynia/store/ns/hello');
+    r = await get(port, '/platform/store/ns/hello');
     assert(r.status === 404, 'deleted');
   } finally { await stopServer(server); }
 }
@@ -301,14 +315,14 @@ async function test_capability_write() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
   try {
-    let r = await request(port, 'POST', '/_skrynia/store/ns/k', 'one', {'X-Skrynia-Mode':'capability-write'});
+    let r = await request(port, 'POST', '/platform/store/ns/k', 'one', {'X-Skrynia-Mode':'capability-write'});
     const cap = jsonBody(r).capability;
     assert(r.status === 201 && cap && cap.length === 64, 'capability returned');
-    r = await request(port, 'PUT', '/_skrynia/store/ns/k', 'two');
+    r = await request(port, 'PUT', '/platform/store/ns/k', 'two');
     assert(r.status === 403, 'capability required');
-    r = await request(port, 'PUT', '/_skrynia/store/ns/k', 'two', {'X-Skrynia-Capability':cap});
+    r = await request(port, 'PUT', '/platform/store/ns/k', 'two', {'X-Skrynia-Capability':cap});
     assert(r.status === 200, 'capability permits put');
-    r = await request(port, 'DELETE', '/_skrynia/store/ns/k', null, {'X-Skrynia-Capability':cap});
+    r = await request(port, 'DELETE', '/platform/store/ns/k', null, {'X-Skrynia-Capability':cap});
     assert(r.status === 200, 'capability permits delete');
   } finally { await stopServer(server); }
 }
@@ -317,10 +331,10 @@ async function test_immutable() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
   try {
-    await request(port, 'POST', '/_skrynia/store/ns/k', 'one', {'X-Skrynia-Mode':'immutable'});
-    let r = await request(port, 'PUT', '/_skrynia/store/ns/k', 'two');
+    await request(port, 'POST', '/platform/store/ns/k', 'one', {'X-Skrynia-Mode':'immutable'});
+    let r = await request(port, 'PUT', '/platform/store/ns/k', 'two');
     assert(r.status === 403, 'immutable put blocked');
-    r = await request(port, 'DELETE', '/_skrynia/store/ns/k');
+    r = await request(port, 'DELETE', '/platform/store/ns/k');
     assert(r.status === 403, 'immutable delete blocked');
   } finally { await stopServer(server); }
 }
@@ -329,11 +343,11 @@ async function test_key_validation() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
   try {
-    let r = await get(port, '/_skrynia/store/ns/a%2Fb');
+    let r = await get(port, '/platform/store/ns/a%2Fb');
     assert(r.status === 400, 'slash rejected');
-    r = await get(port, '/_skrynia/store/ns/..%2Fetc');
+    r = await get(port, '/platform/store/ns/..%2Fetc');
     assert(r.status === 400, 'traversal rejected');
-    r = await get(port, '/_skrynia/store/INVALID/key');
+    r = await get(port, '/platform/store/INVALID/key');
     assert(r.status === 400, 'namespace rejected');
   } finally { await stopServer(server); }
 }
@@ -342,11 +356,11 @@ async function test_quota_and_count_limits() {
   setup(); createNs('small', 4, 1);
   const { server, port } = await startServer();
   try {
-    let r = await request(port, 'POST', '/_skrynia/store/small/a', '1234', {'X-Skrynia-Mode':'public-write'});
+    let r = await request(port, 'POST', '/platform/store/small/a', '1234', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'first object fits');
-    r = await request(port, 'POST', '/_skrynia/store/small/b', 'x', {'X-Skrynia-Mode':'public-write'});
+    r = await request(port, 'POST', '/platform/store/small/b', 'x', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 507, 'object count blocks second object');
-    r = await request(port, 'PUT', '/_skrynia/store/small/a', '12345');
+    r = await request(port, 'PUT', '/platform/store/small/a', '12345');
     assert(r.status === 507, 'quota blocks growth');
   } finally { await stopServer(server); }
 }
@@ -358,9 +372,9 @@ async function test_incomplete_create_is_reclaimed() {
   fs.writeFileSync(path.join(dir, 'k.cap'), 'orphan');
   const { server, port } = await startServer();
   try {
-    const r = await request(port, 'POST', '/_skrynia/store/ns/k', 'fresh', {'X-Skrynia-Mode':'public-write'});
+    const r = await request(port, 'POST', '/platform/store/ns/k', 'fresh', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'incomplete create reclaimed');
-    const read = await get(port, '/_skrynia/store/ns/k');
+    const read = await get(port, '/platform/store/ns/k');
     assert(read.text === 'fresh', 'fresh data visible');
   } finally { await stopServer(server); }
 }
@@ -369,10 +383,46 @@ async function test_client_serving() {
   setup();
   const { server, port } = await startServer();
   try {
-    const r = await get(port, '/_skrynia/client/skrynia.js');
+    const r = await get(port, '/platform/client/skrynia.js');
     assert(r.status === 200, 'client served');
     assert(r.text.includes('Skrynia'), 'client content');
   } finally { await stopServer(server); }
+}
+
+
+async function test_client_derives_root_from_script_url() {
+  const vm = require('vm');
+  const source = fs.readFileSync(path.join(SRC, 'src', 'client.js'), 'utf8');
+  const opened = [];
+
+  function FakeXHR() {}
+  FakeXHR.prototype.open = function(method, url) { opened.push({ method, url }); };
+  FakeXHR.prototype.setRequestHeader = function() {};
+  FakeXHR.prototype.getResponseHeader = function() { return null; };
+  FakeXHR.prototype.send = function() {
+    this.status = 404;
+    this.response = new ArrayBuffer(0);
+    this.onload();
+  };
+
+  const context = {
+    URL,
+    Promise,
+    TextDecoder,
+    Uint8Array,
+    ArrayBuffer,
+    XMLHttpRequest: FakeXHR,
+    document: { currentScript: { src: 'https://storage.example/custom/root/client/skrynia.js' } },
+    location: { href: 'https://app.example/apps/demo/' },
+  };
+  context.window = context;
+  vm.runInNewContext(source, context);
+  await context.Skrynia.store('ns').get('key');
+  assert(opened.length === 1, 'client made one request');
+  assert(
+    opened[0].url === 'https://storage.example/custom/root/store/ns/key',
+    'client derives nested cross-origin root from script URL: ' + opened[0].url
+  );
 }
 
 async function test_deploy_validation() {
@@ -638,9 +688,9 @@ async function test_quota_derived_from_filesystem() {
   fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'b.meta'), '{}');
   const { server, port } = await startServer();
   try {
-    let r = await request(port, 'POST', '/_skrynia/store/dq/k', 'x'.repeat(90), {'X-Skrynia-Mode':'public-write'});
+    let r = await request(port, 'POST', '/platform/store/dq/k', 'x'.repeat(90), {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'fits within remaining 90 bytes, got ' + r.status);
-    r = await request(port, 'POST', '/_skrynia/store/dq/k2', 'y', {'X-Skrynia-Mode':'public-write'});
+    r = await request(port, 'POST', '/platform/store/dq/k2', 'y', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 507, 'exceeds quota after derived usage, got ' + r.status);
   } finally { await stopServer(server); }
 }
@@ -654,7 +704,7 @@ async function test_stale_counters_ignored() {
   fs.writeFileSync(path.join(TMP, 'storage', 'sc', 'only.meta'), '{}');
   const { server, port } = await startServer();
   try {
-    let r = await request(port, 'POST', '/_skrynia/store/sc/k', 'hi', {'X-Skrynia-Mode':'public-write'});
+    let r = await request(port, 'POST', '/platform/store/sc/k', 'hi', {'X-Skrynia-Mode':'public-write'});
     assert(r.status === 201, 'stale counts ignored, create succeeds, got ' + r.status);
     const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'sc', 'quota.json'), 'utf8'));
     assert(!('bytes' in onDisk), 'legacy bytes removed from persisted file');
@@ -678,6 +728,7 @@ async function test_ns_create_never_persists_derived() {
 
 const tests = [
   ['health', test_health],
+  ['root_url', test_root_url],
   ['management_requires_configured_token', test_management_requires_configured_token],
   ['management_rejects_missing_or_bad_token', test_management_rejects_missing_or_bad_token],
   ['management_get_only', test_management_get_only],
@@ -690,6 +741,7 @@ const tests = [
   ['quota_and_count_limits', test_quota_and_count_limits],
   ['incomplete_create_is_reclaimed', test_incomplete_create_is_reclaimed],
   ['client_serving', test_client_serving],
+  ['client_derives_root_from_script_url', test_client_derives_root_from_script_url],
   ['deploy_validation', test_deploy_validation],
   ['deploy_rejects_non_ssh_repo', test_deploy_rejects_non_ssh_repo],
   ['deploy_accepts_ssh_repo', test_deploy_accepts_ssh_repo],

@@ -14,10 +14,7 @@ def management_base():
     if not url:
         raise SystemExit("SKRYNIA_URL is not set")
 
-    base = url.rstrip("/")
-    if not base.endswith("/_skrynia"):
-        base += "/_skrynia"
-    return base
+    return url.rstrip("/")
 
 
 def token():

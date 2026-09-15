@@ -117,7 +117,7 @@ async function test_missing_commit_and_repo() {
 async function test_successful_deploy() {
   var srv = await startServer(function (req, res) {
     var url = new URL(req.url, 'http://localhost');
-    assert(url.pathname === '/_skrynia/deploy', 'correct path');
+    assert(url.pathname === '/platform/deploy', 'correct path');
     assert(url.searchParams.get('repo') === 'git@github.com:myorg/myapp.git', 'repo param');
     assert(url.searchParams.get('commit') === 'aabbccddeeff0011223344556677889900112233', 'commit param');
     assert(url.searchParams.get('subdir') === '.', 'subdir param');
@@ -130,7 +130,7 @@ async function test_successful_deploy() {
     var r = await run({
       INPUT_NAMESPACE: 'myapp',
       INPUT_TOKEN: TOKEN,
-      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port + '/platform',
       INPUT_REPO: 'git@github.com:myorg/myapp.git',
       INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
     });
@@ -140,6 +140,27 @@ async function test_successful_deploy() {
     assert(r.stdout.includes('Deploy succeeded'), 'success message');
     assert(!r.stdout.includes(TOKEN), 'token not printed');
     pass++; console.log('  successful_deploy ... ok');
+  } finally { await stopServer(srv.server); }
+}
+
+
+async function test_root_url_deploy() {
+  var srv = await startServer(function (req, res) {
+    var url = new URL(req.url, 'http://localhost');
+    assert(url.pathname === '/deploy', 'root URL deploy path');
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, release: 'root' }));
+  });
+  try {
+    var r = await run({
+      INPUT_NAMESPACE: 'ns',
+      INPUT_TOKEN: TOKEN,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
+      INPUT_REPO: 'git@github.com:org/repo.git',
+    });
+    assert(r.exit === 0, 'root URL should succeed: ' + r.stderr);
+    pass++; console.log('  root_url_deploy ... ok');
   } finally { await stopServer(srv.server); }
 }
 
@@ -154,7 +175,7 @@ async function test_default_repo_from_github_repository() {
     var r = await run({
       INPUT_NAMESPACE: 'ns',
       INPUT_TOKEN: TOKEN,
-      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port + '/platform',
       INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
       GITHUB_REPOSITORY: 'org/repo',
     });
@@ -173,7 +194,7 @@ async function test_http_error() {
     var r = await run({
       INPUT_NAMESPACE: 'ns',
       INPUT_TOKEN: TOKEN,
-      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port + '/platform',
       INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
       INPUT_REPO: 'git@github.com:org/repo.git',
     });
@@ -195,7 +216,7 @@ async function test_builder_param() {
     var r = await run({
       INPUT_NAMESPACE: 'ns',
       INPUT_TOKEN: TOKEN,
-      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port + '/platform',
       INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
       INPUT_REPO: 'git@github.com:org/repo.git',
       INPUT_BUILDER: 'custom:latest',
@@ -217,7 +238,7 @@ async function test_subdir_param() {
     var r = await run({
       INPUT_NAMESPACE: 'ns',
       INPUT_TOKEN: TOKEN,
-      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port + '/platform',
       INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
       INPUT_REPO: 'git@github.com:org/repo.git',
       INPUT_SUBDIR: 'example/app',
@@ -236,7 +257,7 @@ async function test_token_not_in_output() {
     var r = await run({
       INPUT_NAMESPACE: 'ns',
       INPUT_TOKEN: TOKEN,
-      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port + '/platform',
       INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
       INPUT_REPO: 'git@github.com:org/repo.git',
     });
@@ -255,7 +276,7 @@ async function test_error_body_token_redacted() {
     var r = await run({
       INPUT_NAMESPACE: 'ns',
       INPUT_TOKEN: TOKEN,
-      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port,
+      INPUT_SKRYNIA_URL: 'http://127.0.0.1:' + srv.port + '/platform',
       INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
       INPUT_REPO: 'git@github.com:org/repo.git',
     });
@@ -277,6 +298,7 @@ fs.mkdirSync(TMP, { recursive: true });
     test_missing_url,
     test_missing_commit_and_repo,
     test_successful_deploy,
+    test_root_url_deploy,
     test_default_repo_from_github_repository,
     test_http_error,
     test_builder_param,

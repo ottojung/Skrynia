@@ -7,12 +7,14 @@ A minimal platform for deploying and serving small web apps with durable key-val
 - **Deploy from git over SSH**: Clone from an SSH scp-like repo URL, checkout exact commit, build via container, atomic release activation
 - **Storage API**: Namespace-scoped key-value store with immutable, capability-write, and public-write modes
 - **App serving**: Static file serving from active releases under a configurable base path
-- **HTTP management API**: Deployment, rollback, undeploy, release inspection, and namespace management under `/_skrynia/`
-- **Client library**: Tiny browser library for storage access at `/_skrynia/client/skrynia.js`
+- **HTTP management API**: Deployment, rollback, undeploy, release inspection, and namespace management relative to `SKRYNIA_URL`
+- **Client library**: Tiny browser library served relative to `SKRYNIA_URL` at `/client/skrynia.js`
 
 Skrynia has no administrative CLI. Management is performed through the HTTP server.
 
 ## Quick start
+
+Skrynia has no reserved HTTP path prefix. `SKRYNIA_URL` is the complete externally visible root; all health, management, storage, and client-library endpoints are resolved relative to it. Examples in this README that use `/platform` assume `SKRYNIA_URL=http://127.0.0.1:17380/platform`; that path is illustrative only.
 
 ```sh
 # Build the builder image (required for deploys)
@@ -22,26 +24,26 @@ make builder
 SKRYNIA_TOKEN=replace-me node src/server.js
 
 # Check health
-curl http://127.0.0.1:17380/_skrynia/health
+curl http://127.0.0.1:17380/platform/health
 
 # Deploy an app. Quote URLs containing '&'.
-curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
 ```
 
 ## Management API
 
-All management endpoints are `GET` requests under `/_skrynia/` and require a `token` query parameter equal to `SKRYNIA_TOKEN`.
+All management endpoints are `GET` requests relative to `SKRYNIA_URL` and require a `token` query parameter equal to `SKRYNIA_TOKEN`.
 
 ```text
-GET /_skrynia/deploy?repo=...&commit=...&subdir=...&namespace=...&token=...
-GET /_skrynia/undeploy?namespace=...&token=...
-GET /_skrynia/rollback?namespace=...&release=...&token=...
-GET /_skrynia/releases?namespace=...&token=...
-GET /_skrynia/inspect?namespace=...&token=...
-GET /_skrynia/ns/create?namespace=...&quota=...&token=...
-GET /_skrynia/ns/remove?namespace=...&token=...
-GET /_skrynia/ns/inspect?namespace=...&token=...
-GET /_skrynia/ns/list?token=...
+GET /platform/deploy?repo=...&commit=...&subdir=...&namespace=...&token=...
+GET /platform/undeploy?namespace=...&token=...
+GET /platform/rollback?namespace=...&release=...&token=...
+GET /platform/releases?namespace=...&token=...
+GET /platform/inspect?namespace=...&token=...
+GET /platform/ns/create?namespace=...&quota=...&token=...
+GET /platform/ns/remove?namespace=...&token=...
+GET /platform/ns/inspect?namespace=...&token=...
+GET /platform/ns/list?token=...
 ```
 
 `release`, `builder`, and `quota` are optional where shown. Deploy requires `repo`, `commit`, `subdir`, and `namespace`. `repo` must be an SSH Git URL in scp-like form `user@host:path` (e.g. `git@github.com:myorg/myapp.git`). Local paths, `file://`, `http://`, `https://`, `ssh://`, and other URL schemes are rejected. `commit` must be a full 40- or 64-character hexadecimal git object id, and Skrynia verifies that the checked-out HEAD exactly matches it.
@@ -69,9 +71,9 @@ The builder container is writable and disposable (`--rm`). It may access the net
 ### Included examples
 
 ```sh
-curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/hello&namespace=hello-app&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/hello&namespace=hello-app&token=replace-me'
 
-curl 'http://127.0.0.1:17380/_skrynia/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/birthday-list&namespace=birthday-list&token=replace-me'
+curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/birthday-list&namespace=birthday-list&token=replace-me'
 ```
 
 `example/hello` is a minimal Makefile-driven app. `example/birthday-list` is an npm-built wishlist reservation app demonstrating Skrynia shared storage and create-if-absent reservation semantics.
@@ -83,6 +85,7 @@ Environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SKRYNIA_PORT` | `17380` | Server listen port |
+| `SKRYNIA_URL` | (required) | Canonical externally visible root URL for all Skrynia HTTP endpoints; may contain any path component |
 | `SKRYNIA_TOKEN` | (none) | Required token for all management HTTP endpoints |
 | `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Mutable state directory |
 | `SKRYNIA_APP_BASE_PATH` | `/apps` | URL prefix for app serving (set to match your proxy) |
@@ -95,12 +98,12 @@ Environment variables:
 
 ## Storage API
 
-- `GET /_skrynia/health` — health check
-- `GET /_skrynia/client/skrynia.js` — browser client library
-- `GET /_skrynia/store/{ns}/{key}` — read object
-- `POST /_skrynia/store/{ns}/{key}` — create object
-- `PUT /_skrynia/store/{ns}/{key}` — replace object
-- `DELETE /_skrynia/store/{ns}/{key}` — delete object
+- `GET /platform/health` — health check
+- `GET /platform/client/skrynia.js` — browser client library
+- `GET /platform/store/{ns}/{key}` — read object
+- `POST /platform/store/{ns}/{key}` — create object
+- `PUT /platform/store/{ns}/{key}` — replace object
+- `DELETE /platform/store/{ns}/{key}` — delete object
 - `GET {base_path}/{ns}/{path}` — serve app static files
 
 See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.

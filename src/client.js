@@ -16,7 +16,23 @@
 (function(root) {
   'use strict';
 
-  var BASE = '/_skrynia/store';
+  function detectRoot() {
+    if (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) {
+      try {
+        var scriptUrl = new URL(document.currentScript.src, root.location && root.location.href ? root.location.href : undefined);
+        var suffix = '/client/skrynia.js';
+        if (scriptUrl.pathname.slice(-suffix.length) === suffix) {
+          scriptUrl.pathname = scriptUrl.pathname.slice(0, -suffix.length) || '/';
+          scriptUrl.search = '';
+          scriptUrl.hash = '';
+          return scriptUrl.href.replace(/\/+$/, '');
+        }
+      } catch (_) {}
+    }
+    return '';
+  }
+
+  var BASE = detectRoot() + '/store';
 
   function SkryniaClient() {}
 

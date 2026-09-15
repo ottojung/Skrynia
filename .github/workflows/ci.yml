@@ -107,13 +107,14 @@ jobs:
             --tmpfs /var/lib/skrynia \
             --network host \
             --env SKRYNIA_TOKEN=smoke-token \
+            --env SKRYNIA_URL=http://127.0.0.1:17380/platform \
             ghcr.io/ottojung/skrynia:latest
           trap 'docker rm -f skrynia-smoke >/dev/null 2>&1 || true' EXIT
           for i in $(seq 1 20); do
-            curl -fsS http://127.0.0.1:17380/_skrynia/health && break
+            curl -fsS http://127.0.0.1:17380/platform/health && break
             sleep 0.2
           done
-          curl -fsS 'http://127.0.0.1:17380/_skrynia/ns/list?token=smoke-token' | grep '"namespaces"'
+          curl -fsS 'http://127.0.0.1:17380/platform/ns/list?token=smoke-token' | grep '"namespaces"'
 
       - name: Smoke test skrynia-builder image
         run: |
