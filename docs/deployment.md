@@ -71,6 +71,42 @@ A custom builder can be supplied with `builder=...`.
 
 The request is synchronous: curl returns after clone, build, validation, activation, and cleanup complete.
 
+### GitHub Action
+
+Skrynia ships a reusable GitHub Action for CI/CD. App repositories reference it directly — no fork or copy needed.
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy to Skrynia
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ottojung/Skrynia/action/deploy@main
+        with:
+          namespace: my-app
+          token: ${{ secrets.SKRYNIA_TOKEN }}
+          skrynia-url: https://skrynia.example.com
+```
+
+For production use, pin to a known commit SHA or published tag instead of `@main` for reproducibility.
+
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `namespace` | yes | — | Skrynia namespace (app name and URL suffix) |
+| `token` | yes | — | Management token; store as a GitHub secret |
+| `skrynia-url` | yes | — | Base URL of the Skrynia instance |
+| `repo` | no | `git@github.com:${{ github.repository }}.git` | SSH scp-like Git URL |
+| `commit` | no | `${{ github.sha }}` | Full 40-hex commit SHA |
+| `subdir` | no | `.` | Subdirectory within the repo containing the app |
+| `builder` | no | — | Builder Docker image override |
+
+Outputs written to `GITHUB_OUTPUT`: `release` (the activated release id) and `path` (the app serving path).
+
 Deploy process:
 
 1. Validate SSH scp-like repo URL, namespace, subdirectory, and full 40- or 64-hex commit id.

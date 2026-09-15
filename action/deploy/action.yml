@@ -1,0 +1,37 @@
+name: Deploy to Skrynia
+description: Deploy a repository to a Skrynia instance via its authenticated HTTP deploy endpoint.
+
+inputs:
+  namespace:
+    description: Skrynia namespace (app name and URL suffix). Must match ^[a-z0-9][a-z0-9_-]{0,63}$.
+    required: true
+  token:
+    description: Skrynia management token. Pass as a GitHub secret, never hard-code.
+    required: true
+  skrynia-url:
+    description: Base URL of the Skrynia instance (e.g. https://skrynia.example.com).
+    required: true
+  repo:
+    description: >-
+      SSH scp-like Git URL (e.g. git@github.com:org/repo.git).
+      Defaults to git@github.com:${{ github.repository }}.git.
+    required: false
+  commit:
+    description: Full 40-hex commit SHA. Defaults to ${{ github.sha }}.
+    required: false
+  subdir:
+    description: Subdirectory within the repo that contains the app. Defaults to .
+    required: false
+  builder:
+    description: Optional builder Docker image override.
+    required: false
+
+outputs:
+  release:
+    description: The activated release identifier.
+  path:
+    description: The app serving path.
+
+runs:
+  using: node24
+  main: index.js
