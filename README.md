@@ -21,7 +21,7 @@ Skrynia has no reserved HTTP path prefix. `SKRYNIA_URL` is the complete external
 make builder
 
 # Configure the management token and start the server
-SKRYNIA_TOKEN=replace-me node src/server.js
+SKRYNIA_URL=http://127.0.0.1:17380/platform SKRYNIA_TOKEN=replace-me node src/server.js
 
 # Check health
 curl http://127.0.0.1:17380/platform/health

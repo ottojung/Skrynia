@@ -52,7 +52,7 @@ Both are under `DATA_DIR` so the path is visible to the server and to builder co
 ## Running
 
 ```sh
-SKRYNIA_TOKEN=replace-me node src/server.js
+SKRYNIA_URL=http://127.0.0.1:17380/platform SKRYNIA_TOKEN=replace-me node src/server.js
 ```
 
 Health remains public:
