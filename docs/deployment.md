@@ -90,7 +90,7 @@ jobs:
         with:
           namespace: my-app
           token: ${{ secrets.SKRYNIA_TOKEN }}
-          skrynia-url: https://skrynia.example.com
+          skrynia-url: https://skrynia.example.com/_skrynia
 ```
 
 For production use, pin to a known commit SHA or published tag instead of `@main` for reproducibility.
@@ -99,9 +99,9 @@ For production use, pin to a known commit SHA or published tag instead of `@main
 |-------|----------|---------|-------------|
 | `namespace` | yes | — | Skrynia namespace (app name and URL suffix) |
 | `token` | yes | — | Management token; store as a GitHub secret |
-| `skrynia-url` | yes | — | Base URL of the Skrynia instance |
-| `repo` | no | `git@github.com:${{ github.repository }}.git` | SSH scp-like Git URL |
-| `commit` | no | `${{ github.sha }}` | Full 40-hex commit SHA |
+| `skrynia-url` | yes | — | Skrynia management API root, e.g. `https://vau.place/_skrynia` |
+| `repo` | no | calling GitHub repository | SSH scp-like Git URL |
+| `commit` | no | calling workflow commit | Full commit SHA |
 | `subdir` | no | `.` | Subdirectory within the repo containing the app |
 | `builder` | no | — | Builder Docker image override |
 
