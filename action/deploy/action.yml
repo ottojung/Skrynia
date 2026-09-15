@@ -12,12 +12,10 @@ inputs:
     description: Skrynia management API root (for example https://vau.place/_skrynia).
     required: true
   repo:
-    description: >-
-      SSH scp-like Git URL (e.g. git@github.com:org/repo.git).
-      Defaults to git@github.com:${{ github.repository }}.git.
+    description: SSH scp-like Git URL. Defaults to the calling GitHub repository.
     required: false
   commit:
-    description: Full 40-hex commit SHA. Defaults to ${{ github.sha }}.
+    description: Full commit SHA. Defaults to the calling workflow commit.
     required: false
   subdir:
     description: Subdirectory within the repo that contains the app. Defaults to .
