@@ -25,6 +25,8 @@ function run(env) {
 
     const fullEnv = Object.assign({}, process.env, {
       GITHUB_OUTPUT: outputFile,
+      GITHUB_REPOSITORY: '',
+      GITHUB_SHA: '',
       INPUT_NAMESPACE: '',
       INPUT_TOKEN: '',
       INPUT_SKRYNIA_URL: '',
