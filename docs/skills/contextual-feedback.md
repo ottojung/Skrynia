@@ -16,11 +16,25 @@ When the user activates it:
 2. create a visible pointer at the current viewport center;
 3. represent that pointer in absolute document coordinates (`documentX`, `documentY`);
 4. let the user drag the pointer before saving;
-5. on save, persist the comment, pointer location, and recoverable HTML context together.
+5. provide an explicit **Copy JSON** action that copies the current persisted `feedback-v1` object to the system clipboard;
+6. on save, persist the comment, pointer location, and recoverable HTML context together.
 
 The feedback UI itself must be excluded from captured page context so feedback does not recursively snapshot its own controls or pointer marker.
 
 Text input is ordinary browser text input. Phone dictation may be used by the user, but the app does not record or transcribe audio.
+
+### Copy JSON behavior
+
+The Copy JSON action is available from the opened feedback panel and is independent of whether the current comment field contains text.
+
+On activation:
+
+1. perform a fresh `GET` of the standard `feedback-v1` object with browser caching disabled;
+2. require a successful response;
+3. copy the exact returned JSON text to the system clipboard;
+4. report success or failure in the feedback UI without changing the stored object.
+
+Prefer `navigator.clipboard.writeText(...)` in secure contexts. A compatibility fallback may be used when the Clipboard API is unavailable, but it must still copy the same fetched text. Do not synthesize a replacement object from stale in-memory state when the persisted object is readable.
 
 ## Standard storage key
 
@@ -132,6 +146,8 @@ For each feedback entry:
 - use the first fragment as the narrowest enclosing context and the last fragment as the full captured body.
 
 This representation is intentionally independent of fragile CSS selectors or element IDs. IDs and classes remain useful because they are preserved inside the captured HTML, but retrieval correctness does not depend on them.
+
+The UI's Copy JSON action is the user-facing export path for this same object. It does not define a second representation.
 
 ## Deployment verification
 
