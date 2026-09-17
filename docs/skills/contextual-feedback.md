@@ -16,23 +16,37 @@ When the user activates it:
 2. create a visible pointer at the current viewport center;
 3. represent that pointer in absolute document coordinates (`documentX`, `documentY`);
 4. let the user drag the pointer before saving;
-5. provide an explicit **Copy JSON** action that copies the current persisted `feedback-v1` object to the system clipboard;
+5. show the feedback action row described below;
 6. on save, persist the comment, pointer location, and recoverable HTML context together.
 
 The feedback UI itself must be excluded from captured page context so feedback does not recursively snapshot its own controls or pointer marker.
 
 Text input is ordinary browser text input. Phone dictation may be used by the user, but the app does not record or transcribe audio.
 
+### Feedback action-row layout
+
+The opened feedback panel has one dedicated action row immediately below the comment/help area. That row contains exactly these three peer buttons, in this left-to-right order:
+
+```text
+Copy JSON    Cancel    Save
+```
+
+`Copy JSON` must be visibly next to `Cancel` and `Save`. Do not place it in a separate menu, header, overflow control, secondary panel, or status area.
+
+Any transient status text such as `Copying…`, `Copied JSON`, `Saving…`, or an error message must be rendered on its own line outside the action row. Status text must never consume horizontal space that could hide, wrap away, or displace `Copy JSON`.
+
+On narrow mobile viewports, all three action buttons must remain simultaneously visible without horizontal scrolling. Prefer a three-column grid or an equivalent layout that reserves one visible slot for each button. Do not rely on a wrapping flex row where one button may move out of the visible area.
+
 ### Copy JSON behavior
 
-The Copy JSON action is available from the opened feedback panel and is independent of whether the current comment field contains text.
+The **Copy JSON** button is available whenever the feedback panel is open and is independent of whether the current comment field contains text.
 
 On activation:
 
 1. perform a fresh `GET` of the standard `feedback-v1` object with browser caching disabled;
 2. require a successful response;
 3. copy the exact returned JSON text to the system clipboard;
-4. report success or failure in the feedback UI without changing the stored object.
+4. report success or failure in the separate feedback-status line without changing the stored object.
 
 Prefer `navigator.clipboard.writeText(...)` in secure contexts. A compatibility fallback may be used when the Clipboard API is unavailable, but it must still copy the same fetched text. Do not synthesize a replacement object from stale in-memory state when the persisted object is readable.
 
@@ -154,6 +168,7 @@ The UI's Copy JSON action is the user-facing export path for this same object. I
 A deployment that uses this skill should verify at least:
 
 - the production bundle contains the feedback code;
+- the opened feedback panel visibly presents `Copy JSON`, `Cancel`, and `Save` together in that order;
 - the `feedback-v1` object exists and parses as JSON with `version === 1`;
 - `htmlFragments` is an object and `feedback` is an array;
 - the app page and Skrynia health endpoint are reachable.
