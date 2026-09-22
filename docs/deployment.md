@@ -37,8 +37,14 @@ live at `STATE_DIR/{ns}/push-rules.json`, private subscription records at
 `STATE_DIR/{ns}/push-subs/`, and the durable delivery outbox at
 `STATE_DIR/_push/outbox/`; all are removed with the namespace on
 undeploy/namespace-remove except already-queued outbox items, which drain
-harmlessly. Delivery retries transient failures with bounded exponential
-backoff (up to 12 attempts) and drops expired (404/410) subscriptions.
+harmlessly. All push-private files are written `0600` with file fsync before
+rename plus directory fsync, so pre-commit outbox persistence is durable
+across OS-level crashes, not just process restarts. Transient delivery
+failures retry indefinitely with capped exponential backoff and never drop
+entries; expired (404/410) subscriptions are removed. Storage is bounded by
+the outbox capacity (10000 items): a matching mutation is rejected with
+`507 push_outbox_full` instead of committing without notification state.
+Subscriptions are capped at 500 per channel and 2000 per namespace.
 
 When `SKRYNIA_APP_DIR` is set, deployment atomically creates or replaces `APP_DIR/{namespace}` as the one active-release symlink. An external web server such as nginx can serve that directory directly.
 

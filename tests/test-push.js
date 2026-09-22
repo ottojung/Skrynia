@@ -179,7 +179,7 @@ async function test_no_public_enumeration() {
     // Management rule listing exists but requires the management token.
     const gated = await get(port, '/platform/push/rules/list');
     assert(gated.status === 401, 'rule listing needs management token, got ' + gated.status);
-    const r = await request(port, 'DELETE', '/platform/push/subscriptions/0123456789abcdef0123456789abcdef?capability=' + 'a'.repeat(64));
+    const r = await request(port, 'DELETE', '/platform/push/subscriptions/0123456789abcdef0123456789abcdef', null, { 'X-Skrynia-Capability': 'a'.repeat(64) });
     assert(r.status === 404, 'unknown id is 404, not 403');
   } finally { await stopServer(server); }
 }
@@ -190,22 +190,26 @@ async function test_capability_update_delete() {
   try {
     const sub = await register(port, 'n1', 'news', 'https://push.example/u-1');
     const url = id => '/platform/push/subscriptions/' + id;
+    const cap = c => ({ 'X-Skrynia-Capability': c });
 
-    let r = await request(port, 'PUT', url(sub.id) + '?capability=wrong', { keys: SUB_KEYS });
+    let r = await request(port, 'PUT', url(sub.id), { keys: SUB_KEYS }, cap('wrong'));
     assert(r.status === 403, 'wrong capability rejected');
     r = await request(port, 'PUT', url(sub.id), { keys: SUB_KEYS });
     assert(r.status === 403, 'missing capability rejected');
-    r = await request(port, 'PUT', url(sub.id) + '?capability=' + sub.capability, { keys: { p256dh: 'newp', auth: 'newa' } });
+    // Capability in the query string is not honored (would leak into logs).
+    r = await request(port, 'PUT', url(sub.id) + '?capability=' + sub.capability, { keys: SUB_KEYS });
+    assert(r.status === 403, 'query capability ignored');
+    r = await request(port, 'PUT', url(sub.id), { keys: { p256dh: 'newp', auth: 'newa' } }, cap(sub.capability));
     assert(r.status === 200, 'update with capability');
     const stored = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'n1', 'push-subs', sub.id + '.json'), 'utf8'));
     assert(stored.keys.p256dh === 'newp', 'keys updated');
 
-    r = await request(port, 'DELETE', url(sub.id) + '?capability=wrong');
+    r = await request(port, 'DELETE', url(sub.id), null, cap('wrong'));
     assert(r.status === 403, 'delete with wrong capability rejected');
-    r = await request(port, 'DELETE', url(sub.id) + '?capability=' + sub.capability);
+    r = await request(port, 'DELETE', url(sub.id), null, cap(sub.capability));
     assert(r.status === 200, 'delete with capability');
     assert(!fs.existsSync(path.join(TMP, 'state', 'n1', 'push-subs', sub.id + '.json')), 'record removed');
-    r = await request(port, 'DELETE', url(sub.id) + '?capability=' + sub.capability);
+    r = await request(port, 'DELETE', url(sub.id), null, cap(sub.capability));
     assert(r.status === 404, 'deleted id is 404');
   } finally { await stopServer(server); }
 }
@@ -234,6 +238,26 @@ async function test_vapid_stable_private_never_exposed() {
   assert(stored.privateKey && stored.publicKey === key1, 'keypair persisted');
   const mode = fs.statSync(path.join(TMP, 'state', '_push', 'vapid.json')).mode & 0o777;
   assert(mode === 0o600, 'vapid file is 0600, got ' + mode.toString(8));
+}
+
+async function test_private_files_are_0600() {
+  setup(); createNs('n1');
+  const { server, port } = await startServer({}, fakeTransport());
+  try {
+    await get(port, mgmt('push/rules/set', { namespace: 'n1', key: 'k', channels: 'c' }));
+    const sub = await register(port, 'n1', 'c', 'https://push.example/m-1');
+    await request(port, 'POST', '/platform/store/n1/k', 'v', { 'X-Skrynia-Mode': 'public-write' });
+    const files = [
+      path.join(TMP, 'state', '_push', 'vapid.json'),
+      path.join(TMP, 'state', 'n1', 'push-rules.json'),
+      path.join(TMP, 'state', 'n1', 'push-subs', sub.id + '.json'),
+    ].concat(server.skrynia.push.listOutbox().map(i => i.file));
+    assert(files.length === 4, 'all private files present, got ' + files.length);
+    for (const f of files) {
+      const mode = fs.statSync(f).mode & 0o777;
+      assert(mode === 0o600, 'private file is 0600: ' + f + ' got ' + mode.toString(8));
+    }
+  } finally { await stopServer(server); }
 }
 
 async function test_no_rule_no_push() {
@@ -444,18 +468,80 @@ async function test_rate_limited() {
   } finally { await stopServer(server); }
 }
 
+async function test_namespace_subscription_cap() {
+  setup(); createNs('n1');
+  const { server, port } = await startServer({ pushMaxSubsPerNamespace: 3 }, fakeTransport());
+  try {
+    // Arbitrary channel names cannot bypass the per-namespace total.
+    await register(port, 'n1', 'chan-a', 'https://push.example/cap-1');
+    await register(port, 'n1', 'chan-b', 'https://push.example/cap-2');
+    await register(port, 'n1', 'chan-c', 'https://push.example/cap-3');
+    const r = await request(port, 'POST', subUrl('n1', 'chan-d'), subBody('https://push.example/cap-4'));
+    assert(r.status === 507 && jsonBody(r).error === 'namespace_full', 'namespace cap enforced, got ' + r.status + ': ' + r.text);
+    // Dedupe of an existing record still works at cap (rotates capability).
+    const d = await request(port, 'POST', subUrl('n1', 'chan-a'), subBody('https://push.example/cap-1'));
+    assert(d.status === 201 && jsonBody(d).deduped === true, 'dedupe works at cap');
+  } finally { await stopServer(server); }
+}
+
+async function test_retry_indefinite_no_drop() {
+  setup(); createNs('n1');
+  let failures = 15;
+  const t = fakeTransport(async () => {
+    if (failures > 0) { failures--; throw transientError(503); }
+  });
+  const { server, port } = await startServer({}, t);
+  try {
+    await get(port, mgmt('push/rules/set', { namespace: 'n1', key: 'k', channels: 'c' }));
+    await register(port, 'n1', 'c', 'https://push.example/ld-1');
+    const r = await request(port, 'POST', '/platform/store/n1/k', 'v', { 'X-Skrynia-Mode': 'public-write' });
+    assert(r.status === 201, 'create');
+    for (let i = 0; i < 15; i++) {
+      await server.skrynia.push.pumpOnce({ ignoreBackoff: true });
+      const items = server.skrynia.push.listOutbox();
+      assert(items.length === 1, 'entry survives attempt ' + (i + 1) + ' (no max-attempt drop)');
+    }
+    const kept = server.skrynia.push.listOutbox()[0].entry;
+    assert(kept.attempts === 15, 'attempts keep counting, got ' + kept.attempts);
+    await server.skrynia.push.pumpOnce({ ignoreBackoff: true });
+    assert(t.calls.length === 16, 'delivered after 15 transient failures');
+    assert(server.skrynia.push.listOutbox().length === 0, 'entry drained on success');
+  } finally { await stopServer(server); }
+}
+
+async function test_outbox_full_blocks_mutation() {
+  setup(); createNs('n1');
+  const { server, port } = await startServer({ pushMaxOutboxItems: 2 }, fakeTransport());
+  try {
+    await get(port, mgmt('push/rules/set', { namespace: 'n1', key: 'a', channels: 'c1,c2' }));
+    await get(port, mgmt('push/rules/set', { namespace: 'n1', key: 'b', channels: 'c1' }));
+    let r = await request(port, 'POST', '/platform/store/n1/a', 'v', { 'X-Skrynia-Mode': 'public-write' });
+    assert(r.status === 201, 'first mutation fills the outbox');
+    assert(server.skrynia.push.listOutbox().length === 2, 'outbox at capacity');
+    r = await request(port, 'POST', '/platform/store/n1/b', 'v', { 'X-Skrynia-Mode': 'public-write' });
+    assert(r.status === 507 && jsonBody(r).error === 'push_outbox_full', 'outbox-full backpressure, got ' + r.status + ': ' + r.text);
+    r = await get(port, '/platform/store/n1/b');
+    assert(r.status === 404, 'blocked mutation left no visible object');
+    assert(server.skrynia.push.listOutbox().length === 2, 'no partial entries added');
+  } finally { await stopServer(server); }
+}
+
 const tests = [
   ['rule_management', test_rule_management],
   ['register_dedupe_validation', test_register_dedupe_validation],
   ['no_public_enumeration', test_no_public_enumeration],
   ['capability_update_delete', test_capability_update_delete],
   ['vapid_stable_private_never_exposed', test_vapid_stable_private_never_exposed],
+  ['private_files_are_0600', test_private_files_are_0600],
   ['no_rule_no_push', test_no_rule_no_push],
   ['kinds_routing_and_payload_exact', test_kinds_routing_and_payload_exact],
   ['enqueue_failure_blocks_commit', test_enqueue_failure_blocks_commit],
   ['crash_restart_recovery', test_crash_restart_recovery],
   ['spurious_wakeup_safe_and_idempotent', test_spurious_wakeup_safe_and_idempotent],
   ['transient_retry_backoff_bounded', test_transient_retry_backoff_bounded],
+  ['retry_indefinite_no_drop', test_retry_indefinite_no_drop],
+  ['outbox_full_blocks_mutation', test_outbox_full_blocks_mutation],
+  ['namespace_subscription_cap', test_namespace_subscription_cap],
   ['expired_removed_and_isolation', test_expired_removed_and_isolation],
   ['broken_subscription_isolation', test_broken_subscription_isolation],
   ['rate_limited', test_rate_limited],

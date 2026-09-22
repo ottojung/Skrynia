@@ -13,8 +13,11 @@ crash after commit never loses a notification; a crash before commit may cause
 at most a spurious wake-up. Delivery is asynchronous: provider latency never
 holds a mutation request. Push payload is exactly the channel name, never
 namespace, key, or object data. One broken subscription never blocks healthy
-ones; expired (404/410) subscriptions are removed; transient failures retry
-with bounded backoff and bounded storage.
+ones; expired (404/410) subscriptions are removed. Transient failures retry
+indefinitely with capped exponential backoff and entries are never dropped
+for retry exhaustion; storage is bounded by outbox capacity (10000 items),
+enforced as backpressure before commit: a matching mutation is rejected with
+`507 push_outbox_full` rather than committing without notification state.
 
 $id-0100292231387731
 title: Web Push subscriptions are capability-protected and private
@@ -26,10 +29,12 @@ The installation owns one stable VAPID keypair persisted under private
 state; the public key is served publicly and the private key is never exposed
 over HTTP or JavaScript. Browsers register a standard PushSubscription for one
 namespace/channel and receive an opaque subscription id plus a high-entropy
-capability required for update/delete. The same endpoint re-registering for
-the same namespace/channel is deduplicated. Private subscription records are
-never enumerated or exposed through any public endpoint. Public registration
-has abuse limits.
+capability required for update/delete; the capability travels in the
+`X-Skrynia-Capability` header, never in URLs. The same endpoint
+re-registering for the same namespace/channel is deduplicated. Private
+subscription records are never enumerated or exposed through any public
+endpoint. Public registration has abuse limits (rate limit, 500 per channel,
+2000 per namespace).
 
 $id-6144677134337762
 title: Web Push uses the web-push library

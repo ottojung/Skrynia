@@ -151,30 +151,41 @@ The `id` is opaque and the `capability` is bearer authority for update/delete.
 Re-registering the same endpoint for the same namespace/channel returns the
 same id with a fresh capability (`"deduped": true`). There is no public
 endpoint that enumerates subscriptions. Excessive registration returns
-`429 rate_limited`; a full channel returns `507 channel_full`.
+`429 rate_limited`; a full channel returns `507 channel_full`; a namespace
+that already holds 2000 subscriptions returns `507 namespace_full`.
 
 #### Update a subscription
 
 ```text
-PUT {SKRYNIA_URL}/push/subscriptions/{id}?capability={capability}
+PUT {SKRYNIA_URL}/push/subscriptions/{id}
+X-Skrynia-Capability: {capability}
 Content-Type: application/json
 
 { "endpoint": "https://push.example/...", "keys": { "p256dh": "...", "auth": "..." } }
 ```
 
-Either or both of `endpoint`/`keys` may be supplied. Response: `{ "ok": true }`.
+Either or both of `endpoint`/`keys` may be supplied. The capability travels
+in the `X-Skrynia-Capability` header (as with store object capabilities),
+never in the URL. Response: `{ "ok": true }`.
 
 #### Delete a subscription
 
 ```text
-DELETE {SKRYNIA_URL}/push/subscriptions/{id}?capability={capability}
+DELETE {SKRYNIA_URL}/push/subscriptions/{id}
+X-Skrynia-Capability: {capability}
 ```
 
 Response: `{ "ok": true }`.
 
 Push errors include `400` (invalid namespace, channel, or subscription),
 `403` (missing/wrong capability), `404` (unknown id or namespace),
-`413` (request too large), `429` (rate limited), and `507` (channel full).
+`413` (request too large), `429` (rate limited), and `507` (channel or
+namespace subscription quota exceeded).
+
+When the durable delivery outbox is full, a matching store mutation is not
+committed and fails with `507 push_outbox_full` instead of committing
+without notification state; retrying the mutation after the outbox drains
+succeeds. Unexpected enqueue I/O failures return `500 push_enqueue_failed`.
 
 ## Management endpoints
 

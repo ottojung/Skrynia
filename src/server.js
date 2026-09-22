@@ -60,6 +60,9 @@ function createServer(opts) {
     pushPollMs: opts.pushPollMs,
     pushSubject: opts.pushSubject,
     pushManual: opts.pushManual,
+    maxKeyLength: MAX_KEY_LENGTH,
+    maxSubsPerNamespace: opts.pushMaxSubsPerNamespace,
+    maxOutboxItems: opts.pushMaxOutboxItems,
   });
 
   const management = createManagement({
@@ -186,6 +189,7 @@ function createServer(opts) {
     try {
       push.enqueue(ns, key, 'create');
     } catch (e) {
+      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
       console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
       return json(res, 500, {error:'push_enqueue_failed'});
     }
@@ -242,6 +246,7 @@ function createServer(opts) {
     try {
       push.enqueue(ns, key, 'replace');
     } catch (e) {
+      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
       console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
       return json(res, 500, {error:'push_enqueue_failed'});
     }
@@ -272,6 +277,7 @@ function createServer(opts) {
     try {
       push.enqueue(ns, key, 'delete');
     } catch (e) {
+      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
       console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
       return json(res, 500, {error:'push_enqueue_failed'});
     }
@@ -420,12 +426,20 @@ function createServer(opts) {
       return json(res, 201, { ok: true, id: sub.id, capability: sub.capability, deduped: sub.deduped });
     } catch (e) {
       if (e.code === 'channel_full') return json(res, 507, {error:'channel_full'});
+      if (e.code === 'namespace_full') return json(res, 507, {error:'namespace_full', detail:'subscription quota'});
       throw e;
     }
   }
 
-  function handlePushUpdate(id, url, res, body) {
-    const capability = url.searchParams.get('capability');
+  function pushCapability(req) {
+    // Like store object capabilities: bearer secret in a header, never in
+    // the URL, so it does not leak into proxy logs or history.
+    const cap = req.headers['x-skrynia-capability'];
+    return typeof cap === 'string' && cap ? cap : null;
+  }
+
+  function handlePushUpdate(id, req, res, body) {
+    const capability = pushCapability(req);
     if (!capability) return json(res, 403, {error:'capability_required'});
     const patch = {};
     if (body && body.endpoint !== undefined) {
@@ -447,8 +461,8 @@ function createServer(opts) {
     }
   }
 
-  function handlePushDelete(id, url, res) {
-    const capability = url.searchParams.get('capability');
+  function handlePushDelete(id, req, res) {
+    const capability = pushCapability(req);
     if (!capability) return json(res, 403, {error:'capability_required'});
     try {
       push.removeSubAnywhere(id, capability);
@@ -494,10 +508,10 @@ function createServer(opts) {
     if (pushSubMatch) {
       const subId = pushSubMatch[1];
       if (req.method === 'PUT') {
-        return readPushJson(req, res, body => handlePushUpdate(subId, url, res, body));
+        return readPushJson(req, res, body => handlePushUpdate(subId, req, res, body));
       }
       if (req.method === 'DELETE') {
-        return handlePushDelete(subId, url, res);
+        return handlePushDelete(subId, req, res);
       }
       res.writeHead(405);
       res.end('Method not allowed');

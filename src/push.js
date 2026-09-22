@@ -19,7 +19,8 @@ const CHANNEL_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const KINDS = ['create', 'replace', 'delete'];
 const MAX_CHANNELS_PER_RULE = 8;
 const MAX_SUBS_PER_CHANNEL = 500;
-const MAX_ATTEMPTS = 12;
+const MAX_SUBS_PER_NAMESPACE = 2000;
+const MAX_OUTBOX_ITEMS = 10000;
 const SUB_ID_BYTES = 16;
 const CAP_BYTES = 32;
 
@@ -43,10 +44,35 @@ function timingSafeEqualHex(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+// Durable atomic write for all private push state: temp file is created
+// with mode 0600 (no 0644 window), fsynced before rename so the entry
+// survives OS-level crashes, then the containing directory is fsynced so
+// the rename itself is durable.
 function atomicWrite(filePath, data) {
+  ensureDir(path.dirname(filePath));
   const tmp = filePath + '.tmp.' + process.pid;
-  fs.writeFileSync(tmp, data);
+  const fd = fs.openSync(tmp, 'w', 0o600);
+  try {
+    fs.writeFileSync(fd, data);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
   fs.renameSync(tmp, filePath);
+  fsyncDir(path.dirname(filePath));
+}
+
+function fsyncDir(dir) {
+  // The target is Linux: real open/I/O/permission errors propagate. Only
+  // explicitly known unsupported directory-fsync cases are tolerated.
+  const fd = fs.openSync(dir, 'r');
+  try {
+    fs.fsyncSync(fd);
+  } catch (e) {
+    if (e.code !== 'EINVAL' && e.code !== 'ENOSYS') throw e;
+  } finally {
+    try { fs.closeSync(fd); } catch {}
+  }
 }
 
 function backoffMs(attempts) {
@@ -69,6 +95,9 @@ function createPush(opts) {
   const pollMs = opts.pushPollMs != null ? Number(opts.pushPollMs) : 1000;
   // Manual mode (tests only): no automatic pumps; tests drive pumpOnce().
   const manual = Boolean(opts.pushManual);
+  const maxSubsPerNamespace = opts.maxSubsPerNamespace != null ? Number(opts.maxSubsPerNamespace) : MAX_SUBS_PER_NAMESPACE;
+  const maxOutboxItems = opts.maxOutboxItems != null ? Number(opts.maxOutboxItems) : MAX_OUTBOX_ITEMS;
+  const maxKeyLength = opts.maxKeyLength != null ? Number(opts.maxKeyLength) : 256;
 
   // --- public abuse limits (in-memory, per process) ---
   const regHits = new Map(); // ip -> [timestamps]
@@ -109,25 +138,12 @@ function createPush(opts) {
       if (e.code !== 'ENOENT') throw e;
     }
     ensureDir(pushDir);
-    let keys;
-    try {
-      const webpush = require('web-push');
-      keys = webpush.generateVAPIDKeys();
-    } catch {
-      // Fallback only if the pinned library is unavailable; keys stay
-      // importable by web-push since the format is standard P-256 base64url.
-      const ecdh = crypto.createECDH('prime256v1');
-      ecdh.generateKeys();
-      const pub = ecdh.getPublicKey();
-      const x = pub.subarray(1, 33).toString('base64url');
-      const y = pub.subarray(33, 65).toString('base64url');
-      keys = {
-        publicKey: Buffer.concat([Buffer.from([0x04]), Buffer.from(x, 'base64url'), Buffer.from(y, 'base64url')]).toString('base64url'),
-        privateKey: ecdh.getPrivateKey().toString('base64url'),
-      };
-    }
+    // The pinned web-push library is mandatory for VAPID generation: if it
+    // is unavailable, startup fails loudly rather than minting keys with
+    // hand-rolled cryptography.
+    const webpush = require('web-push');
+    const keys = webpush.generateVAPIDKeys();
     atomicWrite(vapidPath, JSON.stringify(keys, null, 2));
-    try { fs.chmodSync(vapidPath, 0o600); } catch {}
     return keys;
   }
 
@@ -152,7 +168,7 @@ function createPush(opts) {
   }
 
   function validateRuleParts(key, kinds, channels) {
-    if (typeof key !== 'string' || key.length === 0 || key.length > 256) return 'key must be a non-empty string up to 256 chars';
+    if (typeof key !== 'string' || key.length === 0 || key.length > maxKeyLength) return 'key must be a non-empty string up to ' + maxKeyLength + ' chars';
     if (key.includes('\0') || key.includes('/') || key === '.' || key === '..' || key.includes('..')) return 'key must be an exact plain object key';
     for (const k of kinds) {
       if (!KINDS.includes(k)) return 'kind must be one of ' + KINDS.join(',');
@@ -264,13 +280,21 @@ function createPush(opts) {
   }
 
   function createSub(ns, channel, endpoint, keys) {
-    const existing = allSubs(ns).find(s => s.channel === channel && sha256hex(s.endpoint) === sha256hex(endpoint));
+    const subs = allSubs(ns);
+    const existing = subs.find(s => s.channel === channel && sha256hex(s.endpoint) === sha256hex(endpoint));
     if (existing) {
       const capability = randomHex(CAP_BYTES);
       existing.keys = { p256dh: keys.p256dh, auth: keys.auth };
       existing.capHash = sha256hex(capability);
       atomicWrite(subPath(ns, existing.id), JSON.stringify(existing, null, 2));
       return { id: existing.id, capability, deduped: true };
+    }
+    // Durable per-namespace total cap: arbitrary channel names cannot be
+    // used to grow subscriptions without bound.
+    if (subs.length >= maxSubsPerNamespace) {
+      const err = new Error('namespace_full');
+      err.code = 'namespace_full';
+      throw err;
     }
     if (channelCount(ns, channel) >= MAX_SUBS_PER_CHANNEL) {
       const err = new Error('channel_full');
@@ -371,10 +395,23 @@ function createPush(opts) {
 
   // --- durable outbox: one entry per (mutation x channel) ---
 
+  function outboxCount() {
+    try { return fs.readdirSync(outboxDir).filter(f => f.endsWith('.json')).length; }
+    catch (e) { if (e.code === 'ENOENT') return 0; throw e; }
+  }
+
   function enqueue(ns, key, kind) {
     const channels = matchChannels(ns, key, kind);
     if (!channels.length) return [];
     ensureDir(outboxDir);
+    // Backpressure before commit: capacity for ALL matching channels is
+    // verified synchronously before any entry is written, so a configured
+    // mutation never commits without complete durable notification state.
+    if (outboxCount() + channels.length > maxOutboxItems) {
+      const err = new Error('outbox_full');
+      err.code = 'outbox_full';
+      throw err;
+    }
     const now = new Date().toISOString();
     const ids = [];
     for (const channel of channels) {
@@ -418,8 +455,14 @@ function createPush(opts) {
     return status === 404 || status === 410;
   }
 
-  // At-least-once delivery. Safe to run concurrently/repeatedly: payload is
-  // exactly the channel name, sends are idempotent, entry removal is atomic.
+  // At-least-once delivery. Safe to run repeatedly: a successfully
+  // delivered entry is removed, and duplicates are acceptable because the
+  // payload is only a channel-name wake-up (clients reread store state).
+  // Web Push sends are NOT idempotent; the outbox entry is the deduplicating
+  // record, and it is removed only after every subscription send succeeds
+  // (or the subscription proves expired). Transient failures retry
+  // indefinitely with capped exponential backoff; storage is bounded by the
+  // outbox capacity check in enqueue(), never by dropping entries here.
   async function pumpOnce(opts) {
     opts = opts || {};
     const now = Date.now();
@@ -452,14 +495,11 @@ function createPush(opts) {
       if (!failed) {
         try { fs.unlinkSync(file); } catch {}
       } else {
-        const attempts = (fresh.attempts || 0) + 1;
-        if (attempts >= MAX_ATTEMPTS) {
-          try { fs.unlinkSync(file); } catch {} // bounded storage
-        } else {
-          fresh.attempts = attempts;
-          fresh.nextAt = new Date(Date.now() + backoffMs(attempts)).toISOString();
-          try { atomicWrite(file, JSON.stringify(fresh, null, 2)); } catch {}
-        }
+        // Transient failure: retry indefinitely with capped exponential
+        // backoff. Entries are never dropped here; see enqueue() capacity.
+        fresh.attempts = (fresh.attempts || 0) + 1;
+        fresh.nextAt = new Date(Date.now() + backoffMs(fresh.attempts)).toISOString();
+        try { atomicWrite(file, JSON.stringify(fresh, null, 2)); } catch {}
       }
     }
     return { delivered };
@@ -518,6 +558,7 @@ function createPush(opts) {
     allSubs,
     enqueue,
     listOutbox,
+    outboxCount,
     pumpOnce,
     checkRate,
     resetRateLimits,
@@ -525,8 +566,7 @@ function createPush(opts) {
     start,
     close,
     outboxDir,
-    MAX_ATTEMPTS,
   };
 }
 
-module.exports = { createPush, CHANNEL_RE, KINDS, MAX_SUBS_PER_CHANNEL };
+module.exports = { createPush, CHANNEL_RE, KINDS, MAX_SUBS_PER_CHANNEL, MAX_SUBS_PER_NAMESPACE, MAX_OUTBOX_ITEMS };
