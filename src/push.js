@@ -320,40 +320,6 @@ function createPush(opts) {
     return timingSafeEqualHex(sha256hex(capability), sub.capHash);
   }
 
-  function updateSub(ns, id, capability, patch) {
-    const sub = findSub(ns, id);
-    if (!sub) {
-      const err = new Error('not_found');
-      err.code = 'not_found';
-      throw err;
-    }
-    if (!checkCap(sub, capability)) {
-      const err = new Error('invalid_capability');
-      err.code = 'invalid_capability';
-      throw err;
-    }
-    if (patch.endpoint !== undefined) sub.endpoint = patch.endpoint;
-    if (patch.keys !== undefined) sub.keys = { p256dh: patch.keys.p256dh, auth: patch.keys.auth };
-    atomicWrite(subPath(ns, id), JSON.stringify(sub, null, 2));
-    return sub;
-  }
-
-  function removeSub(ns, id, capability) {
-    const sub = findSub(ns, id);
-    if (!sub) {
-      const err = new Error('not_found');
-      err.code = 'not_found';
-      throw err;
-    }
-    if (!checkCap(sub, capability)) {
-      const err = new Error('invalid_capability');
-      err.code = 'invalid_capability';
-      throw err;
-    }
-    try { fs.unlinkSync(subPath(ns, id)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    return true;
-  }
-
   function removeSubRecord(ns, id) {
     try { fs.unlinkSync(subPath(ns, id)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   }
@@ -579,8 +545,6 @@ function createPush(opts) {
     if (timer) { clearInterval(timer); timer = null; }
   }
 
-  function setTransport(fn) { transport = fn; }
-
   return {
     getPublicKey,
     getVapidKeys,
@@ -595,8 +559,6 @@ function createPush(opts) {
     validEndpoint,
     validKeys,
     createSub,
-    updateSub,
-    removeSub,
     updateSubAnywhere,
     removeSubAnywhere,
     findSub,
@@ -606,7 +568,6 @@ function createPush(opts) {
     listOutbox,
     outboxCount,
     pumpOnce,
-    setTransport,
     start,
     close,
     outboxDir,
