@@ -89,6 +89,7 @@ function createPush(opts) {
   const outboxDir = path.join(pushDir, 'outbox');
   const vapidPath = path.join(pushDir, 'vapid.json');
   const subject = opts.pushSubject || process.env.SKRYNIA_PUSH_SUBJECT || opts.skryniaUrl || process.env.SKRYNIA_URL || 'https://skrynia.local/';
+  const getWebPush = () => opts.webPushLib || require('web-push');
 
   let transport = opts.pushTransport || null;
   let pumping = false;
@@ -125,7 +126,7 @@ function createPush(opts) {
     // The pinned web-push library is mandatory for VAPID generation: if it
     // is unavailable, startup fails loudly rather than minting keys with
     // hand-rolled cryptography.
-    const webpush = require('web-push');
+    const webpush = getWebPush();
     const keys = webpush.generateVAPIDKeys();
     atomicWrite(vapidPath, JSON.stringify(keys, null, 2));
     return keys;
@@ -456,7 +457,7 @@ function createPush(opts) {
   }
 
   function defaultTransport() {
-    const webpush = require('web-push');
+    const webpush = getWebPush();
     const keys = getVapidKeys();
     return async (sub, channel) => {
       await webpush.sendNotification(
