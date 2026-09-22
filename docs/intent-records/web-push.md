@@ -12,8 +12,10 @@ process and data directory before the mutation is committed/visible, so a
 crash after commit never loses a notification; a crash before commit may cause
 at most a spurious wake-up. Delivery is asynchronous: provider latency never
 holds a mutation request. Push payload is exactly the channel name, never
-namespace, key, or object data. One broken subscription never blocks healthy
-ones; expired (404/410) subscriptions are removed. Transient failures retry
+namespace, key, or object data. One broken or stuck subscription never blocks
+healthy ones; each delivery attempt has a finite timeout, and expired (404/410)
+subscriptions are removed without deleting a registration whose endpoint changed
+while delivery was in flight. Transient failures retry
 indefinitely with capped exponential backoff and entries are never dropped
 for retry exhaustion; storage is bounded by outbox capacity (10000 items),
 enforced as backpressure before commit: a matching mutation is rejected with
@@ -30,11 +32,12 @@ state; the public key is served publicly and the private key is never exposed
 over HTTP or JavaScript. Browsers register a standard PushSubscription for one
 namespace/channel and receive an opaque subscription id plus a high-entropy
 capability required for update/delete; the capability travels in the
-`X-Skrynia-Capability` header, never in URLs. The same endpoint
-re-registering for the same namespace/channel is deduplicated. Private
-subscription records are never enumerated or exposed through any public
-endpoint. Public registration has abuse limits (rate limit, 500 per channel,
-2000 per namespace).
+`X-Skrynia-Capability` header, never in URLs. Re-registering an existing endpoint for the same namespace/channel is an
+authorized replacement: it requires the current capability, keeps the opaque
+id, and returns a fresh capability. Private subscription records are never
+enumerated or exposed through any public endpoint. Public registration remains
+bounded by durable limits of 500 subscriptions per channel and 2000 per
+namespace.
 
 $id-6144677134337762
 title: Web Push uses the web-push library
