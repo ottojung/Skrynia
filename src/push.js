@@ -221,9 +221,12 @@ function createPush(opts) {
     return true;
   }
 
-  function readSubFile(file) {
+  function readPrivateJson(file) {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-    catch { return null; }
+    catch (e) {
+      if (e && e.code === 'ENOENT') return null;
+      throw e;
+    }
   }
 
   function allSubs(ns) {
@@ -233,7 +236,7 @@ function createPush(opts) {
     catch (e) { if (e.code !== 'ENOENT') throw e; return []; }
     const out = [];
     for (const f of files) {
-      const sub = readSubFile(path.join(dir, f));
+      const sub = readPrivateJson(path.join(dir, f));
       if (sub && sub.id && sub.endpoint) out.push(sub);
     }
     return out;
@@ -245,7 +248,7 @@ function createPush(opts) {
 
   function findSub(ns, id) {
     if (!/^[0-9a-f]{32}$/.test(id || '')) return null;
-    const sub = readSubFile(subPath(ns, id));
+    const sub = readPrivateJson(subPath(ns, id));
     return sub && sub.id === id ? sub : null;
   }
 
@@ -258,7 +261,7 @@ function createPush(opts) {
     catch { return null; }
     for (const ns of dirs) {
       if (!validNs(ns)) continue;
-      const sub = readSubFile(path.join(subsDir(ns), id + '.json'));
+      const sub = readPrivateJson(path.join(subsDir(ns), id + '.json'));
       if (sub && sub.id === id) return sub;
     }
     return null;
@@ -449,9 +452,9 @@ function createPush(opts) {
     const out = [];
     for (const f of files) {
       const p = path.join(outboxDir, f);
-      const entry = readSubFile(p);
-      if (entry && entry.id) out.push({ file: p, entry });
-      else { try { fs.unlinkSync(p); } catch {} }
+      const entry = readPrivateJson(p);
+      if (!entry || !entry.id) throw new Error('invalid durable push outbox entry: ' + f);
+      out.push({ file: p, entry });
     }
     return out;
   }
