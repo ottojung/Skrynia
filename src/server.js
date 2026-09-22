@@ -60,6 +60,7 @@ function createServer(opts) {
     pushPollMs: opts.pushPollMs,
     pushSubject: opts.pushSubject,
     pushManual: opts.pushManual,
+    pushSendTimeoutMs: opts.pushSendTimeoutMs,
     maxKeyLength: MAX_KEY_LENGTH,
     maxSubsPerNamespace: opts.pushMaxSubsPerNamespace,
     maxOutboxItems: opts.pushMaxOutboxItems,
@@ -415,16 +416,16 @@ function createServer(opts) {
     if (!validNs(ns)) return json(res, 400, {error:'invalid_namespace'});
     if (!nsExists(ns)) return json(res, 404, {error:'namespace_not_found'});
     if (!push.validChannel(channel)) return json(res, 400, {error:'invalid_channel'});
-    const ip = (req.socket && req.socket.remoteAddress) || 'unknown';
-    if (!push.checkRate(ip)) return json(res, 429, {error:'rate_limited'});
     const endpoint = body && body.endpoint;
     const keys = body && body.keys;
     if (!push.validEndpoint(endpoint)) return json(res, 400, {error:'invalid_subscription', detail:'endpoint must be an https:// URL'});
     if (!push.validKeys(keys)) return json(res, 400, {error:'invalid_subscription', detail:'keys.p256dh and keys.auth are required'});
     try {
-      const sub = push.createSub(ns, channel, endpoint, keys);
+      const sub = push.createSub(ns, channel, endpoint, keys, pushCapability(req));
       return json(res, 201, { ok: true, id: sub.id, capability: sub.capability, deduped: sub.deduped });
     } catch (e) {
+      if (e.code === 'capability_required') return json(res, 403, {error:'capability_required'});
+      if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
       if (e.code === 'channel_full') return json(res, 507, {error:'channel_full'});
       if (e.code === 'namespace_full') return json(res, 507, {error:'namespace_full', detail:'subscription quota'});
       throw e;
@@ -457,6 +458,7 @@ function createServer(opts) {
     } catch (e) {
       if (e.code === 'not_found') return json(res, 404, {error:'not_found'});
       if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
+      if (e.code === 'endpoint_in_use') return json(res, 409, {error:'endpoint_in_use'});
       throw e;
     }
   }
