@@ -6,6 +6,7 @@ A minimal platform for deploying and serving small web apps with durable key-val
 
 - **Deploy from git over SSH**: Clone from an SSH scp-like repo URL, checkout exact commit, build via container, atomic release activation
 - **Storage API**: Namespace-scoped key-value store with immutable, capability-write, and public-write modes
+- **Web Push**: Durable mutation-driven push; exact namespace/key/kinds map to named channels, payload is exactly the channel name
 - **App serving**: Static file serving from active releases under a configurable base path
 - **HTTP management API**: Deployment, rollback, undeploy, release inspection, and namespace management relative to `SKRYNIA_URL`
 - **Client library**: Tiny browser library served relative to `SKRYNIA_URL` at `/client/skrynia.js`
@@ -44,6 +45,10 @@ GET /platform/ns/create?namespace=...&quota=...&token=...
 GET /platform/ns/remove?namespace=...&token=...
 GET /platform/ns/inspect?namespace=...&token=...
 GET /platform/ns/list?token=...
+GET /platform/push/rules/set?namespace=...&key=...&channels=...&on=...&token=...
+GET /platform/push/rules/get?namespace=...&key=...&token=...
+GET /platform/push/rules/list?namespace=...&token=...
+GET /platform/push/rules/remove?namespace=...&key=...&token=...
 ```
 
 `release`, `builder`, and `quota` are optional where shown. Deploy requires `repo`, `commit`, `subdir`, and `namespace`. `repo` must be an SSH Git URL in scp-like form `user@host:path` (e.g. `git@github.com:myorg/myapp.git`). Local paths, `file://`, `http://`, `https://`, `ssh://`, and other URL schemes are rejected. `commit` must be a full 40- or 64-character hexadecimal git object id, and Skrynia verifies that the checked-out HEAD exactly matches it.
@@ -95,6 +100,7 @@ Environment variables:
 | `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Max objects per namespace |
 | `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
 | `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max object size |
+| `SKRYNIA_PUSH_SEND_TIMEOUT_MS` | `10000` | Maximum time for one Web Push delivery attempt before retrying it as transient |
 
 ## Storage API
 
@@ -104,6 +110,10 @@ Environment variables:
 - `POST /platform/store/{ns}/{key}` — create object
 - `PUT /platform/store/{ns}/{key}` — replace object
 - `DELETE /platform/store/{ns}/{key}` — delete object
+- `GET /platform/push/vapid` — VAPID public key
+- `POST /platform/push/subscriptions?namespace={ns}&channel={ch}` — register a browser PushSubscription; replacing an existing endpoint requires its `X-Skrynia-Capability`
+- `PUT /platform/push/subscriptions/{id}` — update a subscription with `X-Skrynia-Capability`
+- `DELETE /platform/push/subscriptions/{id}` — delete a subscription with `X-Skrynia-Capability`
 - `GET {base_path}/{ns}/{path}` — serve app static files
 
 See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.

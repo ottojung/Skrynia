@@ -1,0 +1,14 @@
+{
+  "name": "skrynia",
+  "version": "0.1.0",
+  "description": "Minimal platform for deploying and serving small web apps with durable key-value storage",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "web-push": "3.6.7"
+  },
+  "scripts": {
+    "test": "node tests/test.js && node tests/regression.js && node tests/test-action.js && node tests/test-push.js"
+  }
+}

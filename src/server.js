@@ -14,6 +14,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { normalizeBasePath } = require('./base-path.js');
 const { createManagement, ManagementError } = require('./management.js');
+const { createPush } = require('./push.js');
 const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 
 const {
@@ -52,11 +53,25 @@ function createServer(opts) {
   const MAX_KEY_LENGTH = parseInt(process.env.SKRYNIA_MAX_KEY_LENGTH || '256', 10);
   const MAX_OBJECT_SIZE = parseInt(process.env.SKRYNIA_MAX_OBJECT_SIZE || '10485760', 10);
 
+  const push = createPush({
+    dataDir: shared.dataDir,
+    skryniaUrl: SKRYNIA_URL,
+    pushTransport: opts.pushTransport,
+    pushPollMs: opts.pushPollMs,
+    pushSubject: opts.pushSubject,
+    pushManual: opts.pushManual,
+    pushSendTimeoutMs: opts.pushSendTimeoutMs,
+    maxKeyLength: MAX_KEY_LENGTH,
+    maxSubsPerNamespace: opts.pushMaxSubsPerNamespace,
+    maxOutboxItems: opts.pushMaxOutboxItems,
+  });
+
   const management = createManagement({
     dataDir: shared.dataDir,
     appBasePath: APP_BASE_PATH,
     appDir: APP_DIR,
     builderImage: opts.builderImage,
+    push,
   });
 
   function json(res, status, body) {
@@ -165,6 +180,21 @@ function createServer(opts) {
     // metadata, it is residue from an interrupted create and can be reclaimed.
     if (!existsSync(shared.nsMetaPath(ns, key)) && (existsSync(shared.nsObjPath(ns, key)) || existsSync(shared.nsCapPath(ns, key)))) cleanupIncompleteCreate(ns, key);
 
+    if (existsSync(shared.nsMetaPath(ns, key))) return json(res, 409, {error:'already_exists'});
+
+    // Durability ordering: persist outbox item(s) BEFORE the mutation becomes
+    // committed/visible (.meta rename below). A crash between outbox
+    // persistence and commit causes at most a spurious wake-up (acceptable);
+    // a crash after commit always leaves recoverable outbox state. The whole
+    // handler is synchronous, so no other mutation can interleave.
+    try {
+      push.enqueue(ns, key, 'create');
+    } catch (e) {
+      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
+      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+      return json(res, 500, {error:'push_enqueue_failed'});
+    }
+
     if (!exclusiveCreate(shared.nsObjPath(ns, key), body)) return json(res, 409, {error:'already_exists'});
 
     const now = new Date().toISOString();
@@ -212,6 +242,16 @@ function createServer(opts) {
     const newBytes = q.bytes - meta.size + body.length;
     if (newBytes > q.quotaBytes) return json(res, 507, {error:'namespace_full',detail:'quota_bytes'});
 
+    // Outbox before commit: the .dat replace below is the visibility point
+    // for current-data readers, so notification state goes to disk first.
+    try {
+      push.enqueue(ns, key, 'replace');
+    } catch (e) {
+      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
+      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+      return json(res, 500, {error:'push_enqueue_failed'});
+    }
+
     atomicReplace(shared.nsObjPath(ns, key), body);
     meta.size = body.length;
     meta.contentType = req.headers['content-type'] || meta.contentType;
@@ -231,6 +271,16 @@ function createServer(opts) {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
       if (!timingSafeEqualHex(sha256hex(capability), readFileSync(shared.nsCapPath(ns, key), 'utf8'))) return json(res, 403, {error:'invalid_capability'});
+    }
+
+    // Outbox before commit: the .meta unlink below is the visibility point
+    // for deletion, so notification state goes to disk first.
+    try {
+      push.enqueue(ns, key, 'delete');
+    } catch (e) {
+      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
+      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+      return json(res, 500, {error:'push_enqueue_failed'});
     }
 
     unlinkSync(mp);
@@ -327,7 +377,104 @@ function createServer(opts) {
     '/ns/remove': params => management.namespaceRemove(params),
     '/ns/inspect': params => management.namespaceInspect(params),
     '/ns/list': () => management.namespaceList(),
+    '/push/rules/set': params => management.pushRuleSet(params),
+    '/push/rules/get': params => management.pushRuleGet(params),
+    '/push/rules/list': params => management.pushRuleList(params),
+    '/push/rules/remove': params => management.pushRuleRemove(params),
   };
+
+  // --- Web Push public API ---
+
+  const PUSH_JSON_MAX = 8192;
+
+  function readPushJson(req, res, cb) {
+    const chunks = [];
+    let size = 0;
+    let done = false;
+    req.on('data', chunk => {
+      if (done) return;
+      size += chunk.length;
+      if (size > PUSH_JSON_MAX) {
+        done = true;
+        json(res, 413, {error:'request_too_large'});
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (done) return;
+      let body;
+      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+      catch { return json(res, 400, {error:'invalid_json'}); }
+      cb(body);
+    });
+  }
+
+  function handlePushRegister(url, req, res, body) {
+    const ns = url.searchParams.get('namespace');
+    const channel = url.searchParams.get('channel');
+    if (!validNs(ns)) return json(res, 400, {error:'invalid_namespace'});
+    if (!nsExists(ns)) return json(res, 404, {error:'namespace_not_found'});
+    if (!push.validChannel(channel)) return json(res, 400, {error:'invalid_channel'});
+    const endpoint = body && body.endpoint;
+    const keys = body && body.keys;
+    if (!push.validEndpoint(endpoint)) return json(res, 400, {error:'invalid_subscription', detail:'endpoint must be an https:// URL'});
+    if (!push.validKeys(keys)) return json(res, 400, {error:'invalid_subscription', detail:'keys.p256dh and keys.auth are required'});
+    try {
+      const sub = push.createSub(ns, channel, endpoint, keys, pushCapability(req));
+      return json(res, 201, { ok: true, id: sub.id, capability: sub.capability, deduped: sub.deduped });
+    } catch (e) {
+      if (e.code === 'capability_required') return json(res, 403, {error:'capability_required'});
+      if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
+      if (e.code === 'channel_full') return json(res, 507, {error:'channel_full'});
+      if (e.code === 'namespace_full') return json(res, 507, {error:'namespace_full', detail:'subscription quota'});
+      throw e;
+    }
+  }
+
+  function pushCapability(req) {
+    // Like store object capabilities: bearer secret in a header, never in
+    // the URL, so it does not leak into proxy logs or history.
+    const cap = req.headers['x-skrynia-capability'];
+    return typeof cap === 'string' && cap ? cap : null;
+  }
+
+  function handlePushUpdate(id, req, res, body) {
+    const capability = pushCapability(req);
+    if (!capability) return json(res, 403, {error:'capability_required'});
+    const patch = {};
+    if (body && body.endpoint !== undefined) {
+      if (!push.validEndpoint(body.endpoint)) return json(res, 400, {error:'invalid_subscription', detail:'endpoint must be an https:// URL'});
+      patch.endpoint = body.endpoint;
+    }
+    if (body && body.keys !== undefined) {
+      if (!push.validKeys(body.keys)) return json(res, 400, {error:'invalid_subscription', detail:'keys.p256dh and keys.auth are required'});
+      patch.keys = body.keys;
+    }
+    if (patch.endpoint === undefined && patch.keys === undefined) return json(res, 400, {error:'nothing_to_update'});
+    try {
+      push.updateSubAnywhere(id, capability, patch);
+      return json(res, 200, {ok:true});
+    } catch (e) {
+      if (e.code === 'not_found') return json(res, 404, {error:'not_found'});
+      if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
+      if (e.code === 'endpoint_in_use') return json(res, 409, {error:'endpoint_in_use'});
+      throw e;
+    }
+  }
+
+  function handlePushDelete(id, req, res) {
+    const capability = pushCapability(req);
+    if (!capability) return json(res, 403, {error:'capability_required'});
+    try {
+      push.removeSubAnywhere(id, capability);
+      return json(res, 200, {ok:true});
+    } catch (e) {
+      if (e.code === 'not_found') return json(res, 404, {error:'not_found'});
+      if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
+      throw e;
+    }
+  }
 
   function routePath(pathname) {
     if (HTTP_BASE_PATH === '/') return pathname;
@@ -348,6 +495,28 @@ function createServer(opts) {
       if (!existsSync(CLIENT_PATH)) { res.writeHead(404); res.end('Not found'); return; }
       res.writeHead(200, {'Content-Type':'application/javascript'});
       res.end(readFileSync(CLIENT_PATH));
+      return;
+    }
+
+    if (p === '/push/vapid' && req.method === 'GET') {
+      return json(res, 200, { publicKey: push.getPublicKey() });
+    }
+
+    if (p === '/push/subscriptions' && req.method === 'POST') {
+      return readPushJson(req, res, body => handlePushRegister(url, req, res, body));
+    }
+
+    const pushSubMatch = p === null ? null : p.match(/^\/push\/subscriptions\/([0-9a-zA-Z]+)$/);
+    if (pushSubMatch) {
+      const subId = pushSubMatch[1];
+      if (req.method === 'PUT') {
+        return readPushJson(req, res, body => handlePushUpdate(subId, req, res, body));
+      }
+      if (req.method === 'DELETE') {
+        return handlePushDelete(subId, req, res);
+      }
+      res.writeHead(405);
+      res.end('Method not allowed');
       return;
     }
 
@@ -411,9 +580,11 @@ function createServer(opts) {
   ensureDir(RELEASES_DIR);
   ensureDir(STORAGE_DIR);
   ensureDir(STATE_DIR);
+  push.start();
 
   const server = http.createServer(route);
-  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN) };
+  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), push };
+  server.on('close', () => push.close());
   return server;
 }
 

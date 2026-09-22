@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { normalizeBasePath } = require('./base-path.js');
 const { validNs, ensureDir, createShared } = require('./shared.js');
+const { createPush } = require('./push.js');
 
 class ManagementError extends Error {
   constructor(status, code, detail) {
@@ -26,6 +27,7 @@ function createManagement(opts) {
   const BUILDER_IMAGE = opts.builderImage || process.env.SKRYNIA_BUILDER_IMAGE || 'skrynia-builder:0.1.0';
   const APP_BASE_PATH = normalizeBasePath(opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps');
   const APP_DIR = opts.appDir || process.env.SKRYNIA_APP_DIR || '';
+  const push = opts.push || createPush({ dataDir: shared.dataDir });
 
   const HEX40 = /^[0-9a-f]{40}$/;
   const HEX64 = /^[0-9a-f]{64}$/;
@@ -354,6 +356,44 @@ function createManagement(opts) {
     return { namespaces };
   }
 
+  // --- Web Push rules: exact namespace + exact key + kinds -> channels ---
+
+  function requirePushNs(ns) {
+    validateNamespace(ns);
+    if (!fs.existsSync(shared.nsQuotaPath(ns))) fail(404, 'namespace_not_found', 'namespace ' + ns + ' not found');
+  }
+
+  function pushRuleSet(params) {
+    const ns = params.namespace;
+    requirePushNs(ns);
+    if (!params.key) fail(400, 'missing_key', 'key is required');
+    const kinds = push.parseList(params.on == null || params.on === '' ? 'create,replace,delete' : params.on);
+    const channels = push.parseList(params.channels);
+    const problem = push.validateRuleParts(params.key, kinds, channels);
+    if (problem) fail(400, 'invalid_push_rule', problem);
+    return { ok: true, rule: push.setRule(ns, params.key, kinds, channels) };
+  }
+
+  function pushRuleGet(params) {
+    requirePushNs(params.namespace);
+    if (!params.key) fail(400, 'missing_key', 'key is required');
+    const rule = push.getRule(params.namespace, params.key);
+    if (!rule) fail(404, 'push_rule_not_found', 'no push rule for key ' + params.key);
+    return { namespace: params.namespace, rule };
+  }
+
+  function pushRuleList(params) {
+    requirePushNs(params.namespace);
+    return { namespace: params.namespace, rules: push.loadRules(params.namespace) };
+  }
+
+  function pushRuleRemove(params) {
+    requirePushNs(params.namespace);
+    if (!params.key) fail(400, 'missing_key', 'key is required');
+    if (!push.removeRule(params.namespace, params.key)) fail(404, 'push_rule_not_found', 'no push rule for key ' + params.key);
+    return { ok: true, namespace: params.namespace, key: params.key };
+  }
+
   return {
     deploy,
     undeploy,
@@ -364,6 +404,10 @@ function createManagement(opts) {
     namespaceRemove,
     namespaceInspect,
     namespaceList,
+    pushRuleSet,
+    pushRuleGet,
+    pushRuleList,
+    pushRuleRemove,
   };
 }
 
