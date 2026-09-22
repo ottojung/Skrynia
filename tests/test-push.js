@@ -9,6 +9,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { createServer } = require('../src/server.js');
+const { createPush } = require('../src/push.js');
 
 const TMP = '/tmp/skrynia-push-test';
 const TOKEN = 'push-test-token';
@@ -179,13 +180,16 @@ async function test_no_public_enumeration() {
   setup(); createNs('n1');
   const { server, port } = await startServer();
   try {
-    await register(port, 'n1', 'news', 'https://push.example/secret-1');
+    const sub = await register(port, 'n1', 'news', 'https://push.example/secret-1');
     const probes = [
       await get(port, '/platform/push/subscriptions'),
       await get(port, '/platform/push/subscriptions?namespace=n1'),
       await get(port, '/platform/push/subs'),
     ];
     for (const r of probes) assert(r.status === 404, 'no public listing, got ' + r.status);
+    const direct = await get(port, '/platform/push/subscriptions/' + sub.id);
+    assert(direct.status === 405, 'known subscription id is not publicly readable');
+    assert(!direct.text.includes('secret-1') && !direct.text.includes('p256dh') && !direct.text.includes('auth'), 'known id response exposes no subscription record');
     // Management rule listing exists but requires the management token.
     const gated = await get(port, '/platform/push/rules/list');
     assert(gated.status === 401, 'rule listing needs management token, got ' + gated.status);
@@ -273,6 +277,41 @@ async function test_private_files_are_0600() {
       assert(mode === 0o600, 'private file is 0600: ' + f + ' got ' + mode.toString(8));
     }
   } finally { await stopServer(server); }
+}
+
+async function test_default_transport_payload_is_channel_only() {
+  setup(); createNs('n1');
+  const calls = [];
+  const fakeWebPush = {
+    generateVAPIDKeys() {
+      return { publicKey: 'public-test-key', privateKey: 'private-test-key' };
+    },
+    async sendNotification(subscription, payload, options) {
+      calls.push({ subscription, payload, options });
+    },
+  };
+  const push = createPush({
+    dataDir: TMP,
+    skryniaUrl: 'https://example.test/platform',
+    pushManual: true,
+    pushSendTimeoutMs: 50,
+    webPushLib: fakeWebPush,
+  });
+  try {
+    push.start();
+    push.setRule('n1', 'object-key', ['replace'], ['tes']);
+    push.createSub('n1', 'tes', 'https://push.example/default-transport', SUB_KEYS);
+    push.enqueue('n1', 'object-key', 'replace');
+    await push.pumpOnce({ ignoreBackoff: true });
+    assert(calls.length === 1, 'default transport calls web-push exactly once');
+    assert(calls[0].payload === 'tes', 'web-push payload is exactly the channel name');
+    assert(typeof calls[0].payload === 'string', 'web-push payload is not a structured object');
+    assert(!calls[0].payload.includes('n1') && !calls[0].payload.includes('object-key') && !calls[0].payload.includes('replace'), 'payload contains no namespace, key, or operation');
+    assert(calls[0].options.timeout === 50, 'default transport forwards the finite delivery timeout');
+    assert(calls[0].options.vapidDetails.privateKey === 'private-test-key', 'private VAPID key is used only inside transport options');
+  } finally {
+    push.close();
+  }
 }
 
 async function test_no_rule_no_push() {
@@ -400,6 +439,34 @@ async function test_spurious_wakeup_safe_and_idempotent() {
     assert(t.calls.length === 1 && t.calls[0].channel === 'c', 'spurious wake-up delivers safely');
     await server.skrynia.push.pumpOnce({ ignoreBackoff: true });
     assert(t.calls.length === 1, 'reprocessing is safe (no duplicates)');
+  } finally { await stopServer(server); }
+}
+
+async function test_recovered_duplicate_delivery_is_safe() {
+  setup(); createNs('n1');
+  const t = fakeTransport();
+  const { server, port } = await startServer({}, t);
+  try {
+    await get(port, mgmt('push/rules/set', { namespace: 'n1', key: 'k', channels: 'wake' }));
+    await register(port, 'n1', 'wake', 'https://push.example/dup-1');
+    const r = await request(port, 'POST', '/platform/store/n1/k', 'authoritative', { 'X-Skrynia-Mode': 'public-write' });
+    assert(r.status === 201, 'create');
+    const pending = server.skrynia.push.listOutbox();
+    assert(pending.length === 1, 'one durable event queued');
+    const original = fs.readFileSync(pending[0].file);
+
+    await server.skrynia.push.pumpOnce({ ignoreBackoff: true });
+    assert(t.calls.length === 1 && t.calls[0].channel === 'wake', 'first delivery is channel-only wake-up');
+
+    // Simulate the allowed crash window after provider acceptance but before
+    // the outbox unlink is durably observed: the same logical item is recovered.
+    fs.writeFileSync(pending[0].file, original);
+    await server.skrynia.push.pumpOnce({ ignoreBackoff: true });
+    assert(t.calls.length === 2, 'recovered logical item may deliver again');
+    assert(t.calls.every(call => call.channel === 'wake'), 'duplicate carries only the same channel name');
+
+    const stored = await get(port, '/platform/store/n1/k');
+    assert(stored.status === 200 && stored.text === 'authoritative', 'duplicate wake-up does not alter authoritative store state');
   } finally { await stopServer(server); }
 }
 
@@ -592,11 +659,13 @@ const tests = [
   ['capability_update_delete', test_capability_update_delete],
   ['vapid_stable_private_never_exposed', test_vapid_stable_private_never_exposed],
   ['private_files_are_0600', test_private_files_are_0600],
+  ['default_transport_payload_is_channel_only', test_default_transport_payload_is_channel_only],
   ['no_rule_no_push', test_no_rule_no_push],
   ['kinds_routing_and_payload_exact', test_kinds_routing_and_payload_exact],
   ['enqueue_failure_blocks_commit', test_enqueue_failure_blocks_commit],
   ['crash_restart_recovery', test_crash_restart_recovery],
   ['spurious_wakeup_safe_and_idempotent', test_spurious_wakeup_safe_and_idempotent],
+  ['recovered_duplicate_delivery_is_safe', test_recovered_duplicate_delivery_is_safe],
   ['transient_retry_backoff_bounded', test_transient_retry_backoff_bounded],
   ['retry_indefinite_no_drop', test_retry_indefinite_no_drop],
   ['outbox_full_blocks_mutation', test_outbox_full_blocks_mutation],
