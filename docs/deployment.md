@@ -27,6 +27,7 @@ Skrynia is configured via environment variables or `createServer()` options:
 | `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
 | `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max single object size (10 MiB) |
 | `SKRYNIA_PUSH_SUBJECT` | (SKRYNIA_URL) | VAPID subject (`mailto:` or URL) identifying the push sender |
+| `SKRYNIA_PUSH_SEND_TIMEOUT_MS` | `10000` | Per-subscription delivery timeout; timeout is retried as a transient failure |
 
 Web Push delivery uses the pinned `web-push` npm package (see
 `package.json`/`package-lock.json`), installed as a production dependency in
@@ -44,7 +45,11 @@ failures retry indefinitely with capped exponential backoff and never drop
 entries; expired (404/410) subscriptions are removed. Storage is bounded by
 the outbox capacity (10000 items): a matching mutation is rejected with
 `507 push_outbox_full` instead of committing without notification state.
-Subscriptions are capped at 500 per channel and 2000 per namespace.
+Subscriptions are capped at 500 per channel and 2000 per namespace, which
+bounds public registration state without relying on client IP addresses (often
+hidden by reverse proxies). Each external delivery attempt has a finite timeout
+(default 10 seconds), so a stuck provider request cannot indefinitely block
+later subscriptions on the same channel.
 
 When `SKRYNIA_APP_DIR` is set, deployment atomically creates or replaces `APP_DIR/{namespace}` as the one active-release symlink. An external web server such as nginx can serve that directory directly.
 
