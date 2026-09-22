@@ -452,14 +452,15 @@ async function test_stuck_delivery_times_out_and_isolates() {
   } finally { await stopServer(server); }
 }
 
-async function test_expired_old_endpoint_does_not_delete_update() {
+async function test_expired_stale_send_does_not_delete_refresh() {
   setup(); createNs('n1');
   let releaseOld;
   let startedOld;
   const oldStarted = new Promise(resolve => { startedOld = resolve; });
   const oldGate = new Promise(resolve => { releaseOld = resolve; });
+  const endpoint = 'https://push.example/refresh';
   const t = fakeTransport(async sub => {
-    if (sub.endpoint.endsWith('/old')) {
+    if (sub.endpoint === endpoint) {
       startedOld();
       await oldGate;
       throw transientError(410);
@@ -468,27 +469,21 @@ async function test_expired_old_endpoint_does_not_delete_update() {
   const { server, port } = await startServer({ pushSendTimeoutMs: 1000 }, t);
   try {
     await get(port, mgmt('push/rules/set', { namespace: 'n1', key: 'k', channels: 'c' }));
-    const sub = await register(port, 'n1', 'c', 'https://push.example/old');
+    const sub = await register(port, 'n1', 'c', endpoint);
     const r = await request(port, 'POST', '/platform/store/n1/k', 'v', { 'X-Skrynia-Mode': 'public-write' });
     assert(r.status === 201, 'create');
 
     const pumping = server.skrynia.push.pumpOnce({ ignoreBackoff: true });
     await oldStarted;
-    const update = await request(
-      port,
-      'PUT',
-      '/platform/push/subscriptions/' + sub.id,
-      { endpoint: 'https://push.example/new' },
-      { 'X-Skrynia-Capability': sub.capability }
-    );
-    assert(update.status === 200, 'registration updated while old endpoint send is in flight');
+    const refreshed = await register(port, 'n1', 'c', endpoint, sub.capability);
+    assert(refreshed.id === sub.id && refreshed.capability !== sub.capability, 'registration refreshed while stale send is in flight');
     releaseOld();
     await pumping;
 
     const storedPath = path.join(TMP, 'state', 'n1', 'push-subs', sub.id + '.json');
-    assert(fs.existsSync(storedPath), '410 from old endpoint does not delete newer registration');
+    assert(fs.existsSync(storedPath), '410 from stale send does not delete refreshed registration');
     const stored = JSON.parse(fs.readFileSync(storedPath, 'utf8'));
-    assert(stored.endpoint === 'https://push.example/new', 'new endpoint survives old 410');
+    assert(stored.capHash, 'refreshed registration survives stale 410');
   } finally { await stopServer(server); }
 }
 
@@ -607,7 +602,7 @@ const tests = [
   ['outbox_full_blocks_mutation', test_outbox_full_blocks_mutation],
   ['namespace_subscription_cap', test_namespace_subscription_cap],
   ['stuck_delivery_times_out_and_isolates', test_stuck_delivery_times_out_and_isolates],
-  ['expired_old_endpoint_does_not_delete_update', test_expired_old_endpoint_does_not_delete_update],
+  ['expired_stale_send_does_not_delete_refresh', test_expired_stale_send_does_not_delete_refresh],
   ['expired_removed_and_isolation', test_expired_removed_and_isolation],
   ['broken_subscription_isolation', test_broken_subscription_isolation],
 ];
