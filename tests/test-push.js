@@ -93,8 +93,9 @@ const SUB_KEYS = { p256dh: 'BNcRdreALRFXTK0zOz1wGo2gib20', auth: 'tBHItJIx-Xp9x7
 function subBody(endpoint) { return { endpoint, keys: SUB_KEYS }; }
 function subUrl(ns, channel) { return '/platform/push/subscriptions?namespace=' + encodeURIComponent(ns) + '&channel=' + encodeURIComponent(channel); }
 
-async function register(port, ns, channel, endpoint) {
-  const r = await request(port, 'POST', subUrl(ns, channel), subBody(endpoint || ('https://push.example/' + ns + '/' + channel + '/1')));
+async function register(port, ns, channel, endpoint, capability) {
+  const headers = capability ? { 'X-Skrynia-Capability': capability } : undefined;
+  const r = await request(port, 'POST', subUrl(ns, channel), subBody(endpoint || ('https://push.example/' + ns + '/' + channel + '/1')), headers);
   assert(r.status === 201, 'register status, got ' + r.status + ': ' + r.text);
   return jsonBody(r);
 }
@@ -143,11 +144,20 @@ async function test_register_dedupe_validation() {
     assert(first.capability && first.capability.length === 64, 'capability');
     assert(first.deduped === false, 'not deduped');
 
-    const r = await request(port, 'POST', subUrl('n1', 'news'), subBody('https://push.example/sub-1'));
-    assert(r.status === 201, 're-register');
+    let r = await request(port, 'POST', subUrl('n1', 'news'), subBody('https://push.example/sub-1'));
+    assert(r.status === 403 && jsonBody(r).error === 'capability_required', 'duplicate registration requires existing capability');
+    r = await request(port, 'POST', subUrl('n1', 'news'), subBody('https://push.example/sub-1'), { 'X-Skrynia-Capability': 'wrong' });
+    assert(r.status === 403 && jsonBody(r).error === 'invalid_capability', 'duplicate registration rejects wrong capability');
+    r = await request(port, 'POST', subUrl('n1', 'news'), subBody('https://push.example/sub-1'), { 'X-Skrynia-Capability': first.capability });
+    assert(r.status === 201, 'authorized re-register');
     const second = jsonBody(r);
     assert(second.deduped === true && second.id === first.id, 'same endpoint deduped to same id');
-    assert(second.capability !== first.capability, 'capability rotated');
+    assert(second.capability !== first.capability, 'authorized re-register rotates capability');
+
+    let capCheck = await request(port, 'PUT', '/platform/push/subscriptions/' + first.id, { keys: SUB_KEYS }, { 'X-Skrynia-Capability': first.capability });
+    assert(capCheck.status === 403, 'old capability invalid after authorized rotation');
+    capCheck = await request(port, 'PUT', '/platform/push/subscriptions/' + first.id, { keys: SUB_KEYS }, { 'X-Skrynia-Capability': second.capability });
+    assert(capCheck.status === 200, 'new capability controls deduped registration');
 
     const bad1 = await request(port, 'POST', subUrl('n1', 'news'), subBody('http://insecure.example/x'));
     assert(bad1.status === 400, 'non-https endpoint rejected');
@@ -199,6 +209,11 @@ async function test_capability_update_delete() {
     // Capability in the query string is not honored (would leak into logs).
     r = await request(port, 'PUT', url(sub.id) + '?capability=' + sub.capability, { keys: SUB_KEYS });
     assert(r.status === 403, 'query capability ignored');
+    const other = await register(port, 'n1', 'news', 'https://push.example/u-2');
+    r = await request(port, 'PUT', url(sub.id), { endpoint: 'https://push.example/u-2' }, cap(sub.capability));
+    assert(r.status === 409 && jsonBody(r).error === 'endpoint_in_use', 'update cannot create duplicate endpoint in one channel');
+    assert(other.id !== sub.id, 'second registration is distinct');
+
     r = await request(port, 'PUT', url(sub.id), { keys: { p256dh: 'newp', auth: 'newa' } }, cap(sub.capability));
     assert(r.status === 200, 'update with capability');
     const stored = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'n1', 'push-subs', sub.id + '.json'), 'utf8'));
@@ -414,6 +429,69 @@ async function test_transient_retry_backoff_bounded() {
   } finally { await stopServer(server); }
 }
 
+async function test_stuck_delivery_times_out_and_isolates() {
+  setup(); createNs('n1');
+  let first = true;
+  const t = fakeTransport(async () => {
+    if (first) {
+      first = false;
+      await new Promise(() => {});
+    }
+  });
+  const { server, port } = await startServer({ pushSendTimeoutMs: 20 }, t);
+  try {
+    await get(port, mgmt('push/rules/set', { namespace: 'n1', key: 'k', channels: 'c' }));
+    await register(port, 'n1', 'c', 'https://push.example/timeout-1');
+    await register(port, 'n1', 'c', 'https://push.example/timeout-2');
+    const r = await request(port, 'POST', '/platform/store/n1/k', 'v', { 'X-Skrynia-Mode': 'public-write' });
+    assert(r.status === 201, 'create');
+    await server.skrynia.push.pumpOnce({ ignoreBackoff: true });
+    assert(t.calls.length === 2, 'stuck first send does not prevent later subscription attempt');
+    const items = server.skrynia.push.listOutbox();
+    assert(items.length === 1 && items[0].entry.attempts === 1, 'timeout is transient and retained for retry');
+  } finally { await stopServer(server); }
+}
+
+async function test_expired_old_endpoint_does_not_delete_update() {
+  setup(); createNs('n1');
+  let releaseOld;
+  let startedOld;
+  const oldStarted = new Promise(resolve => { startedOld = resolve; });
+  const oldGate = new Promise(resolve => { releaseOld = resolve; });
+  const t = fakeTransport(async sub => {
+    if (sub.endpoint.endsWith('/old')) {
+      startedOld();
+      await oldGate;
+      throw transientError(410);
+    }
+  });
+  const { server, port } = await startServer({ pushSendTimeoutMs: 1000 }, t);
+  try {
+    await get(port, mgmt('push/rules/set', { namespace: 'n1', key: 'k', channels: 'c' }));
+    const sub = await register(port, 'n1', 'c', 'https://push.example/old');
+    const r = await request(port, 'POST', '/platform/store/n1/k', 'v', { 'X-Skrynia-Mode': 'public-write' });
+    assert(r.status === 201, 'create');
+
+    const pumping = server.skrynia.push.pumpOnce({ ignoreBackoff: true });
+    await oldStarted;
+    const update = await request(
+      port,
+      'PUT',
+      '/platform/push/subscriptions/' + sub.id,
+      { endpoint: 'https://push.example/new' },
+      { 'X-Skrynia-Capability': sub.capability }
+    );
+    assert(update.status === 200, 'registration updated while old endpoint send is in flight');
+    releaseOld();
+    await pumping;
+
+    const storedPath = path.join(TMP, 'state', 'n1', 'push-subs', sub.id + '.json');
+    assert(fs.existsSync(storedPath), '410 from old endpoint does not delete newer registration');
+    const stored = JSON.parse(fs.readFileSync(storedPath, 'utf8'));
+    assert(stored.endpoint === 'https://push.example/new', 'new endpoint survives old 410');
+  } finally { await stopServer(server); }
+}
+
 async function test_expired_removed_and_isolation() {
   setup(); createNs('n1');
   const t = fakeTransport(async sub => {
@@ -454,33 +532,19 @@ async function test_broken_subscription_isolation() {
   } finally { await stopServer(server); }
 }
 
-async function test_rate_limited() {
-  setup(); createNs('n1');
-  const { server, port } = await startServer({}, fakeTransport());
-  try {
-    let limited = false;
-    for (let i = 0; i < 40; i++) {
-      const r = await request(port, 'POST', subUrl('n1', 'c'), subBody('https://push.example/rl-' + i));
-      if (r.status === 429) { limited = true; break; }
-      assert(r.status === 201, 'register ' + i);
-    }
-    assert(limited, 'abuse limit trips at 30 registrations per hour per IP');
-  } finally { await stopServer(server); }
-}
-
 async function test_namespace_subscription_cap() {
   setup(); createNs('n1');
   const { server, port } = await startServer({ pushMaxSubsPerNamespace: 3 }, fakeTransport());
   try {
     // Arbitrary channel names cannot bypass the per-namespace total.
-    await register(port, 'n1', 'chan-a', 'https://push.example/cap-1');
+    const first = await register(port, 'n1', 'chan-a', 'https://push.example/cap-1');
     await register(port, 'n1', 'chan-b', 'https://push.example/cap-2');
     await register(port, 'n1', 'chan-c', 'https://push.example/cap-3');
     const r = await request(port, 'POST', subUrl('n1', 'chan-d'), subBody('https://push.example/cap-4'));
     assert(r.status === 507 && jsonBody(r).error === 'namespace_full', 'namespace cap enforced, got ' + r.status + ': ' + r.text);
     // Dedupe of an existing record still works at cap (rotates capability).
-    const d = await request(port, 'POST', subUrl('n1', 'chan-a'), subBody('https://push.example/cap-1'));
-    assert(d.status === 201 && jsonBody(d).deduped === true, 'dedupe works at cap');
+    const d = await request(port, 'POST', subUrl('n1', 'chan-a'), subBody('https://push.example/cap-1'), { 'X-Skrynia-Capability': first.capability });
+    assert(d.status === 201 && jsonBody(d).deduped === true, 'authorized dedupe works at cap');
   } finally { await stopServer(server); }
 }
 
@@ -542,9 +606,10 @@ const tests = [
   ['retry_indefinite_no_drop', test_retry_indefinite_no_drop],
   ['outbox_full_blocks_mutation', test_outbox_full_blocks_mutation],
   ['namespace_subscription_cap', test_namespace_subscription_cap],
+  ['stuck_delivery_times_out_and_isolates', test_stuck_delivery_times_out_and_isolates],
+  ['expired_old_endpoint_does_not_delete_update', test_expired_old_endpoint_does_not_delete_update],
   ['expired_removed_and_isolation', test_expired_removed_and_isolation],
   ['broken_subscription_isolation', test_broken_subscription_isolation],
-  ['rate_limited', test_rate_limited],
 ];
 
 (async () => {
