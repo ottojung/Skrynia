@@ -100,6 +100,7 @@ Environment variables:
 | `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Max objects per namespace |
 | `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
 | `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max object size |
+| `SKRYNIA_PUSH_SEND_TIMEOUT_MS` | `10000` | Maximum time for one Web Push delivery attempt before retrying it as transient |
 
 ## Storage API
 
