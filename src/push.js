@@ -354,9 +354,19 @@ function createPush(opts) {
     try { fs.unlinkSync(subPath(ns, id)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   }
 
-  function removeSubRecordIfEndpoint(ns, id, endpoint) {
-    const current = findSub(ns, id);
-    if (current && current.endpoint === endpoint) removeSubRecord(ns, id);
+  function removeSubRecordIfUnchanged(ns, snapshot) {
+    const current = findSub(ns, snapshot.id);
+    if (!current) return;
+    if (
+      current.endpoint === snapshot.endpoint &&
+      current.capHash === snapshot.capHash &&
+      current.keys &&
+      snapshot.keys &&
+      current.keys.p256dh === snapshot.keys.p256dh &&
+      current.keys.auth === snapshot.keys.auth
+    ) {
+      removeSubRecord(ns, snapshot.id);
+    }
   }
 
   function notFoundError() {
@@ -518,7 +528,7 @@ function createPush(opts) {
             // Delivery awaited external I/O, so the registration may have
             // changed while the send was in flight. Never delete a newer
             // endpoint because an older endpoint returned 404/410.
-            removeSubRecordIfEndpoint(sub.ns, sub.id, sub.endpoint);
+            removeSubRecordIfUnchanged(sub.ns, sub);
           } else {
             failed = true; // one broken subscription never blocks healthy ones
           }
