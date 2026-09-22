@@ -8,5 +8,6 @@ test:
 	node tests/test.js
 	node tests/regression.js
 	node tests/test-action.js
+	node tests/test-push.js
 
 .PHONY: builder test

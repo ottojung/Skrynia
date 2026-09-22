@@ -106,6 +106,76 @@ GET {base_path}/{namespace}/{path}
 
 Static files are served from the currently active release. Directory requests use `index.html` when present.
 
+### Web Push
+
+Generic durable push driven by store mutations. A management-owned rule maps
+an exact namespace + exact key + selected mutation kinds
+(`create`, `replace`, `delete`) to one or more named channels. A matching
+mutation durably persists one outbox item per channel before the mutation
+becomes committed/visible, then the server delivers the channel name
+asynchronously. The push payload is exactly the channel name.
+
+#### VAPID public key
+
+```text
+GET {SKRYNIA_URL}/push/vapid
+```
+
+Response:
+
+```json
+{ "publicKey": "base64url-encoded-key" }
+```
+
+#### Register a subscription
+
+```text
+POST {SKRYNIA_URL}/push/subscriptions?namespace={ns}&channel={channel}
+Content-Type: application/json
+
+{ "endpoint": "https://push.example/...", "keys": { "p256dh": "...", "auth": "..." } }
+```
+
+Response `201 Created`:
+
+```json
+{
+  "ok": true,
+  "id": "32-char-hex-string",
+  "capability": "64-char-hex-string",
+  "deduped": false
+}
+```
+
+The `id` is opaque and the `capability` is bearer authority for update/delete.
+Re-registering the same endpoint for the same namespace/channel returns the
+same id with a fresh capability (`"deduped": true`). There is no public
+endpoint that enumerates subscriptions. Excessive registration returns
+`429 rate_limited`; a full channel returns `507 channel_full`.
+
+#### Update a subscription
+
+```text
+PUT {SKRYNIA_URL}/push/subscriptions/{id}?capability={capability}
+Content-Type: application/json
+
+{ "endpoint": "https://push.example/...", "keys": { "p256dh": "...", "auth": "..." } }
+```
+
+Either or both of `endpoint`/`keys` may be supplied. Response: `{ "ok": true }`.
+
+#### Delete a subscription
+
+```text
+DELETE {SKRYNIA_URL}/push/subscriptions/{id}?capability={capability}
+```
+
+Response: `{ "ok": true }`.
+
+Push errors include `400` (invalid namespace, channel, or subscription),
+`403` (missing/wrong capability), `404` (unknown id or namespace),
+`413` (request too large), `429` (rate limited), and `507` (channel full).
+
 ## Management endpoints
 
 Skrynia has no administrative CLI. All lifecycle/namespace administration is exposed over HTTP by the same server process.
@@ -234,7 +304,6 @@ Returns namespace quota/usage plus deployment metadata when present.
 ```text
 GET {SKRYNIA_URL}/ns/list?token={token}
 ```
-
 Returns:
 
 ```json
@@ -248,6 +317,46 @@ Returns:
   ]
 }
 ```
+
+### Push rule set
+
+```text
+GET {SKRYNIA_URL}/push/rules/set?namespace={ns}&key={key}&channels={a,b}&on={create,replace,delete}&token={token}
+```
+
+Maps one exact namespace + exact key plus the selected mutation kinds to one
+or more named channels. `channels` is a comma-separated list of channel names
+(`^[a-z0-9][a-z0-9_-]{0,63}$`, at most 8 per rule). `on` is a
+comma-separated subset of `create,replace,delete` and defaults to all three.
+Setting a rule for an existing key replaces it.
+
+```json
+{ "ok": true, "rule": { "key": "orders", "kinds": ["create", "replace"], "channels": ["shop"] } }
+```
+
+### Push rule get
+
+```text
+GET {SKRYNIA_URL}/push/rules/get?namespace={ns}&key={key}&token={token}
+```
+
+Returns `{ "namespace": "myapp", "rule": { ... } }`, or `404 push_rule_not_found`.
+
+### Push rule list
+
+```text
+GET {SKRYNIA_URL}/push/rules/list?namespace={ns}&token={token}
+```
+
+Returns `{ "namespace": "myapp", "rules": [ ... ] }`.
+
+### Push rule remove
+
+```text
+GET {SKRYNIA_URL}/push/rules/remove?namespace={ns}&key={key}&token={token}
+```
+
+Returns `{ "ok": true, "namespace": "myapp", "key": "orders" }`.
 
 ## Object modes
 

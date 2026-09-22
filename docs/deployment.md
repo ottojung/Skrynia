@@ -26,6 +26,19 @@ Skrynia is configured via environment variables or `createServer()` options:
 | `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Default max objects per namespace |
 | `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
 | `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max single object size (10 MiB) |
+| `SKRYNIA_PUSH_SUBJECT` | (SKRYNIA_URL) | VAPID subject (`mailto:` or URL) identifying the push sender |
+
+Web Push delivery uses the pinned `web-push` npm package (see
+`package.json`/`package-lock.json`), installed as a production dependency in
+the runtime image. The installation owns one stable VAPID keypair persisted at
+`STATE_DIR/_push/vapid.json` (mode `0600`); it is generated on first start and
+kept across restarts. The private key is never served over HTTP. Push rules
+live at `STATE_DIR/{ns}/push-rules.json`, private subscription records at
+`STATE_DIR/{ns}/push-subs/`, and the durable delivery outbox at
+`STATE_DIR/_push/outbox/`; all are removed with the namespace on
+undeploy/namespace-remove except already-queued outbox items, which drain
+harmlessly. Delivery retries transient failures with bounded exponential
+backoff (up to 12 attempts) and drops expired (404/410) subscriptions.
 
 When `SKRYNIA_APP_DIR` is set, deployment atomically creates or replaces `APP_DIR/{namespace}` as the one active-release symlink. An external web server such as nginx can serve that directory directly.
 
