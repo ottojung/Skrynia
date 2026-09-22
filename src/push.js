@@ -21,6 +21,7 @@ const MAX_CHANNELS_PER_RULE = 8;
 const MAX_SUBS_PER_CHANNEL = 500;
 const MAX_SUBS_PER_NAMESPACE = 2000;
 const MAX_OUTBOX_ITEMS = 10000;
+const DEFAULT_SEND_TIMEOUT_MS = 10000;
 const SUB_ID_BYTES = 16;
 const CAP_BYTES = 32;
 
@@ -98,27 +99,10 @@ function createPush(opts) {
   const maxSubsPerNamespace = opts.maxSubsPerNamespace != null ? Number(opts.maxSubsPerNamespace) : MAX_SUBS_PER_NAMESPACE;
   const maxOutboxItems = opts.maxOutboxItems != null ? Number(opts.maxOutboxItems) : MAX_OUTBOX_ITEMS;
   const maxKeyLength = opts.maxKeyLength != null ? Number(opts.maxKeyLength) : 256;
-
-  // --- public abuse limits (in-memory, per process) ---
-  const regHits = new Map(); // ip -> [timestamps]
-  const REG_WINDOW_MS = 60 * 60 * 1000;
-  const REG_MAX_PER_WINDOW = 30;
-
-  function checkRate(ip) {
-    const now = Date.now();
-    const key = ip || 'unknown';
-    let hits = regHits.get(key) || [];
-    hits = hits.filter(t => now - t < REG_WINDOW_MS);
-    if (hits.length >= REG_MAX_PER_WINDOW) {
-      regHits.set(key, hits);
-      return false;
-    }
-    hits.push(now);
-    regHits.set(key, hits);
-    return true;
-  }
-
-  function resetRateLimits() { regHits.clear(); }
+  const sendTimeoutMs = opts.pushSendTimeoutMs != null
+    ? Number(opts.pushSendTimeoutMs)
+    : Number(process.env.SKRYNIA_PUSH_SEND_TIMEOUT_MS || DEFAULT_SEND_TIMEOUT_MS);
+  if (!Number.isFinite(sendTimeoutMs) || sendTimeoutMs <= 0) throw new Error('push send timeout must be a positive number');
 
   // --- paths ---
 
@@ -279,10 +263,20 @@ function createPush(opts) {
     return null;
   }
 
-  function createSub(ns, channel, endpoint, keys) {
+  function createSub(ns, channel, endpoint, keys, existingCapability) {
     const subs = allSubs(ns);
-    const existing = subs.find(s => s.channel === channel && sha256hex(s.endpoint) === sha256hex(endpoint));
+    const existing = subs.find(s => s.channel === channel && s.endpoint === endpoint);
     if (existing) {
+      if (!existingCapability) {
+        const err = new Error('capability_required');
+        err.code = 'capability_required';
+        throw err;
+      }
+      if (!checkCap(existing, existingCapability)) {
+        const err = new Error('invalid_capability');
+        err.code = 'invalid_capability';
+        throw err;
+      }
       const capability = randomHex(CAP_BYTES);
       existing.keys = { p256dh: keys.p256dh, auth: keys.auth };
       existing.capHash = sha256hex(capability);
@@ -360,6 +354,11 @@ function createPush(opts) {
     try { fs.unlinkSync(subPath(ns, id)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   }
 
+  function removeSubRecordIfEndpoint(ns, id, endpoint) {
+    const current = findSub(ns, id);
+    if (current && current.endpoint === endpoint) removeSubRecord(ns, id);
+  }
+
   function notFoundError() {
     const err = new Error('not_found');
     err.code = 'not_found';
@@ -379,7 +378,15 @@ function createPush(opts) {
     const sub = findSubAnywhere(id);
     if (!sub) throw notFoundError();
     if (!checkCap(sub, capability)) throw capError();
-    if (patch.endpoint !== undefined) sub.endpoint = patch.endpoint;
+    if (patch.endpoint !== undefined) {
+      const duplicate = allSubs(sub.ns).find(s => s.id !== id && s.channel === sub.channel && s.endpoint === patch.endpoint);
+      if (duplicate) {
+        const err = new Error('endpoint_in_use');
+        err.code = 'endpoint_in_use';
+        throw err;
+      }
+      sub.endpoint = patch.endpoint;
+    }
     if (patch.keys !== undefined) sub.keys = { p256dh: patch.keys.p256dh, auth: patch.keys.auth };
     atomicWrite(subPath(sub.ns, id), JSON.stringify(sub, null, 2));
     return sub;
@@ -445,7 +452,10 @@ function createPush(opts) {
       await webpush.sendNotification(
         { endpoint: sub.endpoint, keys: sub.keys },
         channel,
-        { vapidDetails: { subject, publicKey: keys.publicKey, privateKey: keys.privateKey } }
+        {
+          timeout: sendTimeoutMs,
+          vapidDetails: { subject, publicKey: keys.publicKey, privateKey: keys.privateKey },
+        }
       );
     };
   }
@@ -453,6 +463,25 @@ function createPush(opts) {
   function isGoneError(err) {
     const status = err && (err.statusCode || err.status);
     return status === 404 || status === 410;
+  }
+
+  async function sendBounded(send, sub, channel) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        const err = new Error('push delivery timed out');
+        err.code = 'push_timeout';
+        reject(err);
+      }, sendTimeoutMs);
+    });
+    try {
+      return await Promise.race([
+        Promise.resolve().then(() => send(sub, channel)),
+        timeout,
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // At-least-once delivery. Safe to run repeatedly: a successfully
@@ -482,11 +511,14 @@ function createPush(opts) {
       let failed = false;
       for (const sub of subs) {
         try {
-          await send({ endpoint: sub.endpoint, keys: sub.keys }, fresh.channel);
+          await sendBounded(send, { endpoint: sub.endpoint, keys: sub.keys }, fresh.channel);
           delivered++;
         } catch (err) {
           if (isGoneError(err)) {
-            removeSubRecord(sub.ns, sub.id);
+            // Delivery awaited external I/O, so the registration may have
+            // changed while the send was in flight. Never delete a newer
+            // endpoint because an older endpoint returned 404/410.
+            removeSubRecordIfEndpoint(sub.ns, sub.id, sub.endpoint);
           } else {
             failed = true; // one broken subscription never blocks healthy ones
           }
@@ -560,8 +592,6 @@ function createPush(opts) {
     listOutbox,
     outboxCount,
     pumpOnce,
-    checkRate,
-    resetRateLimits,
     setTransport,
     start,
     close,
