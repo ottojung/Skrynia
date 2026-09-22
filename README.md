@@ -110,9 +110,9 @@ Environment variables:
 - `PUT /platform/store/{ns}/{key}` — replace object
 - `DELETE /platform/store/{ns}/{key}` — delete object
 - `GET /platform/push/vapid` — VAPID public key
-- `POST /platform/push/subscriptions?namespace={ns}&channel={ch}` — register a browser PushSubscription
-- `PUT /platform/push/subscriptions/{id}?capability={cap}` — update a subscription
-- `DELETE /platform/push/subscriptions/{id}?capability={cap}` — delete a subscription
+- `POST /platform/push/subscriptions?namespace={ns}&channel={ch}` — register a browser PushSubscription; replacing an existing endpoint requires its `X-Skrynia-Capability`
+- `PUT /platform/push/subscriptions/{id}` — update a subscription with `X-Skrynia-Capability`
+- `DELETE /platform/push/subscriptions/{id}` — delete a subscription with `X-Skrynia-Capability`
 - `GET {base_path}/{ns}/{path}` — serve app static files
 
 See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
