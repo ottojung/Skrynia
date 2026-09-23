@@ -2,6 +2,7 @@
   "name": "skrynia",
   "version": "0.1.0",
   "description": "Minimal platform for deploying and serving small web apps with durable key-value storage",
+  "license": "AGPL-3.0-or-later",
   "engines": {
     "node": ">=20"
   },
