@@ -135,4 +135,4 @@ make test
 
 ## License
 
-See repository.
+Skrynia is free software licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
