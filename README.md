@@ -116,6 +116,8 @@ Environment variables:
 - `DELETE /platform/push/subscriptions/{id}` — delete a subscription with `X-Skrynia-Capability`
 - `GET {base_path}/{ns}/{path}` — serve app static files
 
+Object reads return an opaque ETag for the exact object bytes. `PUT` accepts an optional `If-Match` ETag for atomic compare-and-replace; a mismatch returns `412` without changing the object. Omitting `If-Match` remains unconditional. Capability authorization is independently required.
+
 See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
 
 ## Architecture

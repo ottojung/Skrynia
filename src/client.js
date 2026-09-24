@@ -6,11 +6,11 @@
  *
  * Usage:
  *   const store = Skrynia.store('my-namespace');
- *   const result = await store.get('key');
- *   const text = await result.bytes.text();
- *   const obj = await result.bytes.json();
- *   await store.create('key', data, { mode: 'public-write' });
- *   await store.put('key', newData, { capability: cap });
+   *   const result = await store.get('key');
+   *   const text = await result.bytes.text();
+   *   const obj = await result.bytes.json();
+   *   await store.create('key', data, { mode: 'public-write' });
+   *   await store.put('key', newData, { capability: cap, etag: result.meta.etag });
  *   await store.delete('key', { capability: cap });
  */
 (function(root) {
@@ -104,6 +104,7 @@
         meta: {
           mode: raw.header('x-skrynia-mode'),
           created: raw.header('x-skrynia-created'),
+          etag: raw.header('etag'),
         },
       };
     });
@@ -132,8 +133,9 @@
     var headers = {
       'Content-Type': opts.contentType || 'application/octet-stream',
     };
-    if (opts.capability) headers['X-Skrynia-Capability'] = opts.capability;
-    return request('PUT', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
+     if (opts.capability) headers['X-Skrynia-Capability'] = opts.capability;
+     if (opts.etag) headers['If-Match'] = opts.etag;
+     return request('PUT', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
       if (raw.status() !== 200) throw new Error('put failed: ' + raw.status());
       return raw.json();
     });

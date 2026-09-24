@@ -311,6 +311,47 @@ async function test_store_crud() {
   } finally { await stopServer(server); }
 }
 
+async function test_etag_and_conditional_replace() {
+  setup(); createNs('ns');
+  const { server, port } = await startServer();
+  try {
+    let r = await request(port, 'POST', '/platform/store/ns/k', 'one', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'create for etag');
+    r = await get(port, '/platform/store/ns/k');
+    const firstEtag = r.headers.etag;
+    assert(r.status === 200 && firstEtag && firstEtag.length > 2, 'read exposes etag');
+    r = await get(port, '/platform/store/ns/k');
+    assert(r.headers.etag === firstEtag, 'unchanged reread has same etag');
+    r = await request(port, 'PUT', '/platform/store/ns/k', 'two', {'If-Match': firstEtag});
+    assert(r.status === 200, 'matching etag replaces');
+    r = await get(port, '/platform/store/ns/k');
+    assert(r.text === 'two' && r.headers.etag !== firstEtag, 'changed bytes have changed etag');
+    r = await request(port, 'PUT', '/platform/store/ns/k', 'wrong', {'If-Match': firstEtag});
+    assert(r.status === 412 && jsonBody(r).error === 'etag_mismatch', 'stale etag rejected');
+    r = await get(port, '/platform/store/ns/k');
+    assert(r.text === 'two', 'stale etag leaves bytes unchanged');
+  } finally { await stopServer(server); }
+}
+
+async function test_conditional_replace_authorization_and_race() {
+  setup(); createNs('ns');
+  const { server, port } = await startServer();
+  try {
+    let r = await request(port, 'POST', '/platform/store/ns/k', 'one', {'X-Skrynia-Mode':'capability-write'});
+    const cap = jsonBody(r).capability;
+    r = await get(port, '/platform/store/ns/k');
+    const etag = r.headers.etag;
+    r = await request(port, 'PUT', '/platform/store/ns/k', 'no-cap', {'If-Match': etag});
+    assert(r.status === 403, 'conditional put still requires capability');
+    const writers = await Promise.all([
+      request(port, 'PUT', '/platform/store/ns/k', 'a', {'X-Skrynia-Capability': cap, 'If-Match': etag}),
+      request(port, 'PUT', '/platform/store/ns/k', 'b', {'X-Skrynia-Capability': cap, 'If-Match': etag}),
+    ]);
+    assert(writers.filter(x => x.status === 200).length === 1, 'one competing conditional writer succeeds');
+    assert(writers.filter(x => x.status === 412).length === 1, 'one competing conditional writer fails precondition');
+  } finally { await stopServer(server); }
+}
+
 async function test_capability_write() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
@@ -735,6 +776,8 @@ const tests = [
   ['namespace_http_api', test_namespace_http_api],
   ['store_requires_namespace', test_store_requires_namespace],
   ['store_crud', test_store_crud],
+  ['etag_and_conditional_replace', test_etag_and_conditional_replace],
+  ['conditional_replace_authorization_and_race', test_conditional_replace_authorization_and_race],
   ['capability_write', test_capability_write],
   ['immutable', test_immutable],
   ['key_validation', test_key_validation],
