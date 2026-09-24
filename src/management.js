@@ -195,11 +195,12 @@ function createManagement(opts) {
     requireNoDeployment();
     deploymentInProgress = true;
 
-    ensureDir(BUILDS_DIR);
-    const workDir = fs.mkdtempSync(path.join(BUILDS_DIR, 'build-'));
+    let workDir = null;
     let stageDir = null;
 
     try {
+      ensureDir(BUILDS_DIR);
+      workDir = fs.mkdtempSync(path.join(BUILDS_DIR, 'build-'));
       const repoDir = path.join(workDir, 'repo');
       let head;
       try {
@@ -282,7 +283,7 @@ function createManagement(opts) {
       return { ok: true, namespace: ns, release: releaseId, path: APP_BASE_PATH + '/' + ns + '/' };
     } finally {
       deploymentInProgress = false;
-      rmrfDir(workDir);
+      if (workDir) rmrfDir(workDir);
       try { if (stageDir && fs.existsSync(stageDir) && fs.lstatSync(stageDir).isDirectory()) rmrfDir(stageDir); } catch {}
     }
   }
