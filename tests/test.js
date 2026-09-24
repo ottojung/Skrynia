@@ -211,6 +211,27 @@ async function test_health() {
 }
 
 
+async function test_version() {
+  setup();
+  const buildInfo = {
+    version: '1.2.3-4-gabcdef0',
+    commit: '0123456789abcdef0123456789abcdef01234567',
+  };
+  const { server, port } = await startServer({ buildInfo });
+  try {
+    let r = await get(port, '/platform/version');
+    assert(r.status === 200, 'version status');
+    assert(jsonBody(r).version === buildInfo.version, 'version value');
+    assert(jsonBody(r).commit === buildInfo.commit, 'commit value');
+
+    r = await request(port, 'POST', '/platform/version');
+    assert(r.status === 405, 'version is GET only');
+
+    r = await get(port, '/version');
+    assert(r.status === 404, 'nested root rejects out-of-base version path');
+  } finally { await stopServer(server); }
+}
+
 async function test_root_url() {
   setup();
   const { server, port } = await startServer({ skryniaUrl: 'https://example.test/' });
@@ -854,6 +875,7 @@ async function test_ns_create_never_persists_derived() {
 
 const tests = [
   ['health', test_health],
+  ['version', test_version],
   ['root_url', test_root_url],
   ['management_requires_configured_token', test_management_requires_configured_token],
   ['management_rejects_missing_or_bad_token', test_management_rejects_missing_or_bad_token],
