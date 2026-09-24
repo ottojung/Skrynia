@@ -3,10 +3,11 @@
 
 // Skrynia HTTP server.
 //
-// Runtime invariant: exactly one server process per data directory. Storage and
-// management mutations are serialized by the Node.js event loop. Deployment is
-// intentionally synchronous: the HTTP request remains open while git, build,
-// release activation, and cleanup run.
+// Runtime invariant: exactly one server process per data directory. Storage
+// mutations remain serialized by the Node.js event loop. A deployment request
+// stays open through clone, build, activation, and cleanup, but its child
+// processes run asynchronously so health and unrelated storage traffic remain
+// responsive.
 
 const http = require('http');
 const fs = require('fs');
@@ -533,13 +534,15 @@ function createServer(opts) {
       if (!requireManagementToken(url, res)) return;
       const params = Object.fromEntries(url.searchParams.entries());
       delete params.token;
-      try {
-        return json(res, 200, managementHandler(params));
-      } catch (e) {
-        if (e instanceof ManagementError) return json(res, e.status, {error:e.code, detail:e.detail});
-        console.error('skrynia management error:', e && e.stack ? e.stack : e);
-        return json(res, 500, {error:'internal_error'});
-      }
+      Promise.resolve()
+        .then(() => managementHandler(params))
+        .then(result => json(res, 200, result))
+        .catch(e => {
+          if (e instanceof ManagementError) return json(res, e.status, {error:e.code, detail:e.detail});
+          console.error('skrynia management error:', e && e.stack ? e.stack : e);
+          return json(res, 500, {error:'internal_error'});
+        });
+      return;
     }
 
     const storeMatch = p === null ? null : p.match(/^\/store\/([^/]+)\/(.+)$/);
