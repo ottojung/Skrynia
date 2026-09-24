@@ -44,7 +44,10 @@ function loadBuildInfo(dir) {
   if (!hasVersion || !hasCommit) throw new Error('incomplete Skrynia build metadata');
   const version = readFileSync(versionPath, 'utf8').trim();
   const commit = readFileSync(commitPath, 'utf8').trim();
-  if (!version || !/^[0-9a-f]{40,64}$/i.test(commit)) throw new Error('invalid Skrynia build metadata');
+  const development = version === 'development' && commit === 'development';
+  if (!version || (!development && !/^[0-9a-f]{40,64}$/i.test(commit))) {
+    throw new Error('invalid Skrynia build metadata');
+  }
   return Object.freeze({ version, commit });
 }
 
