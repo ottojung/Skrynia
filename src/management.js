@@ -192,7 +192,7 @@ function createManagement(opts) {
       const owner = fs.statSync(repoDir);
       const absSubdir = path.relative(repoDir, appDir);
       const dockerArgs = [
-        'run', '--rm',
+        'run', '--rm', '--pull=always',
         '--user', `${owner.uid}:${owner.gid}`,
         '--env', 'HOME=/tmp',
         '-v', repoDir + ':/repo',

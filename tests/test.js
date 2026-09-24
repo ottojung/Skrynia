@@ -623,7 +623,7 @@ async function test_deploy_uses_disposable_writable_builder_shape() {
   }, log);
 
   const args = fs.readFileSync(log, 'utf8');
-  assert(args.includes('run --rm'), 'builder uses --rm');
+  assert(args.includes('run --rm --pull=always'), 'builder always refreshes the requested image');
   assert(args.includes('--env HOME=/tmp'), 'builder sets HOME');
   assert(args.includes('-v ') && args.includes(':/repo'), 'builder mounts repo');
   assert(!args.includes('--read-only'), 'builder root is writable');
