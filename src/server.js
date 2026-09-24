@@ -151,6 +151,7 @@ function createServer(opts) {
     const data = readFileSync(op);
     res.writeHead(200, {
       'Content-Type': meta.contentType || 'application/octet-stream',
+      'ETag': '"' + sha256hex(data) + '"',
       'X-Skrynia-Mode': meta.mode,
       'X-Skrynia-Created': meta.created,
     });
@@ -235,6 +236,12 @@ function createServer(opts) {
       if (!capability) return json(res, 403, {error:'capability_required'});
       const storedHash = readFileSync(shared.nsCapPath(ns, key), 'utf8');
       if (!timingSafeEqualHex(sha256hex(capability), storedHash)) return json(res, 403, {error:'invalid_capability'});
+    }
+    const ifMatch = req.headers['if-match'];
+    if (ifMatch !== undefined) {
+      const current = readFileSync(shared.nsObjPath(ns, key));
+      const currentEtag = '"' + sha256hex(current) + '"';
+      if (ifMatch !== currentEtag) return json(res, 412, {error:'etag_mismatch'});
     }
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 

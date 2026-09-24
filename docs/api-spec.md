@@ -34,7 +34,7 @@ Base path: `{SKRYNIA_URL}/store/{namespace}/{key}`
 GET {SKRYNIA_URL}/store/{namespace}/{key}
 ```
 
-Response `200` body is the raw object bytes. Response headers include `Content-Type`, `X-Skrynia-Mode`, and `X-Skrynia-Created`.
+Response `200` body is the raw object bytes. Response headers include `Content-Type`, `X-Skrynia-Mode`, `X-Skrynia-Created`, and `ETag`. The ETag is an opaque quoted tag derived deterministically from the exact object bytes only; rereading unchanged bytes returns the same ETag, and changed bytes return a different ETag. It does not cover object metadata or storage identity.
 
 #### Create object
 
@@ -64,6 +64,7 @@ The capability is returned only for `capability-write` mode.
 PUT {SKRYNIA_URL}/store/{namespace}/{key}
 Content-Type: {object content type}
 X-Skrynia-Capability: {capability}
+If-Match: {etag} (optional)
 
 {body}
 ```
@@ -73,6 +74,8 @@ Response:
 ```json
 { "ok": true }
 ```
+
+`PUT` without `If-Match` is an unconditional replacement. With `If-Match`, the server compares the supplied ETag with the exact current object bytes as an atomic compare-and-replace. A mismatch returns `412` with `{"error":"etag_mismatch"}` and does not change the object. Capability authorization is independently required and is checked before replacement. Competing conditional writers using the same current ETag cannot both succeed.
 
 #### Delete object
 
