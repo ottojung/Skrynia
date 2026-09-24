@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync } = require('child_process');
+const { spawn } = require('child_process');
 const { normalizeBasePath } = require('./base-path.js');
 const { validNs, ensureDir, createShared } = require('./shared.js');
 const { createPush } = require('./push.js');
@@ -36,6 +36,40 @@ function createManagement(opts) {
 
   function rmrfDir(dir) { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); }
   function fail(status, code, detail) { throw new ManagementError(status, code, detail); }
+
+  function runFile(command, args, captureStdout) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(command, args, {
+        stdio: captureStdout ? ['ignore', 'pipe', 'inherit'] : 'inherit',
+      });
+      let stdout = '';
+      let settled = false;
+      if (captureStdout) {
+        child.stdout.setEncoding('utf8');
+        child.stdout.on('data', chunk => { stdout += chunk; });
+      }
+      child.on('error', err => {
+        if (settled) return;
+        settled = true;
+        reject(err);
+      });
+      child.on('close', (code, signal) => {
+        if (settled) return;
+        settled = true;
+        if (code === 0) return resolve(stdout);
+        const err = new Error(command + ' failed');
+        err.status = code;
+        err.signal = signal;
+        reject(err);
+      });
+    });
+  }
+
+  let deploymentInProgress = false;
+  function requireNoDeployment() {
+    if (deploymentInProgress) fail(409, 'deployment_in_progress', 'another deployment is in progress');
+  }
+
   function validCommit(commit) { return typeof commit === 'string' && (HEX40.test(commit) || HEX64.test(commit)); }
   function validRepo(repo) { return typeof repo === 'string' && SCP_REPO.test(repo); }
 
@@ -145,7 +179,7 @@ function createManagement(opts) {
 
   function octal(mode) { return '0' + (mode & 0o777).toString(8); }
 
-  function deploy(params) {
+  async function deploy(params) {
     const repo = params.repo;
     const commit = params.commit;
     const subdir = params.subdir;
@@ -158,6 +192,8 @@ function createManagement(opts) {
     validateNamespace(ns);
     validateSubdir(subdir);
     if (!validCommit(commit)) fail(400, 'invalid_commit', 'commit must be a full 40 or 64 hex git object id');
+    requireNoDeployment();
+    deploymentInProgress = true;
 
     ensureDir(BUILDS_DIR);
     const workDir = fs.mkdtempSync(path.join(BUILDS_DIR, 'build-'));
@@ -165,14 +201,14 @@ function createManagement(opts) {
 
     try {
       const repoDir = path.join(workDir, 'repo');
+      let head;
       try {
-        execFileSync('git', ['clone', '--quiet', repo, repoDir], { stdio: 'inherit' });
-        execFileSync('git', ['-C', repoDir, 'checkout', '--quiet', commit], { stdio: 'inherit' });
+        await runFile('git', ['clone', '--quiet', repo, repoDir]);
+        await runFile('git', ['-C', repoDir, 'checkout', '--quiet', commit]);
+        head = (await runFile('git', ['-C', repoDir, 'rev-parse', 'HEAD'], true)).trim();
       } catch (e) {
         fail(500, 'git_failed', 'clone or checkout failed');
       }
-
-      const head = execFileSync('git', ['-C', repoDir, 'rev-parse', 'HEAD'], { stdio: 'pipe' }).toString().trim();
       if (head !== commit) fail(400, 'commit_mismatch', 'checked-out HEAD does not match requested commit');
 
       const appDir = path.resolve(repoDir, subdir);
@@ -201,7 +237,7 @@ function createManagement(opts) {
         'make', 'build',
       ];
       try {
-        execFileSync('docker', dockerArgs, { stdio: 'inherit' });
+        await runFile('docker', dockerArgs);
       } catch (e) {
         fail(500, 'build_failed', 'build failed' + (e.status == null ? '' : ' (exit ' + e.status + ')'));
       }
@@ -245,12 +281,14 @@ function createManagement(opts) {
 
       return { ok: true, namespace: ns, release: releaseId, path: APP_BASE_PATH + '/' + ns + '/' };
     } finally {
+      deploymentInProgress = false;
       rmrfDir(workDir);
       try { if (stageDir && fs.existsSync(stageDir) && fs.lstatSync(stageDir).isDirectory()) rmrfDir(stageDir); } catch {}
     }
   }
 
   function undeploy(params) {
+    requireNoDeployment();
     const ns = params.namespace;
     validateNamespace(ns);
     deactivateRelease(ns);
@@ -261,6 +299,7 @@ function createManagement(opts) {
   }
 
   function rollback(params) {
+    requireNoDeployment();
     const ns = params.namespace;
     validateNamespace(ns);
     const releases = listReleases(ns);
@@ -320,6 +359,7 @@ function createManagement(opts) {
   }
 
   function namespaceCreate(params) {
+    requireNoDeployment();
     const ns = params.namespace;
     validateNamespace(ns);
     let quota = shared.DEFAULT_QUOTA_BYTES;
@@ -332,6 +372,7 @@ function createManagement(opts) {
   }
 
   function namespaceRemove(params) {
+    requireNoDeployment();
     const ns = params.namespace;
     validateNamespace(ns);
     rmrfDir(shared.nsStorageDir(ns));
