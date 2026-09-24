@@ -18,6 +18,8 @@ const { createManagement, ManagementError } = require('./management.js');
 const { createPush } = require('./push.js');
 const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 
+const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
+
 const {
   existsSync,
   readFileSync,
@@ -32,9 +34,27 @@ const {
 } = fs;
 const { O_CREAT, O_EXCL, O_WRONLY } = fs.constants || {};
 
+function loadBuildInfo(dir) {
+  const root = dir || path.join(__dirname, '..');
+  const versionPath = path.join(root, 'VERSION');
+  const commitPath = path.join(root, 'COMMIT');
+  const hasVersion = existsSync(versionPath);
+  const hasCommit = existsSync(commitPath);
+  if (!hasVersion && !hasCommit) return DEFAULT_BUILD_INFO;
+  if (!hasVersion || !hasCommit) throw new Error('incomplete Skrynia build metadata');
+  const version = readFileSync(versionPath, 'utf8').trim();
+  const commit = readFileSync(commitPath, 'utf8').trim();
+  const development = version === 'development' && commit === 'development';
+  if (!version || (!development && !/^[0-9a-f]{40,64}$/i.test(commit))) {
+    throw new Error('invalid Skrynia build metadata');
+  }
+  return Object.freeze({ version, commit });
+}
+
 function createServer(opts) {
   opts = opts || {};
 
+  const buildInfo = opts.buildInfo || loadBuildInfo(opts.buildInfoDir);
   const shared = createShared(opts.dataDir);
   const { RELEASES_DIR, STORAGE_DIR, STATE_DIR } = shared;
 
@@ -499,6 +519,11 @@ function createServer(opts) {
 
     if (p === '/health') return json(res, 200, {ok:true});
 
+    if (p === '/version') {
+      if (req.method !== 'GET') { res.writeHead(405); res.end('Method not allowed'); return; }
+      return json(res, 200, buildInfo);
+    }
+
     if (p === '/client/skrynia.js') {
       if (!existsSync(CLIENT_PATH)) { res.writeHead(404); res.end('Not found'); return; }
       res.writeHead(200, {'Content-Type':'application/javascript'});
@@ -593,7 +618,7 @@ function createServer(opts) {
   push.start();
 
   const server = http.createServer(route);
-  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), push };
+  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), buildInfo, push };
   server.on('close', () => push.close());
   return server;
 }
