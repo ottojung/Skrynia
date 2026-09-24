@@ -466,6 +466,34 @@ async function test_client_derives_root_from_script_url() {
   );
 }
 
+async function test_client_etag_and_conditional_headers() {
+  const vm = require('vm');
+  const source = fs.readFileSync(path.join(SRC, 'src', 'client.js'), 'utf8');
+  const requests = [];
+
+  function FakeXHR() { this.requestHeaders = {}; requests.push(this); }
+  FakeXHR.prototype.open = function(method, url) { this.method = method; this.url = url; };
+  FakeXHR.prototype.setRequestHeader = function(name, value) { this.requestHeaders[name] = value; };
+  FakeXHR.prototype.getResponseHeader = function(name) { return name === 'etag' ? '"version-1"' : null; };
+  FakeXHR.prototype.send = function() {
+    this.status = 200;
+    this.response = new ArrayBuffer(0);
+    this.onload();
+  };
+
+  const context = { URL, Promise, TextDecoder, Uint8Array, ArrayBuffer, XMLHttpRequest: FakeXHR };
+  context.window = context;
+  vm.runInNewContext(source, context);
+  const store = context.Skrynia.store('ns');
+  const result = await store.get('key');
+  assert(result.meta.etag === '"version-1"', 'client exposes response etag');
+  await store.put('key', 'data', { capability: 'cap', etag: result.meta.etag });
+  assert(requests[1].requestHeaders['X-Skrynia-Capability'] === 'cap', 'client sends capability');
+  assert(requests[1].requestHeaders['If-Match'] === '"version-1"', 'client sends conditional etag');
+  await store.put('key', 'data');
+  assert(!('If-Match' in requests[2].requestHeaders), 'unconditional put omits etag');
+}
+
 async function test_deploy_validation() {
   setup();
   const { server, port } = await startServer();
@@ -785,6 +813,7 @@ const tests = [
   ['incomplete_create_is_reclaimed', test_incomplete_create_is_reclaimed],
   ['client_serving', test_client_serving],
   ['client_derives_root_from_script_url', test_client_derives_root_from_script_url],
+  ['client_etag_and_conditional_headers', test_client_etag_and_conditional_headers],
   ['deploy_validation', test_deploy_validation],
   ['deploy_rejects_non_ssh_repo', test_deploy_rejects_non_ssh_repo],
   ['deploy_accepts_ssh_repo', test_deploy_accepts_ssh_repo],
