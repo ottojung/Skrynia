@@ -124,7 +124,7 @@ See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
 
 - **Server**: Single-process Node.js HTTP server; storage and management operations share one process
 - **Management**: Token-authenticated HTTP endpoints; there is no admin CLI or `admin.js`
-- **Builder**: Published to GHCR from `builder/Dockerfile` (`node:20-alpine` + make + git + npm); containers are writable and disposable with `--rm`
+- **Builder**: Published to GHCR from `builder/Dockerfile` (`node:24-bookworm-slim` + make + git + npm); containers are writable and disposable with `--rm`
 - **Storage**: Filesystem-based; one `.dat`/`.meta`/`.cap` triplet per object per namespace
 - **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
 - **APP_DIR**: Optional external exposure; `APP_DIR/{ns}` symlink points directly to the active release
