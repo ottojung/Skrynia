@@ -16,6 +16,29 @@ Response: `200 OK`
 { "ok": true }
 ```
 
+### Running version
+
+```text
+GET {SKRYNIA_URL}/version
+```
+
+Response: `200 OK`
+
+```json
+{
+  "version": "1.0.0-122-g9829feb",
+  "commit": "9829febf3466d6668f511ca46c867fb03f87a774"
+}
+```
+
+The values identify the server image currently executing. Published images bake
+the existing `git describe` release version and exact source commit into the
+image at build time. This endpoint is public and requires no management token.
+Source-tree development without baked image metadata reports a distinct
+`development` fallback.
+
+Only `GET` is accepted; other methods return `405`.
+
 ### Client library
 
 ```text
