@@ -32,6 +32,26 @@ jobs:
       - name: Verify builder rootfs is writable
         run: |
           docker run --rm --user "$(id -u):$(id -g)" skrynia-builder:ci sh -c 'touch /var/tmp/rootfs-writable && rm /var/tmp/rootfs-writable'
+      - name: Verify builder installs npm dependencies as numeric user
+        run: |
+          mkdir -p /tmp/skrynia-npm-smoke
+          cat > /tmp/skrynia-npm-smoke/package.json <<'EOF'
+          {
+            "name": "skrynia-npm-smoke",
+            "private": true,
+            "dependencies": {
+              "is-number": "7.0.0"
+            }
+          }
+          EOF
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp \
+            -v /tmp/skrynia-npm-smoke:/workspace \
+            -w /workspace \
+            skrynia-builder:ci \
+            sh -c 'npm install --no-audit --no-fund && node -e "if (!require(\"is-number\")(7)) process.exit(1)"'
+
       - name: Verify builder runs npm and builds birthday-list
         run: |
           docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp -v "$PWD":/repo -w /repo/example/birthday-list skrynia-builder:ci sh -c 'npm --version && npm run build'
