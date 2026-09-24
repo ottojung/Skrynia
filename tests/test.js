@@ -137,6 +137,7 @@ function makeFakeDocker(logPath) {
     '#!/bin/sh',
     'set -eu',
     logPath ? 'printf "%s\\n" "$*" >> ' + JSON.stringify(logPath) : ':',
+    'if [ -n "${SKRYNIA_TEST_DOCKER_SLEEP:-}" ]; then sleep "$SKRYNIA_TEST_DOCKER_SLEEP"; fi',
     'repo=""',
     'work="/repo"',
     'while [ "$#" -gt 0 ]; do',
@@ -630,6 +631,62 @@ async function test_deploy_uses_disposable_writable_builder_shape() {
   assert(!args.includes('--network none'), 'builder network is not disabled');
 }
 
+async function test_deploy_keeps_service_responsive() {
+  setup(); createNs('live');
+  const repo = path.join(TMP, 'repo-responsive');
+  const commit = makeRepo(repo, {
+    'index.html': '<h1>slow build</h1>',
+    'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
+  });
+  const sshRepo = 'git@test.invalid:responsive.git';
+  registerRepo(sshRepo, repo);
+  const log = path.join(TMP, 'docker-responsive.log');
+
+  await withFakeDocker(async () => {
+    process.env.SKRYNIA_TEST_DOCKER_SLEEP = '0.4';
+    const { server, port } = await startServer();
+    try {
+      let r = await request(port, 'POST', '/platform/store/live/k', 'alive', {'X-Skrynia-Mode':'public-write'});
+      assert(r.status === 201, 'seed storage object');
+
+      let deployDone = false;
+      const deployment = managementGet(port, 'deploy', {
+        repo: sshRepo,
+        commit,
+        subdir: '.',
+        namespace: 'slow',
+      }).then(result => {
+        deployDone = true;
+        return result;
+      });
+
+      const deadline = Date.now() + 1000;
+      while (!fs.existsSync(log) && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      assert(fs.existsSync(log), 'deployment reached builder');
+
+      const health = await get(port, '/platform/health');
+      assert(health.status === 200 && jsonBody(health).ok === true, 'health responds during build');
+
+      const stored = await get(port, '/platform/store/live/k');
+      assert(stored.status === 200 && stored.text === 'alive', 'storage responds during build');
+
+      const conflict = await managementGet(port, 'rollback', { namespace: 'slow' });
+      assert(conflict.status === 409 && jsonBody(conflict).error === 'deployment_in_progress',
+        'conflicting lifecycle mutation rejected during build');
+
+      assert(!deployDone, 'deployment still running while health and storage requests completed');
+
+      r = await deployment;
+      assert(r.status === 200, 'slow deployment succeeds: ' + r.text);
+    } finally {
+      delete process.env.SKRYNIA_TEST_DOCKER_SLEEP;
+      await stopServer(server);
+    }
+  }, log);
+}
+
 async function test_rollback_and_undeploy_http() {
   setup();
   const repo = path.join(TMP, 'repo');
@@ -819,6 +876,7 @@ const tests = [
   ['deploy_accepts_ssh_repo', test_deploy_accepts_ssh_repo],
   ['deploy_inspect_releases_and_serving', test_deploy_inspect_releases_and_serving],
   ['deploy_uses_disposable_writable_builder_shape', test_deploy_uses_disposable_writable_builder_shape],
+  ['deploy_keeps_service_responsive', test_deploy_keeps_service_responsive],
   ['rollback_and_undeploy_http', test_rollback_and_undeploy_http],
   ['external_app_dir_activation', test_external_app_dir_activation],
   ['base_path_helpers', test_base_path_helpers],
