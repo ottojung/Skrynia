@@ -81,8 +81,11 @@ jobs:
         shell: bash
         run: |
           VERSION="$(git describe | sed 's/^v//')"
+          COMMIT="$(git rev-parse HEAD)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
           echo "Using version: $VERSION"
+          echo "Using commit: $COMMIT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -97,6 +100,9 @@ jobs:
           tags: |
             ghcr.io/ottojung/skrynia:${{ steps.gitver.outputs.version }}
             ghcr.io/ottojung/skrynia:latest
+          build-args: |
+            SKRYNIA_VERSION=${{ steps.gitver.outputs.version }}
+            SKRYNIA_COMMIT=${{ steps.gitver.outputs.commit }}
           cache-from: type=gha,scope=docker-skrynia
           cache-to: type=gha,mode=max,scope=docker-skrynia
 
@@ -135,6 +141,9 @@ jobs:
             curl -fsS http://127.0.0.1:17380/platform/health && break
             sleep 0.2
           done
+          VERSION_JSON="$(curl -fsS http://127.0.0.1:17380/platform/version)"
+          printf '%s\n' "$VERSION_JSON" | grep -F "\"version\":\"${{ steps.gitver.outputs.version }}\""
+          printf '%s\n' "$VERSION_JSON" | grep -F "\"commit\":\"${{ steps.gitver.outputs.commit }}\""
           curl -fsS 'http://127.0.0.1:17380/platform/ns/list?token=smoke-token' | grep '"namespaces"'
 
       - name: Smoke test skrynia-builder image
