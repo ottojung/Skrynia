@@ -24,8 +24,9 @@ make builder
 # Configure the management token and start the server
 SKRYNIA_URL=http://127.0.0.1:17380/platform SKRYNIA_TOKEN=replace-me node src/server.js
 
-# Check health
+# Check health and the exact running build
 curl http://127.0.0.1:17380/platform/health
+curl http://127.0.0.1:17380/platform/version
 
 # Deploy an app. Quote URLs containing '&'.
 curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
@@ -105,6 +106,7 @@ Environment variables:
 ## Storage API
 
 - `GET /platform/health` — health check
+- `GET /platform/version` — exact running server image version and source commit
 - `GET /platform/client/skrynia.js` — browser client library
 - `GET /platform/store/{ns}/{key}` — read object
 - `POST /platform/store/{ns}/{key}` — create object
