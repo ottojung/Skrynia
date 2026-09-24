@@ -230,7 +230,9 @@ async function test_deploy_failure_cleanup_and_no_namespace() {
     try {
       const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'fail' }));
       assert(r.status === 500, 'failed build returns 500');
-      assert(JSON.parse(r.text).error === 'build_failed', 'failed build error code');
+      const body = JSON.parse(r.text);
+      assert(body.error === 'build_failed', 'failed build error code');
+      assert(body.detail === 'build failed (exit 17)', 'failed build preserves exit status');
       assert(!fs.existsSync(path.join(TMP, 'state', 'fail', 'quota.json')), 'namespace not created on failed deploy');
       assert(fs.readdirSync(path.join(TMP, 'builds')).filter(x => x.startsWith('build-')).length === 0, 'build workspace cleaned');
       assert(fs.existsSync(path.join(staleDir, 'sentinel')), 'failed deploy cleanup leaves other staging directories alone');
