@@ -34,6 +34,7 @@ function run(env) {
       INPUT_COMMIT: '',
       INPUT_SUBDIR: '',
       INPUT_BUILDER: '',
+      'INPUT_TIMEOUT-SECONDS': '',
     }, env);
 
     execFile('node', [ACTION], { env: fullEnv, timeout: 10000 }, function (err, stdout, stderr) {
@@ -112,6 +113,63 @@ async function test_missing_commit_and_repo() {
   assert(r.stderr.includes('repo is required') || r.stderr.includes('commit is required'),
     'error mentions repo or commit: ' + r.stderr);
   pass++; console.log('  missing_commit_and_repo ... ok');
+}
+
+async function test_delayed_response_with_explicit_timeout() {
+  var srv = await startServer(function (req, res) {
+    setTimeout(function () {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, release: 'slow-ok' }));
+    }, 150);
+  });
+  try {
+    var r = await run({
+      INPUT_NAMESPACE: 'ns',
+      INPUT_TOKEN: TOKEN,
+      'INPUT_SKRYNIA-URL': 'http://127.0.0.1:' + srv.port + '/platform',
+      INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
+      INPUT_REPO: 'git@github.com:org/repo.git',
+      'INPUT_TIMEOUT-SECONDS': '2',
+    });
+    assert(r.exit === 0, 'delayed response should succeed: ' + r.stderr);
+    assert(r.outputs.release === 'slow-ok', 'delayed response release output');
+    pass++; console.log('  delayed_response_with_explicit_timeout ... ok');
+  } finally { await stopServer(srv.server); }
+}
+
+async function test_explicit_timeout() {
+  var srv = await startServer(function (_req, _res) {
+    // Deliberately never respond within the configured timeout.
+  });
+  try {
+    var r = await run({
+      INPUT_NAMESPACE: 'ns',
+      INPUT_TOKEN: TOKEN,
+      'INPUT_SKRYNIA-URL': 'http://127.0.0.1:' + srv.port + '/platform',
+      INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
+      INPUT_REPO: 'git@github.com:org/repo.git',
+      'INPUT_TIMEOUT-SECONDS': '1',
+    });
+    assert(r.exit !== 0, 'explicit timeout should fail');
+    assert(r.stderr.includes('deployment timed out after 1 seconds'),
+      'timeout should be explicit: ' + r.stderr);
+    pass++; console.log('  explicit_timeout ... ok');
+  } finally { await stopServer(srv.server); }
+}
+
+async function test_invalid_timeout() {
+  var r = await run({
+    INPUT_NAMESPACE: 'ns',
+    INPUT_TOKEN: TOKEN,
+    'INPUT_SKRYNIA-URL': 'http://127.0.0.1:1/platform',
+    INPUT_COMMIT: 'aabbccddeeff0011223344556677889900112233',
+    INPUT_REPO: 'git@github.com:org/repo.git',
+    'INPUT_TIMEOUT-SECONDS': 'nope',
+  });
+  assert(r.exit !== 0, 'invalid timeout should fail');
+  assert(r.stderr.includes('timeout-seconds must be an integer'),
+    'invalid timeout error is clear: ' + r.stderr);
+  pass++; console.log('  invalid_timeout ... ok');
 }
 
 async function test_successful_deploy() {
@@ -297,6 +355,9 @@ fs.mkdirSync(TMP, { recursive: true });
     test_missing_token,
     test_missing_url,
     test_missing_commit_and_repo,
+    test_delayed_response_with_explicit_timeout,
+    test_explicit_timeout,
+    test_invalid_timeout,
     test_successful_deploy,
     test_root_url_deploy,
     test_default_repo_from_github_repository,
