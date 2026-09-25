@@ -718,7 +718,7 @@ async function test_deploy_uses_disposable_writable_builder_shape() {
   assert(args.includes('--env HOME=/tmp'), 'builder sets HOME');
   assert(args.includes('-v ') && args.includes(':/repo'), 'builder mounts repo');
   assert(!args.includes('--read-only'), 'builder root is writable');
-  assert(!args.includes('--network none'), 'builder network is not disabled');
+  assert(args.includes('--network host'), 'builder uses Docker host networking');
 }
 
 async function test_deploy_keeps_service_responsive() {
