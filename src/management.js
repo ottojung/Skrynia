@@ -349,6 +349,7 @@ function createManagement(opts) {
         '--name', containerName,
         '--cidfile', cidFile,
         '--user', `${owner.uid}:${owner.gid}`,
+        '--network', 'host',
         '--env', 'HOME=/tmp',
         '-v', repoDir + ':/repo',
         '-w', '/repo/' + absSubdir,

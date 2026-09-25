@@ -72,7 +72,7 @@ Deploy process:
 8. Atomically activate the release through one symlink.
 9. Keep the three newest releases.
 
-The builder container is writable and disposable (`--rm`). It may access the network. The repository is mounted read-write and npm is present in the default builder image.
+The builder container is writable and disposable (`--rm`) and uses Docker host networking. The repository is mounted read-write and npm is present in the default builder image.
 
 ### Included examples
 
