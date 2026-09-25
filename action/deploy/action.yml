@@ -23,6 +23,10 @@ inputs:
   builder:
     description: Optional builder Docker image override.
     required: false
+  timeout-seconds:
+    description: Maximum time to wait for Skrynia to finish the deployment request.
+    required: false
+    default: '1800'
 
 outputs:
   release:
