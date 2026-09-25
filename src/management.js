@@ -33,8 +33,12 @@ function createManagement(opts) {
   const buildTimeoutMs = opts.buildTimeoutMs != null
     ? Number(opts.buildTimeoutMs)
     : Number(process.env.SKRYNIA_BUILD_TIMEOUT_MS || 900000);
+  const builderCleanupTimeoutMs = opts.builderCleanupTimeoutMs != null
+    ? Number(opts.builderCleanupTimeoutMs)
+    : 10000;
   if (!Number.isFinite(gitTimeoutMs) || gitTimeoutMs <= 0) throw new Error('git timeout must be a positive number');
   if (!Number.isFinite(buildTimeoutMs) || buildTimeoutMs <= 0) throw new Error('build timeout must be a positive number');
+  if (!Number.isFinite(builderCleanupTimeoutMs) || builderCleanupTimeoutMs <= 0) throw new Error('builder cleanup timeout must be a positive number');
   const push = opts.push || createPush({ dataDir: shared.dataDir });
 
   const HEX40 = /^[0-9a-f]{40}$/;
@@ -88,12 +92,36 @@ function createManagement(opts) {
       let timedOut = false;
       let cleanup = Promise.resolve();
       let forceTimer = null;
+      let timeoutSettled = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        cleanup = Promise.resolve(onTimeout ? onTimeout() : undefined).catch(() => {});
+        cleanup = Promise.resolve(onTimeout ? onTimeout() : undefined);
         terminateProcessGroup(child, 'SIGTERM');
         forceTimer = setTimeout(() => terminateProcessGroup(child, 'SIGKILL'), 1000);
       }, timeoutMs);
+
+      function finishTimeout(cause) {
+        if (timeoutSettled) return;
+        timeoutSettled = true;
+        Promise.allSettled([cleanup]).then(results => {
+          const err = cause || new Error(command + ' timed out');
+          err.timedOut = true;
+          const diagnostics = [];
+          const diagnostic = diagnosticText(stdout, stderr);
+          if (diagnostic) diagnostics.push(diagnostic);
+          const cleanupFailure = results[0].status === 'rejected' ? results[0].reason : null;
+          if (cleanupFailure) {
+            const cleanupText = [cleanupFailure.message, cleanupFailure.diagnostic]
+              .map(value => String(value || ''))
+              .filter(Boolean)
+              .join('\n');
+            const cleanupDiagnostic = diagnosticText(Buffer.alloc(0), Buffer.from(cleanupText));
+            if (cleanupDiagnostic) diagnostics.push('cleanup: ' + cleanupDiagnostic);
+          }
+          if (diagnostics.length) err.diagnostic = diagnostics.join('\n');
+          finish(reject, err);
+        });
+      }
 
       function finish(fn, value) {
         if (settled) return;
@@ -111,18 +139,12 @@ function createManagement(opts) {
         stderr = appendTail(stderr, chunk, OUTPUT_TAIL_BYTES);
         process.stderr.write(chunk);
       });
-      child.on('error', err => finish(reject, err));
+      child.on('error', err => {
+        if (timedOut) return finishTimeout(err);
+        finish(reject, err);
+      });
       child.on('close', (code, signal) => {
-        if (timedOut) {
-          cleanup.then(() => {
-            const err = new Error(command + ' timed out');
-            err.timedOut = true;
-            const diagnostic = diagnosticText(stdout, stderr);
-            if (diagnostic) err.diagnostic = diagnostic;
-            finish(reject, err);
-          });
-          return;
-        }
+        if (timedOut) return finishTimeout();
         if (code === 0) return finish(resolve, captureStdout ? decodeTail(stdout).trim() : undefined);
         const err = new Error(command + ' failed');
         err.status = code;
@@ -135,10 +157,15 @@ function createManagement(opts) {
   }
 
   function removeBuilderContainer(name, cidFile) {
-    return runFile('docker', ['rm', '-f', name], false, 10000, null).catch(() => {
-      if (!fs.existsSync(cidFile)) return;
+    return runFile('docker', ['rm', '-f', name], false, builderCleanupTimeoutMs, null).catch(nameError => {
+      if (!fs.existsSync(cidFile)) throw nameError;
       const cid = fs.readFileSync(cidFile, 'utf8').trim();
-      if (cid) return runFile('docker', ['rm', '-f', cid], false, 10000, null);
+      if (!cid) throw nameError;
+      return runFile('docker', ['rm', '-f', cid], false, builderCleanupTimeoutMs, null).catch(cidError => {
+        const error = new Error(String(nameError.message || nameError) + '; CID fallback failed: ' + String(cidError.message || cidError));
+        error.diagnostic = [nameError.diagnostic, cidError.diagnostic].filter(Boolean).join('\n');
+        throw error;
+      });
     });
   }
 

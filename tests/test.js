@@ -212,6 +212,39 @@ function makeHangingBuilderDocker(started, removed, logPath) {
   fs.chmodSync(script, 0o755);
 }
 
+function makeHangingCleanupDocker(started, cleanupStarted) {
+  const script = path.join(FAKE_BIN, 'docker');
+  fs.writeFileSync(script, [
+    '#!/bin/sh',
+    'set -eu',
+    'if [ "${1:-}" = "rm" ]; then',
+    '  touch ' + JSON.stringify(cleanupStarted),
+    '  printf "cleanup secret %s\\n" "$SKRYNIA_DEPLOY_SECRET" >&2',
+    '  sleep 10',
+    'fi',
+    'touch ' + JSON.stringify(started),
+    'printf "builder cleanup is bounded\\n" >&2',
+    'sleep 10',
+  ].join('\n'));
+  fs.chmodSync(script, 0o755);
+}
+
+function makeFailedCleanupDocker(started) {
+  const script = path.join(FAKE_BIN, 'docker');
+  fs.writeFileSync(script, [
+    '#!/bin/sh',
+    'set -eu',
+    'if [ "${1:-}" = "rm" ]; then',
+    '  printf "name removal secret %s failed\\n" "$SKRYNIA_DEPLOY_SECRET" >&2',
+    '  exit 1',
+    'fi',
+    'touch ' + JSON.stringify(started),
+    'printf "builder before failed cleanup\\n" >&2',
+    'sleep 10',
+  ].join('\n'));
+  fs.chmodSync(script, 0o755);
+}
+
 function makeRepo(dir, files) {
   fs.mkdirSync(dir, { recursive: true });
   execFileSync('git', ['init', dir], { stdio: 'pipe' });
@@ -825,6 +858,87 @@ async function test_deploy_builder_timeout_removes_container_and_recovers() {
   }
 }
 
+async function test_builder_cleanup_timeout_is_bounded() {
+  setup();
+  const repo = path.join(TMP, 'repo-hung-cleanup');
+  const commit = makeRepo(repo, {
+    'index.html': '<h1>hung cleanup</h1>',
+    'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
+  });
+  const sshRepo = 'git@test.invalid:hung-cleanup.git';
+  registerRepo(sshRepo, repo);
+  const started = path.join(TMP, 'cleanup-builder-started');
+  const cleanupStarted = path.join(TMP, 'cleanup-started');
+  makeHangingCleanupDocker(started, cleanupStarted);
+  const oldPath = process.env.PATH;
+  process.env.PATH = FAKE_BIN + ':' + (oldPath || '/usr/bin:/bin');
+  process.env.SKRYNIA_DEPLOY_SECRET = 'cleanup-secret-value';
+  const { server, port } = await startServer({ buildTimeoutMs: 100, builderCleanupTimeoutMs: 100 });
+  try {
+    const deployment = managementGet(port, 'deploy', { repo: sshRepo, commit, subdir: '.', namespace: 'hung-cleanup' });
+    const deadline = Date.now() + 1000;
+    while (!fs.existsSync(cleanupStarted) && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
+    assert(fs.existsSync(cleanupStarted), 'container cleanup started');
+
+    const health = await get(port, '/platform/health');
+    assert(health.status === 200 && jsonBody(health).ok, 'health responds while cleanup is hung');
+    const conflict = await managementGet(port, 'ns/create', { namespace: 'during-cleanup' });
+    assert(conflict.status === 409 && jsonBody(conflict).error === 'deployment_in_progress',
+      'deployment lock remains held during bounded container cleanup');
+
+    const result = await deployment;
+    const detail = jsonBody(result).detail;
+    assert(result.status === 500 && jsonBody(result).error === 'build_failed', 'builder cleanup timeout fails deployment');
+    assert(detail.includes('build failed timed out: stderr: builder cleanup is bounded'), 'builder timeout identifies subprocess');
+    assert(detail.includes('cleanup: stderr: docker timed out') && detail.includes('stderr: cleanup secret [redacted]'), 'cleanup failure is specific and redacted: ' + detail);
+    assert(detail.length < 20000, 'builder timeout diagnostic stays bounded');
+    assert(fs.readdirSync(path.join(TMP, 'builds')).length === 0, 'cleanup timeout removes workspace');
+
+    const recovered = await managementGet(port, 'ns/create', { namespace: 'after-cleanup-timeout' });
+    assert(recovered.status === 200, 'deployment lock recovers after bounded cleanup failure');
+  } finally {
+    delete process.env.SKRYNIA_DEPLOY_SECRET;
+    process.env.PATH = oldPath;
+    await stopServer(server);
+  }
+}
+
+async function test_builder_cleanup_failure_is_reported() {
+  setup();
+  const repo = path.join(TMP, 'repo-failed-cleanup');
+  const commit = makeRepo(repo, {
+    'index.html': '<h1>failed cleanup</h1>',
+    'Makefile': 'build:\n\tmkdir -p build && cp index.html build/index.html\n',
+  });
+  const sshRepo = 'git@test.invalid:failed-cleanup.git';
+  registerRepo(sshRepo, repo);
+  const started = path.join(TMP, 'failed-cleanup-builder-started');
+  makeFailedCleanupDocker(started);
+  const oldPath = process.env.PATH;
+  process.env.PATH = FAKE_BIN + ':' + (oldPath || '/usr/bin:/bin');
+  process.env.SKRYNIA_DEPLOY_SECRET = 'cleanup-name-secret';
+  const { server, port } = await startServer({ buildTimeoutMs: 100, builderCleanupTimeoutMs: 100 });
+  try {
+    const result = await managementGet(port, 'deploy', { repo: sshRepo, commit, subdir: '.', namespace: 'failed-cleanup' });
+    const detail = jsonBody(result).detail;
+    assert(result.status === 500 && jsonBody(result).error === 'build_failed', 'cleanup failure remains a build timeout error');
+    assert(detail.includes('build failed timed out: stderr: builder before failed cleanup'), 'builder timeout identifies subprocess');
+    assert(detail.includes('cleanup: stderr: docker failed') && detail.includes('stderr: name removal secret [redacted] failed'), 'failed name removal is reported and redacted: ' + detail);
+    assert(!detail.includes('cleanup succeeded'), 'failed cleanup is never reported as successful');
+    assert(detail.length < 20000, 'failed cleanup diagnostic stays bounded');
+    assert(fs.readdirSync(path.join(TMP, 'builds')).length === 0, 'failed cleanup removes workspace');
+
+    const health = await get(port, '/platform/health');
+    assert(health.status === 200 && jsonBody(health).ok, 'health responds after failed cleanup');
+    const recovered = await managementGet(port, 'ns/create', { namespace: 'after-failed-cleanup' });
+    assert(recovered.status === 200, 'deployment lock recovers after failed cleanup');
+  } finally {
+    delete process.env.SKRYNIA_DEPLOY_SECRET;
+    process.env.PATH = oldPath;
+    await stopServer(server);
+  }
+}
+
 async function test_rollback_and_undeploy_http() {
   setup();
   const repo = path.join(TMP, 'repo');
@@ -1018,6 +1132,8 @@ const tests = [
   ['deploy_keeps_service_responsive', test_deploy_keeps_service_responsive],
   ['deploy_git_timeout_recovers', test_deploy_git_timeout_recovers],
   ['deploy_builder_timeout_removes_container_and_recovers', test_deploy_builder_timeout_removes_container_and_recovers],
+  ['builder_cleanup_timeout_is_bounded', test_builder_cleanup_timeout_is_bounded],
+  ['builder_cleanup_failure_is_reported', test_builder_cleanup_failure_is_reported],
   ['rollback_and_undeploy_http', test_rollback_and_undeploy_http],
   ['external_app_dir_activation', test_external_app_dir_activation],
   ['base_path_helpers', test_base_path_helpers],
