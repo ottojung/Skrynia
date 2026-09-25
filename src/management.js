@@ -37,17 +37,43 @@ function createManagement(opts) {
   function rmrfDir(dir) { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); }
   function fail(status, code, detail) { throw new ManagementError(status, code, detail); }
 
+  const OUTPUT_TAIL_BYTES = 8192;
+  const SENSITIVE_ENV_NAME = /(?:SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|COOKIE|PRIVATE_KEY|API_KEY|AUTH)/i;
+
+  function appendTail(current, chunk, limit) {
+    if (!chunk.length) return current;
+    const combined = Buffer.concat([current, chunk]);
+    return combined.length > limit ? combined.subarray(combined.length - limit) : combined;
+  }
+
+  function decodeTail(tail) {
+    let value = tail.toString('utf8');
+    if (tail.length && tail[0] >= 0x80) {
+      while (Buffer.from(value, 'utf8').length < tail.length && value.length) value = value.slice(1);
+    }
+    return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ');
+  }
+
+  function diagnosticText(stdout, stderr) {
+    let value = '';
+    if (stdout.length) value += 'stdout: ' + decodeTail(stdout) + '\n';
+    if (stderr.length) value += 'stderr: ' + decodeTail(stderr);
+    for (const [name, secret] of Object.entries(process.env)) {
+      if (name && secret && secret.length >= 4 && SENSITIVE_ENV_NAME.test(name)) {
+        value = value.split(secret).join('[redacted]');
+      }
+    }
+    return value.trim();
+  }
+
   function runFile(command, args, captureStdout) {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, {
-        stdio: captureStdout ? ['ignore', 'pipe', 'inherit'] : 'inherit',
-      });
-      let stdout = '';
+      const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = Buffer.alloc(0);
+      let stderr = Buffer.alloc(0);
       let settled = false;
-      if (captureStdout) {
-        child.stdout.setEncoding('utf8');
-        child.stdout.on('data', chunk => { stdout += chunk; });
-      }
+      child.stdout.on('data', chunk => { stdout = appendTail(stdout, chunk, OUTPUT_TAIL_BYTES); });
+      child.stderr.on('data', chunk => { stderr = appendTail(stderr, chunk, OUTPUT_TAIL_BYTES); });
       child.on('error', err => {
         if (settled) return;
         settled = true;
@@ -56,10 +82,12 @@ function createManagement(opts) {
       child.on('close', (code, signal) => {
         if (settled) return;
         settled = true;
-        if (code === 0) return resolve(stdout);
+        if (code === 0) return resolve(captureStdout ? decodeTail(stdout).trim() : undefined);
         const err = new Error(command + ' failed');
         err.status = code;
         err.signal = signal;
+        const diagnostic = diagnosticText(stdout, stderr);
+        if (diagnostic) err.diagnostic = diagnostic;
         reject(err);
       });
     });
@@ -179,6 +207,12 @@ function createManagement(opts) {
 
   function octal(mode) { return '0' + (mode & 0o777).toString(8); }
 
+  function subprocessFailureDetail(label, err) {
+    const status = err.status == null ? '' : ' (exit ' + err.status + ')';
+    const diagnostic = err.diagnostic ? ': ' + err.diagnostic : '';
+    return label + status + diagnostic;
+  }
+
   async function deploy(params) {
     const repo = params.repo;
     const commit = params.commit;
@@ -203,12 +237,15 @@ function createManagement(opts) {
       workDir = fs.mkdtempSync(path.join(BUILDS_DIR, 'build-'));
       const repoDir = path.join(workDir, 'repo');
       let head;
+      let gitOperation = 'clone';
       try {
         await runFile('git', ['clone', '--quiet', repo, repoDir]);
+        gitOperation = 'checkout';
         await runFile('git', ['-C', repoDir, 'checkout', '--quiet', commit]);
-        head = (await runFile('git', ['-C', repoDir, 'rev-parse', 'HEAD'], true)).trim();
+        gitOperation = 'verify';
+        head = await runFile('git', ['-C', repoDir, 'rev-parse', 'HEAD'], true);
       } catch (e) {
-        fail(500, 'git_failed', 'clone or checkout failed');
+        fail(500, 'git_failed', subprocessFailureDetail(gitOperation + ' failed', e));
       }
       if (head !== commit) fail(400, 'commit_mismatch', 'checked-out HEAD does not match requested commit');
 
@@ -240,7 +277,7 @@ function createManagement(opts) {
       try {
         await runFile('docker', dockerArgs);
       } catch (e) {
-        fail(500, 'build_failed', 'build failed' + (e.status == null ? '' : ' (exit ' + e.status + ')'));
+        fail(500, 'build_failed', subprocessFailureDetail('build failed', e));
       }
 
       const buildOutput = path.join(appDir, 'build');
