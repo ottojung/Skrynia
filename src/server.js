@@ -94,7 +94,6 @@ function createServer(opts) {
     builderImage: opts.builderImage,
     gitTimeoutMs: opts.gitTimeoutMs,
     buildTimeoutMs: opts.buildTimeoutMs,
-    builderCleanupTimeoutMs: opts.builderCleanupTimeoutMs,
     push,
   });
 

@@ -33,12 +33,9 @@ function createManagement(opts) {
   const buildTimeoutMs = opts.buildTimeoutMs != null
     ? Number(opts.buildTimeoutMs)
     : Number(process.env.SKRYNIA_BUILD_TIMEOUT_MS || 900000);
-  const builderCleanupTimeoutMs = opts.builderCleanupTimeoutMs != null
-    ? Number(opts.builderCleanupTimeoutMs)
-    : 10000;
+  const builderCleanupTimeoutMs = Math.min(buildTimeoutMs, 10000);
   if (!Number.isFinite(gitTimeoutMs) || gitTimeoutMs <= 0) throw new Error('git timeout must be a positive number');
   if (!Number.isFinite(buildTimeoutMs) || buildTimeoutMs <= 0) throw new Error('build timeout must be a positive number');
-  if (!Number.isFinite(builderCleanupTimeoutMs) || builderCleanupTimeoutMs <= 0) throw new Error('builder cleanup timeout must be a positive number');
   const push = opts.push || createPush({ dataDir: shared.dataDir });
 
   const HEX40 = /^[0-9a-f]{40}$/;
@@ -92,12 +89,14 @@ function createManagement(opts) {
       let timedOut = false;
       let cleanup = Promise.resolve();
       let forceTimer = null;
+      let settlementTimer = null;
       let timeoutSettled = false;
       const timer = setTimeout(() => {
         timedOut = true;
         cleanup = Promise.resolve(onTimeout ? onTimeout() : undefined);
         terminateProcessGroup(child, 'SIGTERM');
         forceTimer = setTimeout(() => terminateProcessGroup(child, 'SIGKILL'), 1000);
+        settlementTimer = setTimeout(() => finishTimeout(), 2000);
       }, timeoutMs);
 
       function finishTimeout(cause) {
@@ -128,6 +127,7 @@ function createManagement(opts) {
         settled = true;
         clearTimeout(timer);
         if (forceTimer) clearTimeout(forceTimer);
+        if (settlementTimer) clearTimeout(settlementTimer);
         fn(value);
       }
 

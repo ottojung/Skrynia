@@ -873,7 +873,7 @@ async function test_builder_cleanup_timeout_is_bounded() {
   const oldPath = process.env.PATH;
   process.env.PATH = FAKE_BIN + ':' + (oldPath || '/usr/bin:/bin');
   process.env.SKRYNIA_DEPLOY_SECRET = 'cleanup-secret-value';
-  const { server, port } = await startServer({ buildTimeoutMs: 100, builderCleanupTimeoutMs: 100 });
+  const { server, port } = await startServer({ buildTimeoutMs: 100 });
   try {
     const deployment = managementGet(port, 'deploy', { repo: sshRepo, commit, subdir: '.', namespace: 'hung-cleanup' });
     const deadline = Date.now() + 1000;
@@ -917,7 +917,7 @@ async function test_builder_cleanup_failure_is_reported() {
   const oldPath = process.env.PATH;
   process.env.PATH = FAKE_BIN + ':' + (oldPath || '/usr/bin:/bin');
   process.env.SKRYNIA_DEPLOY_SECRET = 'cleanup-name-secret';
-  const { server, port } = await startServer({ buildTimeoutMs: 100, builderCleanupTimeoutMs: 100 });
+  const { server, port } = await startServer({ buildTimeoutMs: 100 });
   try {
     const result = await managementGet(port, 'deploy', { repo: sshRepo, commit, subdir: '.', namespace: 'failed-cleanup' });
     const detail = jsonBody(result).detail;
