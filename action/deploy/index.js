@@ -1,6 +1,11 @@
 'use strict';
 
 const fs = require('fs');
+const http = require('http');
+const https = require('https');
+
+const DEFAULT_TIMEOUT_SECONDS = 1800;
+const MAX_TIMEOUT_SECONDS = 7200;
 
 function input(name) {
   const val = process.env['INPUT_' + name.toUpperCase().replace(/ /g, '_')] || '';
@@ -26,6 +31,51 @@ function setOutput(name, value) {
   if (file && value) {
     fs.appendFileSync(file, name + '=' + value + '\n');
   }
+}
+
+function parseTimeoutSeconds() {
+  const raw = input('timeout-seconds') || String(DEFAULT_TIMEOUT_SECONDS);
+  if (!/^[0-9]+$/.test(raw)) fail('inputs.timeout-seconds must be an integer');
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > MAX_TIMEOUT_SECONDS) {
+    fail('inputs.timeout-seconds must be between 1 and ' + MAX_TIMEOUT_SECONDS);
+  }
+  return value;
+}
+
+function requestText(url, timeoutSeconds) {
+  return new Promise(function (resolve, reject) {
+    const transport = url.protocol === 'https:' ? https : url.protocol === 'http:' ? http : null;
+    if (!transport) {
+      reject(new Error('Skrynia URL must use http or https'));
+      return;
+    }
+
+    let settled = false;
+    let timer;
+    const req = transport.get(url, { headers: { Accept: 'application/json' } }, function (res) {
+      const chunks = [];
+      res.setEncoding('utf8');
+      res.on('data', function (chunk) { chunks.push(chunk); });
+      res.on('end', function () {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ status: res.statusCode || 0, body: chunks.join('') });
+      });
+    });
+
+    timer = setTimeout(function () {
+      req.destroy(new Error('deployment timed out after ' + timeoutSeconds + ' seconds'));
+    }, timeoutSeconds * 1000);
+
+    req.on('error', function (err) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(err);
+    });
+  });
 }
 
 function deriveRepo() {
@@ -75,6 +125,7 @@ async function deploy() {
   const commit = deriveCommit();
   const subdir = input('subdir') || '.';
   const builder = input('builder');
+  const timeoutSeconds = parseTimeoutSeconds();
 
   const params = { repo, commit, subdir, namespace, token };
   if (builder) params.builder = builder;
@@ -83,18 +134,18 @@ async function deploy() {
 
   console.log('Deploying ' + repo + '@' + commit.substring(0, 8) + ' (subdir: ' + subdir + ') to ' + skryniaUrl + ' namespace ' + namespace);
 
-  let res;
+  let response;
   try {
-    res = await fetch(url.href);
+    response = await requestText(url, timeoutSeconds);
   } catch (err) {
     fail('Network error connecting to Skrynia: ' + redact(err.message, token));
   }
 
-  const body = await res.text();
+  const body = response.body;
 
-  if (!res.ok) {
-    console.error(redact('HTTP ' + res.status + ': ' + body, token));
-    fail('Deploy failed with HTTP ' + res.status);
+  if (response.status < 200 || response.status >= 300) {
+    console.error(redact('HTTP ' + response.status + ': ' + body, token));
+    fail('Deploy failed with HTTP ' + response.status);
   }
 
   let data;
