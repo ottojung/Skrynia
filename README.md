@@ -97,6 +97,8 @@ Environment variables:
 | `SKRYNIA_APP_BASE_PATH` | `/apps` | URL prefix for app serving (set to match your proxy) |
 | `SKRYNIA_APP_DIR` | (none) | Filesystem dir for exposed app symlinks |
 | `SKRYNIA_BUILDER_IMAGE` | `skrynia-builder:0.1.0` | Builder Docker image |
+| `SKRYNIA_GIT_TIMEOUT_MS` | `120000` | Maximum duration of each deployment Git subprocess |
+| `SKRYNIA_BUILD_TIMEOUT_MS` | `900000` | Maximum builder duration; timed-out containers are force-removed before deployment lock release |
 | `SKRYNIA_DEFAULT_QUOTA_BYTES` | `10485760` | Default namespace quota |
 | `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Max objects per namespace |
 | `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |

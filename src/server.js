@@ -92,6 +92,8 @@ function createServer(opts) {
     appBasePath: APP_BASE_PATH,
     appDir: APP_DIR,
     builderImage: opts.builderImage,
+    gitTimeoutMs: opts.gitTimeoutMs,
+    buildTimeoutMs: opts.buildTimeoutMs,
     push,
   });
 
