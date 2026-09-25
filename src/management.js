@@ -72,8 +72,14 @@ function createManagement(opts) {
       let stdout = Buffer.alloc(0);
       let stderr = Buffer.alloc(0);
       let settled = false;
-      child.stdout.on('data', chunk => { stdout = appendTail(stdout, chunk, OUTPUT_TAIL_BYTES); });
-      child.stderr.on('data', chunk => { stderr = appendTail(stderr, chunk, OUTPUT_TAIL_BYTES); });
+      child.stdout.on('data', chunk => {
+        stdout = appendTail(stdout, chunk, OUTPUT_TAIL_BYTES);
+        if (!captureStdout) process.stdout.write(chunk);
+      });
+      child.stderr.on('data', chunk => {
+        stderr = appendTail(stderr, chunk, OUTPUT_TAIL_BYTES);
+        process.stderr.write(chunk);
+      });
       child.on('error', err => {
         if (settled) return;
         settled = true;
