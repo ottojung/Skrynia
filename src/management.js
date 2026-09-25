@@ -27,6 +27,14 @@ function createManagement(opts) {
   const BUILDER_IMAGE = opts.builderImage || process.env.SKRYNIA_BUILDER_IMAGE || 'skrynia-builder:0.1.0';
   const APP_BASE_PATH = normalizeBasePath(opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps');
   const APP_DIR = opts.appDir || process.env.SKRYNIA_APP_DIR || '';
+  const gitTimeoutMs = opts.gitTimeoutMs != null
+    ? Number(opts.gitTimeoutMs)
+    : Number(process.env.SKRYNIA_GIT_TIMEOUT_MS || 120000);
+  const buildTimeoutMs = opts.buildTimeoutMs != null
+    ? Number(opts.buildTimeoutMs)
+    : Number(process.env.SKRYNIA_BUILD_TIMEOUT_MS || 900000);
+  if (!Number.isFinite(gitTimeoutMs) || gitTimeoutMs <= 0) throw new Error('git timeout must be a positive number');
+  if (!Number.isFinite(buildTimeoutMs) || buildTimeoutMs <= 0) throw new Error('build timeout must be a positive number');
   const push = opts.push || createPush({ dataDir: shared.dataDir });
 
   const HEX40 = /^[0-9a-f]{40}$/;
@@ -66,12 +74,35 @@ function createManagement(opts) {
     return value.trim();
   }
 
-  function runFile(command, args, captureStdout) {
+  function terminateProcessGroup(child, signal) {
+    try { process.kill(-child.pid, signal); }
+    catch { try { child.kill(signal); } catch {} }
+  }
+
+  function runFile(command, args, captureStdout, timeoutMs, onTimeout) {
     return new Promise((resolve, reject) => {
-      const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(command, args, { detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = Buffer.alloc(0);
       let stderr = Buffer.alloc(0);
       let settled = false;
+      let timedOut = false;
+      let cleanup = Promise.resolve();
+      let forceTimer = null;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        cleanup = Promise.resolve(onTimeout ? onTimeout() : undefined).catch(() => {});
+        terminateProcessGroup(child, 'SIGTERM');
+        forceTimer = setTimeout(() => terminateProcessGroup(child, 'SIGKILL'), 1000);
+      }, timeoutMs);
+
+      function finish(fn, value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (forceTimer) clearTimeout(forceTimer);
+        fn(value);
+      }
+
       child.stdout.on('data', chunk => {
         stdout = appendTail(stdout, chunk, OUTPUT_TAIL_BYTES);
         if (!captureStdout) process.stdout.write(chunk);
@@ -80,22 +111,34 @@ function createManagement(opts) {
         stderr = appendTail(stderr, chunk, OUTPUT_TAIL_BYTES);
         process.stderr.write(chunk);
       });
-      child.on('error', err => {
-        if (settled) return;
-        settled = true;
-        reject(err);
-      });
+      child.on('error', err => finish(reject, err));
       child.on('close', (code, signal) => {
-        if (settled) return;
-        settled = true;
-        if (code === 0) return resolve(captureStdout ? decodeTail(stdout).trim() : undefined);
+        if (timedOut) {
+          cleanup.then(() => {
+            const err = new Error(command + ' timed out');
+            err.timedOut = true;
+            const diagnostic = diagnosticText(stdout, stderr);
+            if (diagnostic) err.diagnostic = diagnostic;
+            finish(reject, err);
+          });
+          return;
+        }
+        if (code === 0) return finish(resolve, captureStdout ? decodeTail(stdout).trim() : undefined);
         const err = new Error(command + ' failed');
         err.status = code;
         err.signal = signal;
         const diagnostic = diagnosticText(stdout, stderr);
         if (diagnostic) err.diagnostic = diagnostic;
-        reject(err);
+        finish(reject, err);
       });
+    });
+  }
+
+  function removeBuilderContainer(name, cidFile) {
+    return runFile('docker', ['rm', '-f', name], false, 10000, null).catch(() => {
+      if (!fs.existsSync(cidFile)) return;
+      const cid = fs.readFileSync(cidFile, 'utf8').trim();
+      if (cid) return runFile('docker', ['rm', '-f', cid], false, 10000, null);
     });
   }
 
@@ -214,7 +257,7 @@ function createManagement(opts) {
   function octal(mode) { return '0' + (mode & 0o777).toString(8); }
 
   function subprocessFailureDetail(label, err) {
-    const status = err.status == null ? '' : ' (exit ' + err.status + ')';
+    const status = err.timedOut ? ' timed out' : (err.status == null ? '' : ' (exit ' + err.status + ')');
     const diagnostic = err.diagnostic ? ': ' + err.diagnostic : '';
     return label + status + diagnostic;
   }
@@ -237,6 +280,7 @@ function createManagement(opts) {
 
     let workDir = null;
     let stageDir = null;
+    let builderSequence = 0;
 
     try {
       ensureDir(BUILDS_DIR);
@@ -245,11 +289,11 @@ function createManagement(opts) {
       let head;
       let gitOperation = 'clone';
       try {
-        await runFile('git', ['clone', '--quiet', repo, repoDir]);
+        await runFile('git', ['clone', '--quiet', repo, repoDir], false, gitTimeoutMs);
         gitOperation = 'checkout';
-        await runFile('git', ['-C', repoDir, 'checkout', '--quiet', commit]);
+        await runFile('git', ['-C', repoDir, 'checkout', '--quiet', commit], false, gitTimeoutMs);
         gitOperation = 'verify';
-        head = await runFile('git', ['-C', repoDir, 'rev-parse', 'HEAD'], true);
+        head = await runFile('git', ['-C', repoDir, 'rev-parse', 'HEAD'], true, gitTimeoutMs);
       } catch (e) {
         fail(500, 'git_failed', subprocessFailureDetail(gitOperation + ' failed', e));
       }
@@ -271,8 +315,12 @@ function createManagement(opts) {
       stageDir = fs.mkdtempSync(path.join(releaseBase, '.staging-'));
       const owner = fs.statSync(repoDir);
       const absSubdir = path.relative(repoDir, appDir);
+      const containerName = 'skrynia-build-' + process.pid + '-' + (++builderSequence);
+      const cidFile = path.join(workDir, 'builder.cid');
       const dockerArgs = [
         'run', '--rm', '--pull=always',
+        '--name', containerName,
+        '--cidfile', cidFile,
         '--user', `${owner.uid}:${owner.gid}`,
         '--env', 'HOME=/tmp',
         '-v', repoDir + ':/repo',
@@ -281,7 +329,7 @@ function createManagement(opts) {
         'make', 'build',
       ];
       try {
-        await runFile('docker', dockerArgs);
+        await runFile('docker', dockerArgs, false, buildTimeoutMs, () => removeBuilderContainer(containerName, cidFile));
       } catch (e) {
         fail(500, 'build_failed', subprocessFailureDetail('build failed', e));
       }
