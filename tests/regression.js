@@ -225,21 +225,66 @@ async function test_deploy_failure_cleanup_and_no_namespace() {
   const staleDir = path.join(TMP, 'releases', 'fail', '.staging-stale');
   fs.mkdirSync(staleDir, { recursive:true });
   fs.writeFileSync(path.join(staleDir, 'sentinel'), 'keep');
-  await withFakeDocker(['exit 17'], async () => {
+  await withFakeDocker([
+    'printf "builder stdout START\\n"',
+    'i=0; while [ "$i" -lt 20000 ]; do printf x; i=$((i + 1)); done',
+    'printf " builder stdout END\\n"',
+    'printf "builder stderr includes deploy-secret\\n" >&2',
+    'exit 17',
+  ], async () => {
+    process.env.DEPLOY_TEST_SECRET = 'deploy-secret';
     const { server, port } = await startServer();
     try {
       const r = await get(port, managementUrl('deploy', { repo: sshRepo, commit, subdir:'.', namespace:'fail' }));
       assert(r.status === 500, 'failed build returns 500');
       const body = JSON.parse(r.text);
       assert(body.error === 'build_failed', 'failed build error code');
-      assert(body.detail === 'build failed (exit 17)', 'failed build preserves exit status');
+      assert(body.detail.startsWith('build failed (exit 17): stdout:'), 'failed build preserves exit status and stdout');
+      assert(body.detail.includes('builder stdout END') && body.detail.includes('stderr: builder stderr includes [redacted]'), 'failed build includes useful scrubbed output');
+      assert(!body.detail.includes('deploy-secret') && !body.detail.includes('builder stdout START'), 'failed build diagnostic is bounded and redacted');
+      assert(body.detail.length < 20000, 'failed build diagnostic stays bounded');
       assert(!fs.existsSync(path.join(TMP, 'state', 'fail', 'quota.json')), 'namespace not created on failed deploy');
       assert(fs.readdirSync(path.join(TMP, 'builds')).filter(x => x.startsWith('build-')).length === 0, 'build workspace cleaned');
       assert(fs.existsSync(path.join(staleDir, 'sentinel')), 'failed deploy cleanup leaves other staging directories alone');
       const staging = fs.readdirSync(path.join(TMP, 'releases', 'fail')).filter(x => x.startsWith('.staging-'));
       assert(staging.length === 1 && staging[0] === '.staging-stale', 'failed deploy removes only its own staging directory');
-    } finally { await stopServer(server); }
+    } finally {
+      delete process.env.DEPLOY_TEST_SECRET;
+      await stopServer(server);
+    }
   });
+}
+
+async function test_failed_git_diagnostics() {
+  setup();
+  const script = path.join(FAKE_BIN, 'git');
+  fs.writeFileSync(script, [
+    '#!/bin/sh',
+    'printf "fatal: clone rejected git-request-secret\\n" >&2',
+    'exit 128',
+  ].join('\n'));
+  fs.chmodSync(script, 0o755);
+  const oldPath = process.env.PATH;
+  process.env.PATH = FAKE_BIN + ':' + (oldPath || '/usr/bin:/bin');
+  process.env.GIT_TEST_SECRET = 'git-request-secret';
+  const { server, port } = await startServer();
+  try {
+    const r = await get(port, managementUrl('deploy', {
+      repo: 'git@test.invalid:diagnostic.git',
+      commit: '0123456789abcdef0123456789abcdef01234567',
+      subdir: '.',
+      namespace: 'gitfail',
+    }));
+    assert(r.status === 500, 'failed clone returns 500');
+    const body = JSON.parse(r.text);
+    assert(body.error === 'git_failed', 'failed clone error code');
+    assert(body.detail === 'clone failed (exit 128): stderr: fatal: clone rejected [redacted]', 'failed clone includes useful scrubbed stderr');
+    assert(!body.detail.includes('git-request-secret'), 'failed clone does not expose environment secrets');
+  } finally {
+    delete process.env.GIT_TEST_SECRET;
+    process.env.PATH = oldPath;
+    await stopServer(server);
+  }
 }
 
 async function test_stale_release_staging_is_not_reused() {
@@ -461,6 +506,7 @@ const tests = [
   ['static_symlink_escape', test_static_symlink_escape],
   ['custom_base_path', test_custom_base_path],
   ['deploy_failure_cleanup_and_no_namespace', test_deploy_failure_cleanup_and_no_namespace],
+  ['failed_git_diagnostics', test_failed_git_diagnostics],
   ['stale_release_staging_is_not_reused', test_stale_release_staging_is_not_reused],
   ['invalid_build_output_rejected', test_invalid_build_output_rejected],
   ['capability_verifier_not_in_meta', test_capability_verifier_not_in_meta],
