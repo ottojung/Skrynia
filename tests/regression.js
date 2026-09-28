@@ -19,7 +19,7 @@ function assert(cond, msg) { if (!cond) throw new Error('ASSERT: ' + msg); }
 function setup() {
   rmrf(TMP);
   rmrf(FAKE_BIN);
-  for (const name of ['releases', 'storage', 'state', 'builds']) fs.mkdirSync(path.join(TMP, name), { recursive: true });
+  for (const name of ['releases', 'store', 'store-meta', 'store-tmp', 'storage', 'state', 'builds']) fs.mkdirSync(path.join(TMP, name), { recursive: true });
   fs.mkdirSync(FAKE_BIN, { recursive: true });
   installFakeGit();
 }
@@ -77,7 +77,8 @@ function registerRepo(sshString, localPath) {
 }
 
 function createNs(ns, quotaBytes, maxObjects) {
-  fs.mkdirSync(path.join(TMP, 'storage', ns), { recursive: true });
+  fs.mkdirSync(path.join(TMP, 'store', ns), { recursive: true });
+  fs.mkdirSync(path.join(TMP, 'store-meta', ns), { recursive: true });
   fs.mkdirSync(path.join(TMP, 'state', ns), { recursive: true });
   fs.writeFileSync(path.join(TMP, 'state', ns, 'quota.json'), JSON.stringify({
     bytes: 0,
@@ -343,15 +344,17 @@ async function test_invalid_build_output_rejected() {
   });
 }
 
-async function test_capability_verifier_not_in_meta() {
+async function test_private_metadata_is_separate() {
   setup(); createNs('cap');
   const { server, port } = await startServer();
   try {
     const r = await request(port, 'POST', '/platform/store/cap/k', 'v', {'X-Skrynia-Mode':'capability-write'});
     assert(r.status === 201, 'capability create');
-    const meta = JSON.parse(fs.readFileSync(path.join(TMP, 'storage', 'cap', 'k.meta')));
-    assert(!Object.prototype.hasOwnProperty.call(meta, 'capVerifier'), 'verifier absent from metadata');
-    assert(fs.existsSync(path.join(TMP, 'storage', 'cap', 'k.cap')), 'verifier sidecar exists');
+    const body = JSON.parse(r.text);
+    assert(fs.readdirSync(path.join(TMP, 'store', 'cap')).join(',') === 'k', 'public tree contains only raw object file');
+    const meta = JSON.parse(fs.readFileSync(path.join(TMP, 'store-meta', 'cap', 'k.json')));
+    assert(meta.mode === 'capability-write' && typeof meta.capHash === 'string', 'mutation metadata is private');
+    assert(meta.capHash !== body.capability && !JSON.stringify(meta).includes(body.capability), 'plaintext capability is never stored');
   } finally { await stopServer(server); }
 }
 
@@ -363,7 +366,8 @@ async function test_ns_create_normalizes_legacy_quota() {
   }));
   fs.mkdirSync(path.join(TMP, 'storage', 'legacy'), { recursive: true });
   fs.writeFileSync(path.join(TMP, 'storage', 'legacy', 'real.dat'), 'actual');
-  fs.writeFileSync(path.join(TMP, 'storage', 'legacy', 'real.meta'), '{}');
+  fs.writeFileSync(path.join(TMP, 'storage', 'legacy', 'real.meta'), JSON.stringify({mode:'public-write'}));
+  fs.writeFileSync(path.join(TMP, 'storage', 'legacy', 'real.ver'), '123');
   const { server, port } = await startServer();
   try {
     const r = await get(port, managementUrl('ns/create', { namespace: 'legacy', quota: 500 }));
@@ -378,29 +382,32 @@ async function test_ns_create_normalizes_legacy_quota() {
     assert(!('count' in onDisk), 'legacy count removed from disk');
     assert(onDisk.quotaBytes === 500, 'quotaBytes persisted');
     assert(onDisk.maxObjects === 50, 'maxObjects persisted');
+    assert(fs.readFileSync(path.join(TMP, 'store', 'legacy', 'real'), 'utf8') === 'actual', 'legacy bytes migrated to suffix-free public path');
+    assert(!fs.existsSync(path.join(TMP, 'storage', 'legacy')), 'legacy mixed storage directory removed');
+    const migratedMeta = JSON.parse(fs.readFileSync(path.join(TMP, 'store-meta', 'legacy', 'real.json'), 'utf8'));
+    assert(migratedMeta.mode === 'public-write' && migratedMeta.version >= 123, 'legacy metadata migrated privately');
+    const read = await get(port, '/platform/store/legacy/real');
+    assert(read.status === 200 && read.text === 'actual', 'migrated object remains readable');
   } finally { await stopServer(server); }
 }
 
 async function test_incomplete_create_not_counted_towards_quota() {
   setup();
   fs.mkdirSync(path.join(TMP, 'state', 'tight'), { recursive: true });
-  fs.writeFileSync(path.join(TMP, 'state', 'tight', 'quota.json'), JSON.stringify({
-    quotaBytes: 100, maxObjects: 1,
-  }));
-  fs.mkdirSync(path.join(TMP, 'storage', 'tight'), { recursive: true });
-  fs.writeFileSync(path.join(TMP, 'storage', 'tight', 'k.dat'), 'dead data');
-  fs.writeFileSync(path.join(TMP, 'storage', 'tight', 'k.cap'), 'dead cap');
+  fs.writeFileSync(path.join(TMP, 'state', 'tight', 'quota.json'), JSON.stringify({quotaBytes:100,maxObjects:1}));
+  fs.mkdirSync(path.join(TMP, 'store', 'tight'), { recursive: true });
+  fs.mkdirSync(path.join(TMP, 'store-meta', 'tight'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'store-meta', 'tight', 'k.json'), JSON.stringify({mode:'capability-write',capHash:'dead',version:100}));
+  fs.writeFileSync(path.join(TMP, 'store-tmp', 'orphan'), 'dead temp data');
   const { server, port } = await startServer();
   try {
     const r = await request(port, 'POST', '/platform/store/tight/k', 'alive', {'X-Skrynia-Mode':'public-write'});
-    assert(r.status === 201, 'create succeeds even with orphan .dat and maxObjects=1, got ' + r.status);
+    assert(r.status === 201, 'private residue does not consume public object quota, got ' + r.status);
     const onDisk = JSON.parse(fs.readFileSync(path.join(TMP, 'state', 'tight', 'quota.json'), 'utf8'));
-    assert(!('bytes' in onDisk), 'no bytes persisted to disk');
-    assert(!('count' in onDisk), 'no count persisted to disk');
-    assert(fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.dat')), 'k.dat exists');
-    assert(fs.readFileSync(path.join(TMP, 'storage', 'tight', 'k.dat'), 'utf8') === 'alive', 'k.dat content is new value');
-    assert(fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.meta')), 'k.meta exists as commit marker');
-    assert(!fs.existsSync(path.join(TMP, 'storage', 'tight', 'k.cap')), 'old k.cap removed for public-write');
+    assert(!('bytes' in onDisk) && !('count' in onDisk), 'derived quota is not persisted');
+    assert(fs.readFileSync(path.join(TMP, 'store', 'tight', 'k'), 'utf8') === 'alive', 'public file is committed value');
+    const meta = JSON.parse(fs.readFileSync(path.join(TMP, 'store-meta', 'tight', 'k.json'), 'utf8'));
+    assert(meta.mode === 'public-write' && !meta.capHash, 'stale private metadata replaced');
     const read = await get(port, '/platform/store/tight/k');
     assert(read.text === 'alive', 'created object readable');
   } finally { await stopServer(server); }
@@ -509,7 +516,7 @@ const tests = [
   ['failed_git_diagnostics', test_failed_git_diagnostics],
   ['stale_release_staging_is_not_reused', test_stale_release_staging_is_not_reused],
   ['invalid_build_output_rejected', test_invalid_build_output_rejected],
-  ['capability_verifier_not_in_meta', test_capability_verifier_not_in_meta],
+  ['private_metadata_is_separate', test_private_metadata_is_separate],
   ['ns_create_normalizes_legacy_quota', test_ns_create_normalizes_legacy_quota],
   ['incomplete_create_not_counted_towards_quota', test_incomplete_create_not_counted_towards_quota],
   ['hostile_build_permissions_canonicalized', test_hostile_build_permissions_canonicalized],

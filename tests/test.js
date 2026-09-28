@@ -22,7 +22,7 @@ function assert(cond, msg) { if (!cond) throw new Error('ASSERT: ' + msg); }
 function setup() {
   rmrf(TMP);
   rmrf(FAKE_BIN);
-  for (const name of ['releases', 'storage', 'state', 'builds']) fs.mkdirSync(path.join(TMP, name), { recursive: true });
+  for (const name of ['releases', 'store', 'store-meta', 'store-tmp', 'storage', 'state', 'builds']) fs.mkdirSync(path.join(TMP, name), { recursive: true });
   fs.mkdirSync(FAKE_BIN, { recursive: true });
   installFakeGit();
 }
@@ -80,7 +80,8 @@ function registerRepo(sshString, localPath) {
 }
 
 function createNs(ns, quotaBytes, maxObjects) {
-  fs.mkdirSync(path.join(TMP, 'storage', ns), { recursive: true });
+  fs.mkdirSync(path.join(TMP, 'store', ns), { recursive: true });
+  fs.mkdirSync(path.join(TMP, 'store-meta', ns), { recursive: true });
   fs.mkdirSync(path.join(TMP, 'state', ns), { recursive: true });
   fs.writeFileSync(path.join(TMP, 'state', ns, 'quota.json'), JSON.stringify({
     quotaBytes: quotaBytes || 10485760,
@@ -410,7 +411,7 @@ async function test_etag_and_conditional_replace() {
     assert(r.status === 201, 'create for etag');
     r = await get(port, '/platform/store/ns/k');
     const firstEtag = r.headers.etag;
-    const firstStat = fs.statSync(path.join(TMP, 'storage', 'ns', 'k.dat'));
+    const firstStat = fs.statSync(path.join(TMP, 'store', 'ns', 'k'));
     const nginxEtag = '"' + Math.floor(firstStat.mtimeMs / 1000).toString(16) + '-' + firstStat.size.toString(16) + '"';
     assert(r.status === 200 && firstEtag === nginxEtag, 'read exposes nginx-compatible static-file etag');
 
@@ -520,15 +521,15 @@ async function test_quota_and_count_limits() {
 
 async function test_incomplete_create_is_reclaimed() {
   setup(); createNs('ns');
-  const dir = path.join(TMP, 'storage', 'ns');
-  fs.writeFileSync(path.join(dir, 'k.dat'), 'orphan');
-  fs.writeFileSync(path.join(dir, 'k.cap'), 'orphan');
+  fs.writeFileSync(path.join(TMP, 'store-meta', 'ns', 'k.json'), JSON.stringify({mode:'capability-write', capHash:'orphan', version:123}));
   const { server, port } = await startServer();
   try {
     const r = await request(port, 'POST', '/platform/store/ns/k', 'fresh', {'X-Skrynia-Mode':'public-write'});
-    assert(r.status === 201, 'incomplete create reclaimed');
+    assert(r.status === 201, 'private residue without public file does not block create');
     const read = await get(port, '/platform/store/ns/k');
     assert(read.text === 'fresh', 'fresh data visible');
+    const meta = JSON.parse(fs.readFileSync(path.join(TMP, 'store-meta', 'ns', 'k.json'), 'utf8'));
+    assert(meta.mode === 'public-write' && !meta.capHash, 'new metadata replaces stale residue');
   } finally { await stopServer(server); }
 }
 
@@ -1080,11 +1081,9 @@ async function test_quota_derived_from_filesystem() {
   setup();
   fs.mkdirSync(path.join(TMP, 'state', 'dq'), { recursive: true });
   fs.writeFileSync(path.join(TMP, 'state', 'dq', 'quota.json'), JSON.stringify({quotaBytes:100,maxObjects:100}));
-  fs.mkdirSync(path.join(TMP, 'storage', 'dq'), { recursive: true });
-  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'a.dat'), '12345');
-  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'a.meta'), '{}');
-  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'b.dat'), '67890');
-  fs.writeFileSync(path.join(TMP, 'storage', 'dq', 'b.meta'), '{}');
+  fs.mkdirSync(path.join(TMP, 'store', 'dq'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'store', 'dq', 'a'), '12345');
+  fs.writeFileSync(path.join(TMP, 'store', 'dq', 'b'), '67890');
   const { server, port } = await startServer();
   try {
     let r = await request(port, 'POST', '/platform/store/dq/k', 'x'.repeat(90), {'X-Skrynia-Mode':'public-write'});
@@ -1098,9 +1097,8 @@ async function test_stale_counters_ignored() {
   setup();
   fs.mkdirSync(path.join(TMP, 'state', 'sc'), { recursive: true });
   fs.writeFileSync(path.join(TMP, 'state', 'sc', 'quota.json'), JSON.stringify({bytes:999999,count:9999,quotaBytes:100,maxObjects:100}));
-  fs.mkdirSync(path.join(TMP, 'storage', 'sc'), { recursive: true });
-  fs.writeFileSync(path.join(TMP, 'storage', 'sc', 'only.dat'), 'data');
-  fs.writeFileSync(path.join(TMP, 'storage', 'sc', 'only.meta'), '{}');
+  fs.mkdirSync(path.join(TMP, 'store', 'sc'), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'store', 'sc', 'only'), 'data');
   const { server, port } = await startServer();
   try {
     let r = await request(port, 'POST', '/platform/store/sc/k', 'hi', {'X-Skrynia-Mode':'public-write'});

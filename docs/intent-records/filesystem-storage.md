@@ -1,7 +1,7 @@
 $id-5943420546985984
 title: Filesystem backed storage
-date: 2026/09/10
+date: 2026/09/28
 source: @ottojung
 kind: requirement
 
-Storage should be actual inspectable files on disk, naturally corresponding to keys. Design a safe mapping/canonical key policy preventing traversal/aliasing. Keep internal metadata separate/reserved. Avoid exposing internal files via object keys.
+Storage is actual inspectable files on disk naturally corresponding to keys. A committed object's public bytes live exactly at `STORE_DIR/{namespace}/{key}`, with no data suffix and no internal sidecars in that public tree. Existence of that file is the sole object visibility/commit marker so a static web server can safely serve reads directly. Mutation metadata and temporary files live in separate private directories that must not be web-served. The key policy must prevent traversal and aliasing.
