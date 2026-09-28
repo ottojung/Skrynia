@@ -119,6 +119,7 @@
       'Content-Type': opts.contentType || 'application/octet-stream',
       'X-Skrynia-Mode': opts.mode || 'capability-write',
     };
+    if (opts.capability) headers['X-Skrynia-Capability'] = opts.capability;
     return request('POST', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
       if (raw.status() !== 201) throw new Error('create failed: ' + raw.status());
       return raw.json();
