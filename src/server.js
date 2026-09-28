@@ -595,7 +595,7 @@ function createServer(opts) {
   }
 
   ensureDir(RELEASES_DIR);
-  ensureDir(STORAGE_DIR);
+  shared.ensureStoreRoots();
   ensureDir(STATE_DIR);
   push.start();
 
