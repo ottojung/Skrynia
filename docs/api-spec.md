@@ -57,13 +57,14 @@ Base path: `{SKRYNIA_URL}/store/{namespace}/{key}`
 GET {SKRYNIA_URL}/store/{namespace}/{key}
 ```
 
-Response `200` body is the raw object bytes. Response headers include `Content-Type`, `X-Skrynia-Mode`, `X-Skrynia-Created`, and `ETag`. The ETag is an opaque strong validator for the current committed object version. Rereading the same committed version returns the same ETag; every successful replacement advances it even if the bytes are unchanged. Deleting and recreating a key also advances it while the namespace is retained. Clients must treat the value as opaque.
+Response `200` body is the raw object bytes. The response content type is `application/octet-stream` and the response includes `ETag`. Mutation mode and creation time are not exposed by reads. The ETag is an opaque strong validator for the current committed object version. Rereading the same committed version returns the same ETag; every successful replacement advances it even if the bytes are unchanged. Deleting and recreating a key also advances it while the namespace is retained. Clients must treat the value as opaque.
+
+The public object file is `SKRYNIA_DATA_DIR/store/{namespace}/{key}` exactly. Its existence is the committed existence of the object. Deployments may serve GET requests directly from that tree with a static web server; nginx must use `application/octet-stream` for this location so behavior does not depend on the key's filename extension.
 
 #### Create object
 
 ```text
 POST {SKRYNIA_URL}/store/{namespace}/{key}
-Content-Type: {object content type}
 X-Skrynia-Mode: {immutable|capability-write|public-write}
 
 {body}
@@ -85,7 +86,6 @@ The capability is returned only for `capability-write` mode.
 
 ```text
 PUT {SKRYNIA_URL}/store/{namespace}/{key}
-Content-Type: {object content type}
 X-Skrynia-Capability: {capability}
 If-Match: {etag} (optional)
 

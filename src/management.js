@@ -21,7 +21,7 @@ function createManagement(opts) {
   opts = opts || {};
 
   const shared = createShared(opts.dataDir);
-  const { RELEASES_DIR, STORAGE_DIR, STATE_DIR } = shared;
+  const { RELEASES_DIR, LEGACY_STORAGE_DIR, STATE_DIR } = shared;
 
   const BUILDS_DIR = path.join(shared.dataDir, 'builds');
   const BUILDER_IMAGE = opts.builderImage || process.env.SKRYNIA_BUILDER_IMAGE || 'skrynia-builder:0.1.0';
@@ -413,7 +413,9 @@ function createManagement(opts) {
     validateNamespace(ns);
     deactivateRelease(ns);
     rmrfDir(path.join(RELEASES_DIR, ns));
-    rmrfDir(path.join(STORAGE_DIR, ns));
+    rmrfDir(shared.nsStoreDir(ns));
+    rmrfDir(shared.nsStoreMetaDir(ns));
+    rmrfDir(path.join(LEGACY_STORAGE_DIR, ns));
     rmrfDir(path.join(STATE_DIR, ns));
     return { ok: true, namespace: ns };
   }
@@ -463,7 +465,7 @@ function createManagement(opts) {
   }
 
   function ensureNamespace(ns, quotaBytes) {
-    ensureDir(shared.nsStorageDir(ns));
+    shared.ensureStoreNamespace(ns);
     ensureDir(path.join(STATE_DIR, ns));
     const p = shared.nsQuotaPath(ns);
     if (fs.existsSync(p)) {
@@ -495,7 +497,9 @@ function createManagement(opts) {
     requireNoDeployment();
     const ns = params.namespace;
     validateNamespace(ns);
-    rmrfDir(shared.nsStorageDir(ns));
+    rmrfDir(shared.nsStoreDir(ns));
+    rmrfDir(shared.nsStoreMetaDir(ns));
+    rmrfDir(path.join(LEGACY_STORAGE_DIR, ns));
     rmrfDir(path.join(STATE_DIR, ns));
     return { ok: true, namespace: ns };
   }

@@ -120,7 +120,9 @@ Environment variables:
 - `DELETE /platform/push/subscriptions/{id}` — delete a subscription with `X-Skrynia-Capability`
 - `GET {base_path}/{ns}/{path}` — serve app static files
 
-Object reads return an opaque strong ETag for the current committed object version. Every successful replacement advances the ETag, even when the bytes are unchanged; deleting and recreating a key also advances it while the namespace is retained. `PUT` accepts an optional `If-Match` ETag for atomic compare-and-replace; a mismatch returns `412` without changing the object. Omitting `If-Match` remains unconditional. Capability authorization is independently required.
+Object reads are raw bytes with an opaque strong ETag for the current committed object version. Every successful replacement advances the ETag, even when the bytes are unchanged; deleting and recreating a key also advances it while the namespace is retained. `PUT` accepts an optional `If-Match` ETag for atomic compare-and-replace; a mismatch returns `412` without changing the object. Omitting `If-Match` remains unconditional. Capability authorization is independently required.
+
+The on-disk public store is deliberately static-file compatible: `SKRYNIA_DATA_DIR/store/{namespace}/{key}` is the complete committed object, with no suffix or sidecars in that tree. A reverse proxy may serve store GETs directly from this directory. Configure that location to use `application/octet-stream`; nginx's native ETag matches Skrynia's conditional-write ETag.
 
 See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
 
@@ -129,7 +131,7 @@ See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
 - **Server**: Single-process Node.js HTTP server; storage and management operations share one process
 - **Management**: Token-authenticated HTTP endpoints; there is no admin CLI or `admin.js`
 - **Builder**: Published to GHCR from `builder/Dockerfile` (`node:24-bookworm-slim` + make + git + npm); containers are writable and disposable with `--rm`
-- **Storage**: Filesystem-based; `.dat` bytes, `.meta` metadata, optional `.cap`, and a persistent `.ver` ETag-generation sidecar per key
+- **Storage**: Filesystem-based; public bytes are exactly `store/{ns}/{key}`; private mutation metadata lives separately under `store-meta/{ns}/{key}.json`; the public file itself is the commit marker
 - **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
 - **APP_DIR**: Optional external exposure; `APP_DIR/{ns}` symlink points directly to the active release
 

@@ -29,10 +29,9 @@ const {
   readdirSync,
   realpathSync,
   renameSync,
-  openSync,
-  closeSync,
+  linkSync,
+  chmodSync,
 } = fs;
-const { O_CREAT, O_EXCL, O_WRONLY } = fs.constants || {};
 
 function loadBuildInfo(dir) {
   const root = dir || path.join(__dirname, '..');
@@ -56,7 +55,8 @@ function createServer(opts) {
 
   const buildInfo = opts.buildInfo || loadBuildInfo(opts.buildInfoDir);
   const shared = createShared(opts.dataDir);
-  const { RELEASES_DIR, STORAGE_DIR, STATE_DIR } = shared;
+  shared.migrateLegacyStorage();
+  const { RELEASES_DIR, STATE_DIR } = shared;
 
   const CLIENT_PATH = path.join(__dirname, 'client.js');
   const APP_BASE_PATH = normalizeBasePath(opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps');
@@ -146,48 +146,17 @@ function createServer(opts) {
     return crypto.timingSafeEqual(bufA, bufB);
   }
 
-  function exclusiveCreate(filePath, data) {
-    try {
-      const fd = openSync(filePath, O_CREAT | O_EXCL | O_WRONLY);
-      try {
-        if (data && data.length > 0) fs.writeSync(fd, data, 0, data.length, null);
-      } finally {
-        closeSync(fd);
-      }
-      return true;
-    } catch (e) {
-      if (e.code === 'EEXIST') return false;
-      throw e;
-    }
-  }
-
-  function atomicReplace(filePath, data) {
-    const tmp = filePath + '.tmp.' + process.pid;
-    writeFileSync(tmp, data);
-    renameSync(tmp, filePath);
-  }
-
   // Match nginx's native static-file ETag exactly: hex(mtime-seconds)-hex(size).
-  // Object data mtimes are version numbers, not merely wall-clock timestamps.
   function staticFileEtag(filePath) {
     const st = statSync(filePath);
     const mtimeSeconds = Math.floor(st.mtimeMs / 1000);
     return '"' + mtimeSeconds.toString(16) + '-' + st.size.toString(16) + '"';
   }
 
-  function reserveObjectVersion(ns, key) {
-    const vp = shared.nsVersionPath(ns, key);
-    let previous = 0;
-    if (existsSync(vp)) {
-      previous = Number(readFileSync(vp, 'utf8').trim());
-      if (!Number.isSafeInteger(previous) || previous < 0) throw new Error('invalid object version state');
-    }
-
-    const op = shared.nsObjPath(ns, key);
-    const current = existsSync(op) ? Math.floor(statSync(op).mtimeMs / 1000) : 0;
-    const version = Math.max(Math.floor(Date.now() / 1000), previous + 1, current + 1);
-    atomicReplace(vp, String(version));
-    return version;
+  function nextObjectVersion(meta, filePath) {
+    const previous = meta && Number.isSafeInteger(meta.version) && meta.version >= 0 ? meta.version : 0;
+    const current = existsSync(filePath) ? Math.floor(statSync(filePath).mtimeMs / 1000) : 0;
+    return Math.max(Math.floor(Date.now() / 1000), previous + 1, current + 1);
   }
 
   function setObjectVersion(filePath, versionSeconds) {
@@ -197,125 +166,93 @@ function createServer(opts) {
     if (actual !== versionSeconds) throw new Error('filesystem did not preserve object version mtime');
   }
 
-  function atomicReplaceObject(filePath, data, versionSeconds) {
-    const tmp = filePath + '.tmp.' + process.pid;
-    writeFileSync(tmp, data);
+  function prepareObjectTemp(ns, body, versionSeconds) {
+    shared.ensureStoreRoots();
+    const tmp = path.join(shared.STORE_TMP_DIR, ns + '.' + process.pid + '.' + crypto.randomBytes(12).toString('hex'));
+    writeFileSync(tmp, body, { mode: 0o600 });
     setObjectVersion(tmp, versionSeconds);
-    renameSync(tmp, filePath);
+    chmodSync(tmp, 0o644);
+    return tmp;
+  }
+
+  function discardTemp(filePath) {
+    try { unlinkSync(filePath); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   }
 
   function handleGet(ns, key, res) {
     const op = shared.nsObjPath(ns, key);
     if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
-    const meta = JSON.parse(readFileSync(shared.nsMetaPath(ns, key), 'utf8'));
     const data = readFileSync(op);
     res.writeHead(200, {
-      'Content-Type': meta.contentType || 'application/octet-stream',
+      'Content-Type': 'application/octet-stream',
       'ETag': staticFileEtag(op),
-      'X-Skrynia-Mode': meta.mode,
-      'X-Skrynia-Created': meta.created,
     });
     res.end(data);
   }
 
-  function cleanupIncompleteCreate(ns, key) {
-    for (const p of [shared.nsObjPath(ns, key), shared.nsCapPath(ns, key)]) {
-      try { unlinkSync(p); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    }
-  }
-
   function handleCreate(ns, key, body, req, res) {
     if (!requireNsCreate(ns, res)) return;
-
     const mode = req.headers['x-skrynia-mode'] || 'capability-write';
     if (!['immutable','capability-write','public-write'].includes(mode)) return json(res, 400, {error:'invalid_mode'});
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 
+    shared.ensureStoreNamespace(ns);
+    const op = shared.nsObjPath(ns, key);
+    if (existsSync(op)) return json(res, 409, {error:'already_exists'});
     const q = shared.recalcQuota(ns);
     if (q.count >= q.maxObjects) return json(res, 507, {error:'namespace_full',detail:'max_objects'});
     if (q.bytes + body.length > q.quotaBytes) return json(res, 507, {error:'namespace_full',detail:'quota_bytes'});
 
-    ensureDir(shared.nsStorageDir(ns));
-
-    // A .meta file is the visibility/commit marker. If data exists without
-    // metadata, it is residue from an interrupted create and can be reclaimed.
-    if (!existsSync(shared.nsMetaPath(ns, key)) && (existsSync(shared.nsObjPath(ns, key)) || existsSync(shared.nsCapPath(ns, key)))) cleanupIncompleteCreate(ns, key);
-
-    if (existsSync(shared.nsMetaPath(ns, key))) return json(res, 409, {error:'already_exists'});
-
-    // Durability ordering: persist outbox item(s) BEFORE the mutation becomes
-    // committed/visible (.meta rename below). A crash between outbox
-    // persistence and commit causes at most a spurious wake-up (acceptable);
-    // a crash after commit always leaves recoverable outbox state. The whole
-    // handler is synchronous, so no other mutation can interleave.
-    try {
-      push.enqueue(ns, key, 'create');
-    } catch (e) {
-      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
-      return json(res, 500, {error:'push_enqueue_failed'});
-    }
-
-    const op = shared.nsObjPath(ns, key);
-    if (!exclusiveCreate(op, body)) return json(res, 409, {error:'already_exists'});
-
-    const versionSeconds = reserveObjectVersion(ns, key);
-    try { setObjectVersion(op, versionSeconds); }
-    catch (e) { cleanupIncompleteCreate(ns, key); throw e; }
-
-    const now = new Date().toISOString();
-    const meta = {
-      mode,
-      contentType: req.headers['content-type'] || 'application/octet-stream',
-      created: now,
-      size: body.length,
-    };
+    const previousMeta = shared.readObjectMeta(ns, key) || {};
+    const version = nextObjectVersion(previousMeta, op);
     const response = { ok: true, mode };
-
-    try {
-      if (mode === 'capability-write') {
-        const capability = generateCapability();
-        writeFileSync(shared.nsCapPath(ns, key), sha256hex(capability));
-        response.capability = capability;
-      }
-      const tmp = shared.nsMetaPath(ns, key) + '.tmp.' + process.pid;
-      writeFileSync(tmp, JSON.stringify(meta, null, 2));
-      renameSync(tmp, shared.nsMetaPath(ns, key));
-    } catch (e) {
-      cleanupIncompleteCreate(ns, key);
-      throw e;
+    const meta = { mode, version };
+    if (mode === 'capability-write') {
+      const capability = generateCapability();
+      meta.capHash = sha256hex(capability);
+      response.capability = capability;
     }
 
+    const tmp = prepareObjectTemp(ns, body, version);
+    try {
+      shared.writeObjectMeta(ns, key, meta);
+      try {
+        push.enqueue(ns, key, 'create');
+      } catch (e) {
+        if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
+        console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+        return json(res, 500, {error:'push_enqueue_failed'});
+      }
+      try { linkSync(tmp, op); }
+      catch (e) {
+        if (e.code === 'EEXIST') return json(res, 409, {error:'already_exists'});
+        throw e;
+      }
+    } finally {
+      discardTemp(tmp);
+    }
     json(res, 201, response);
   }
 
   function handlePut(ns, key, body, req, res) {
     if (!requireNs(ns, res)) return;
-
-    const mp = shared.nsMetaPath(ns, key);
-    if (!existsSync(mp)) return json(res, 404, {error:'not_found'});
-    const meta = JSON.parse(readFileSync(mp, 'utf8'));
+    const op = shared.nsObjPath(ns, key);
+    if (!existsSync(op)) return json(res, 404, {error:'not_found'});
+    const meta = shared.readObjectMeta(ns, key);
+    if (!meta || !['immutable','capability-write','public-write'].includes(meta.mode)) return json(res, 500, {error:'object_metadata_missing'});
     if (meta.mode === 'immutable') return json(res, 403, {error:'immutable'});
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
-      const storedHash = readFileSync(shared.nsCapPath(ns, key), 'utf8');
-      if (!timingSafeEqualHex(sha256hex(capability), storedHash)) return json(res, 403, {error:'invalid_capability'});
+      if (!meta.capHash || !timingSafeEqualHex(sha256hex(capability), meta.capHash)) return json(res, 403, {error:'invalid_capability'});
     }
-    const op = shared.nsObjPath(ns, key);
     const ifMatch = req.headers['if-match'];
-    if (ifMatch !== undefined) {
-      const currentEtag = staticFileEtag(op);
-      if (ifMatch !== currentEtag) return json(res, 412, {error:'etag_mismatch'});
-    }
+    if (ifMatch !== undefined && ifMatch !== staticFileEtag(op)) return json(res, 412, {error:'etag_mismatch'});
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 
     const q = shared.recalcQuota(ns);
-    const newBytes = q.bytes - meta.size + body.length;
+    const newBytes = q.bytes - statSync(op).size + body.length;
     if (newBytes > q.quotaBytes) return json(res, 507, {error:'namespace_full',detail:'quota_bytes'});
-
-    // Outbox before commit: the .dat replace below is the visibility point
-    // for current-data readers, so notification state goes to disk first.
     try {
       push.enqueue(ns, key, 'replace');
     } catch (e) {
@@ -324,30 +261,29 @@ function createServer(opts) {
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
-    const versionSeconds = reserveObjectVersion(ns, key);
-    atomicReplaceObject(op, body, versionSeconds);
-    meta.size = body.length;
-    meta.contentType = req.headers['content-type'] || meta.contentType;
-    meta.modified = new Date().toISOString();
-    writeFileSync(mp, JSON.stringify(meta, null, 2));
+    const version = nextObjectVersion(meta, op);
+    const tmp = prepareObjectTemp(ns, body, version);
+    try {
+      shared.writeObjectMeta(ns, key, Object.assign({}, meta, {version}));
+      renameSync(tmp, op);
+    } finally {
+      discardTemp(tmp);
+    }
     json(res, 200, {ok:true});
   }
 
   function handleDelete(ns, key, req, res) {
     if (!requireNs(ns, res)) return;
-
-    const mp = shared.nsMetaPath(ns, key);
-    if (!existsSync(mp)) return json(res, 404, {error:'not_found'});
-    const meta = JSON.parse(readFileSync(mp, 'utf8'));
+    const op = shared.nsObjPath(ns, key);
+    if (!existsSync(op)) return json(res, 404, {error:'not_found'});
+    const meta = shared.readObjectMeta(ns, key);
+    if (!meta || !['immutable','capability-write','public-write'].includes(meta.mode)) return json(res, 500, {error:'object_metadata_missing'});
     if (meta.mode === 'immutable') return json(res, 403, {error:'immutable'});
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
-      if (!timingSafeEqualHex(sha256hex(capability), readFileSync(shared.nsCapPath(ns, key), 'utf8'))) return json(res, 403, {error:'invalid_capability'});
+      if (!meta.capHash || !timingSafeEqualHex(sha256hex(capability), meta.capHash)) return json(res, 403, {error:'invalid_capability'});
     }
-
-    // Outbox before commit: the .meta unlink below is the visibility point
-    // for deletion, so notification state goes to disk first.
     try {
       push.enqueue(ns, key, 'delete');
     } catch (e) {
@@ -356,9 +292,10 @@ function createServer(opts) {
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
-    unlinkSync(mp);
-    try { unlinkSync(shared.nsObjPath(ns, key)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    try { unlinkSync(shared.nsCapPath(ns, key)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    const version = Math.max(Number.isSafeInteger(meta.version) ? meta.version : 0, Math.floor(statSync(op).mtimeMs / 1000));
+    unlinkSync(op);
+    try { shared.writeObjectMeta(ns, key, {version}); }
+    catch (e) { console.error('skrynia metadata cleanup error:', e && e.message ? e.message : e); }
     json(res, 200, {ok:true});
   }
 
@@ -658,7 +595,7 @@ function createServer(opts) {
   }
 
   ensureDir(RELEASES_DIR);
-  ensureDir(STORAGE_DIR);
+  shared.ensureStoreRoots();
   ensureDir(STATE_DIR);
   push.start();
 

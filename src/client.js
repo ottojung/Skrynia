@@ -102,8 +102,6 @@
       return {
         bytes: raw,
         meta: {
-          mode: raw.header('x-skrynia-mode'),
-          created: raw.header('x-skrynia-created'),
           etag: raw.header('etag'),
         },
       };
@@ -116,7 +114,6 @@
   Store.prototype.create = function(key, data, opts) {
     opts = opts || {};
     var headers = {
-      'Content-Type': opts.contentType || 'application/octet-stream',
       'X-Skrynia-Mode': opts.mode || 'capability-write',
     };
     return request('POST', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
@@ -130,9 +127,7 @@
    */
   Store.prototype.put = function(key, data, opts) {
     opts = opts || {};
-    var headers = {
-      'Content-Type': opts.contentType || 'application/octet-stream',
-    };
+    var headers = {};
     if (opts.capability) headers['X-Skrynia-Capability'] = opts.capability;
     if (opts.etag) headers['If-Match'] = opts.etag;
     return request('PUT', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
