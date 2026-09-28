@@ -120,7 +120,7 @@ Environment variables:
 - `DELETE /platform/push/subscriptions/{id}` — delete a subscription with `X-Skrynia-Capability`
 - `GET {base_path}/{ns}/{path}` — serve app static files
 
-Object reads return an opaque ETag for the exact object bytes. `PUT` accepts an optional `If-Match` ETag for atomic compare-and-replace; a mismatch returns `412` without changing the object. Omitting `If-Match` remains unconditional. Capability authorization is independently required.
+Object reads return an opaque strong ETag for the current committed object version. Every successful replacement advances the ETag, even when the bytes are unchanged; deleting and recreating a key also advances it while the namespace is retained. `PUT` accepts an optional `If-Match` ETag for atomic compare-and-replace; a mismatch returns `412` without changing the object. Omitting `If-Match` remains unconditional. Capability authorization is independently required.
 
 See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
 
@@ -129,7 +129,7 @@ See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
 - **Server**: Single-process Node.js HTTP server; storage and management operations share one process
 - **Management**: Token-authenticated HTTP endpoints; there is no admin CLI or `admin.js`
 - **Builder**: Published to GHCR from `builder/Dockerfile` (`node:24-bookworm-slim` + make + git + npm); containers are writable and disposable with `--rm`
-- **Storage**: Filesystem-based; one `.dat`/`.meta`/`.cap` triplet per object per namespace
+- **Storage**: Filesystem-based; `.dat` bytes, `.meta` metadata, optional `.cap`, and a persistent `.ver` ETag-generation sidecar per key
 - **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
 - **APP_DIR**: Optional external exposure; `APP_DIR/{ns}` symlink points directly to the active release
 

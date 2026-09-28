@@ -410,17 +410,38 @@ async function test_etag_and_conditional_replace() {
     assert(r.status === 201, 'create for etag');
     r = await get(port, '/platform/store/ns/k');
     const firstEtag = r.headers.etag;
-    assert(r.status === 200 && firstEtag && firstEtag.length > 2, 'read exposes etag');
+    const firstStat = fs.statSync(path.join(TMP, 'storage', 'ns', 'k.dat'));
+    const nginxEtag = '"' + Math.floor(firstStat.mtimeMs / 1000).toString(16) + '-' + firstStat.size.toString(16) + '"';
+    assert(r.status === 200 && firstEtag === nginxEtag, 'read exposes nginx-compatible static-file etag');
+
     r = await get(port, '/platform/store/ns/k');
     assert(r.headers.etag === firstEtag, 'unchanged reread has same etag');
+
     r = await request(port, 'PUT', '/platform/store/ns/k', 'two', {'If-Match': firstEtag});
     assert(r.status === 200, 'matching etag replaces');
     r = await get(port, '/platform/store/ns/k');
-    assert(r.text === 'two' && r.headers.etag !== firstEtag, 'changed bytes have changed etag');
-    r = await request(port, 'PUT', '/platform/store/ns/k', 'wrong', {'If-Match': firstEtag});
-    assert(r.status === 412 && jsonBody(r).error === 'etag_mismatch', 'stale etag rejected');
+    const secondEtag = r.headers.etag;
+    assert(r.text === 'two' && secondEtag !== firstEtag, 'replacement advances etag');
+
+    r = await request(port, 'PUT', '/platform/store/ns/k', 'one', {'If-Match': secondEtag});
+    assert(r.status === 200, 'second matching etag replaces');
     r = await get(port, '/platform/store/ns/k');
-    assert(r.text === 'two', 'stale etag leaves bytes unchanged');
+    const thirdEtag = r.headers.etag;
+    assert(r.text === 'one' && thirdEtag !== secondEtag && thirdEtag !== firstEtag, 'A-B-A still advances etag');
+
+    r = await request(port, 'PUT', '/platform/store/ns/k', 'wrong', {'If-Match': firstEtag});
+    assert(r.status === 412 && jsonBody(r).error === 'etag_mismatch', 'stale etag rejected after A-B-A');
+
+    r = await request(port, 'DELETE', '/platform/store/ns/k');
+    assert(r.status === 200, 'delete before recreation');
+    r = await request(port, 'POST', '/platform/store/ns/k', 'uno', {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'recreate');
+    r = await get(port, '/platform/store/ns/k');
+    const recreatedEtag = r.headers.etag;
+    assert(r.text === 'uno' && recreatedEtag !== thirdEtag && recreatedEtag !== firstEtag, 'delete-recreate advances etag');
+
+    r = await request(port, 'PUT', '/platform/store/ns/k', 'stale', {'If-Match': firstEtag});
+    assert(r.status === 412, 'pre-delete etag cannot replace recreated object');
   } finally { await stopServer(server); }
 }
 

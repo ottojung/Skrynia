@@ -29,6 +29,7 @@ function createShared(dataDir) {
   function nsObjPath(ns, key) { return path.join(nsStorageDir(ns), key + '.dat'); }
   function nsMetaPath(ns, key) { return path.join(nsStorageDir(ns), key + '.meta'); }
   function nsCapPath(ns, key) { return path.join(nsStorageDir(ns), key + '.cap'); }
+  function nsVersionPath(ns, key) { return path.join(nsStorageDir(ns), key + '.ver'); }
   function nsQuotaPath(ns) { return path.join(STATE_DIR, ns, 'quota.json'); }
   function nsCurrentLink(ns) { return path.join(RELEASES_DIR, ns, 'current'); }
   function nsConfigPath(ns) { return path.join(STATE_DIR, ns, 'config.json'); }
@@ -75,6 +76,7 @@ function createShared(dataDir) {
     nsObjPath,
     nsMetaPath,
     nsCapPath,
+    nsVersionPath,
     nsQuotaPath,
     nsCurrentLink,
     nsConfigPath,

@@ -167,6 +167,43 @@ function createServer(opts) {
     renameSync(tmp, filePath);
   }
 
+  // Match nginx's native static-file ETag exactly: hex(mtime-seconds)-hex(size).
+  // Object data mtimes are version numbers, not merely wall-clock timestamps.
+  function staticFileEtag(filePath) {
+    const st = statSync(filePath);
+    const mtimeSeconds = Math.floor(st.mtimeMs / 1000);
+    return '"' + mtimeSeconds.toString(16) + '-' + st.size.toString(16) + '"';
+  }
+
+  function reserveObjectVersion(ns, key) {
+    const vp = shared.nsVersionPath(ns, key);
+    let previous = 0;
+    if (existsSync(vp)) {
+      previous = Number(readFileSync(vp, 'utf8').trim());
+      if (!Number.isSafeInteger(previous) || previous < 0) throw new Error('invalid object version state');
+    }
+
+    const op = shared.nsObjPath(ns, key);
+    const current = existsSync(op) ? Math.floor(statSync(op).mtimeMs / 1000) : 0;
+    const version = Math.max(Math.floor(Date.now() / 1000), previous + 1, current + 1);
+    atomicReplace(vp, String(version));
+    return version;
+  }
+
+  function setObjectVersion(filePath, versionSeconds) {
+    const when = new Date(versionSeconds * 1000);
+    fs.utimesSync(filePath, when, when);
+    const actual = Math.floor(statSync(filePath).mtimeMs / 1000);
+    if (actual !== versionSeconds) throw new Error('filesystem did not preserve object version mtime');
+  }
+
+  function atomicReplaceObject(filePath, data, versionSeconds) {
+    const tmp = filePath + '.tmp.' + process.pid;
+    writeFileSync(tmp, data);
+    setObjectVersion(tmp, versionSeconds);
+    renameSync(tmp, filePath);
+  }
+
   function handleGet(ns, key, res) {
     const op = shared.nsObjPath(ns, key);
     if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
@@ -174,7 +211,7 @@ function createServer(opts) {
     const data = readFileSync(op);
     res.writeHead(200, {
       'Content-Type': meta.contentType || 'application/octet-stream',
-      'ETag': '"' + sha256hex(data) + '"',
+      'ETag': staticFileEtag(op),
       'X-Skrynia-Mode': meta.mode,
       'X-Skrynia-Created': meta.created,
     });
@@ -219,7 +256,12 @@ function createServer(opts) {
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
-    if (!exclusiveCreate(shared.nsObjPath(ns, key), body)) return json(res, 409, {error:'already_exists'});
+    const op = shared.nsObjPath(ns, key);
+    if (!exclusiveCreate(op, body)) return json(res, 409, {error:'already_exists'});
+
+    const versionSeconds = reserveObjectVersion(ns, key);
+    try { setObjectVersion(op, versionSeconds); }
+    catch (e) { cleanupIncompleteCreate(ns, key); throw e; }
 
     const now = new Date().toISOString();
     const meta = {
@@ -260,10 +302,10 @@ function createServer(opts) {
       const storedHash = readFileSync(shared.nsCapPath(ns, key), 'utf8');
       if (!timingSafeEqualHex(sha256hex(capability), storedHash)) return json(res, 403, {error:'invalid_capability'});
     }
+    const op = shared.nsObjPath(ns, key);
     const ifMatch = req.headers['if-match'];
     if (ifMatch !== undefined) {
-      const current = readFileSync(shared.nsObjPath(ns, key));
-      const currentEtag = '"' + sha256hex(current) + '"';
+      const currentEtag = staticFileEtag(op);
       if (ifMatch !== currentEtag) return json(res, 412, {error:'etag_mismatch'});
     }
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
@@ -282,7 +324,8 @@ function createServer(opts) {
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
-    atomicReplace(shared.nsObjPath(ns, key), body);
+    const versionSeconds = reserveObjectVersion(ns, key);
+    atomicReplaceObject(op, body, versionSeconds);
     meta.size = body.length;
     meta.contentType = req.headers['content-type'] || meta.contentType;
     meta.modified = new Date().toISOString();
