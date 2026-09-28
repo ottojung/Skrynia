@@ -57,7 +57,7 @@ Base path: `{SKRYNIA_URL}/store/{namespace}/{key}`
 GET {SKRYNIA_URL}/store/{namespace}/{key}
 ```
 
-Response `200` body is the raw object bytes. Response headers include `Content-Type`, `X-Skrynia-Mode`, `X-Skrynia-Created`, and `ETag`. The ETag is an opaque quoted tag derived deterministically from the exact object bytes only; rereading unchanged bytes returns the same ETag, and changed bytes return a different ETag. It does not cover object metadata or storage identity.
+Response `200` body is the raw object bytes. Response headers include `Content-Type`, `X-Skrynia-Mode`, `X-Skrynia-Created`, and `ETag`. The ETag is an opaque strong validator for the current committed object version. Rereading the same committed version returns the same ETag; every successful replacement advances it even if the bytes are unchanged. Deleting and recreating a key also advances it while the namespace is retained. Clients must treat the value as opaque.
 
 #### Create object
 
@@ -98,7 +98,7 @@ Response:
 { "ok": true }
 ```
 
-`PUT` without `If-Match` is an unconditional replacement. With `If-Match`, the server compares the supplied ETag with the exact current object bytes as an atomic compare-and-replace. A mismatch returns `412` with `{"error":"etag_mismatch"}` and does not change the object. Capability authorization is independently required and is checked before replacement. Competing conditional writers using the same current ETag cannot both succeed.
+`PUT` without `If-Match` is an unconditional replacement. With `If-Match`, the server compares the supplied ETag with the current committed object version as an atomic compare-and-replace. A mismatch returns `412` with `{"error":"etag_mismatch"}` and does not change the object. Capability authorization is independently required and is checked before replacement. Competing conditional writers using the same current ETag cannot both succeed.
 
 #### Delete object
 
