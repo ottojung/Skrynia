@@ -459,6 +459,45 @@ async function test_capability_write() {
   } finally { await stopServer(server); }
 }
 
+async function test_capability_write_can_reuse_supplied_capability() {
+  setup(); createNs('ns');
+  const { server, port } = await startServer();
+  try {
+    const shared = 'b'.repeat(64);
+    let r = await request(
+      port,
+      'POST',
+      '/platform/store/ns/a',
+      'one',
+      {'X-Skrynia-Mode':'capability-write','X-Skrynia-Capability':shared},
+    );
+    assert(r.status === 201 && jsonBody(r).capability === shared, 'supplied capability accepted');
+
+    r = await request(
+      port,
+      'POST',
+      '/platform/store/ns/b',
+      'two',
+      {'X-Skrynia-Mode':'capability-write','X-Skrynia-Capability':shared},
+    );
+    assert(r.status === 201 && jsonBody(r).capability === shared, 'same capability reused');
+
+    r = await request(port, 'PUT', '/platform/store/ns/a', 'A', {'X-Skrynia-Capability':shared});
+    assert(r.status === 200, 'shared capability writes first object');
+    r = await request(port, 'PUT', '/platform/store/ns/b', 'B', {'X-Skrynia-Capability':shared});
+    assert(r.status === 200, 'shared capability writes second object');
+
+    r = await request(
+      port,
+      'POST',
+      '/platform/store/ns/bad',
+      'x',
+      {'X-Skrynia-Mode':'capability-write','X-Skrynia-Capability':'short'},
+    );
+    assert(r.status === 400 && jsonBody(r).error === 'invalid_capability', 'malformed supplied capability rejected');
+  } finally { await stopServer(server); }
+}
+
 async function test_immutable() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
@@ -578,11 +617,13 @@ async function test_client_etag_and_conditional_headers() {
   const store = context.Skrynia.store('ns');
   const result = await store.get('key');
   assert(result.meta.etag === '"version-1"', 'client exposes response etag');
+  await store.create('new-key', 'data', { capability: 'shared-capability' });
+  assert(requests[1].requestHeaders['X-Skrynia-Capability'] === 'shared-capability', 'client sends create capability');
   await store.put('key', 'data', { capability: 'cap', etag: result.meta.etag });
-  assert(requests[1].requestHeaders['X-Skrynia-Capability'] === 'cap', 'client sends capability');
-  assert(requests[1].requestHeaders['If-Match'] === '"version-1"', 'client sends conditional etag');
+  assert(requests[2].requestHeaders['X-Skrynia-Capability'] === 'cap', 'client sends capability');
+  assert(requests[2].requestHeaders['If-Match'] === '"version-1"', 'client sends conditional etag');
   await store.put('key', 'data');
-  assert(!('If-Match' in requests[2].requestHeaders), 'unconditional put omits etag');
+  assert(!('If-Match' in requests[3].requestHeaders), 'unconditional put omits etag');
 }
 
 async function test_deploy_validation() {
@@ -1117,6 +1158,7 @@ const tests = [
   ['etag_and_conditional_replace', test_etag_and_conditional_replace],
   ['conditional_replace_authorization_and_race', test_conditional_replace_authorization_and_race],
   ['capability_write', test_capability_write],
+  ['capability_write_can_reuse_supplied_capability', test_capability_write_can_reuse_supplied_capability],
   ['immutable', test_immutable],
   ['key_validation', test_key_validation],
   ['quota_and_count_limits', test_quota_and_count_limits],
