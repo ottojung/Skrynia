@@ -65,6 +65,7 @@ Response `200` body is the raw object bytes. Response headers include `Content-T
 POST {SKRYNIA_URL}/store/{namespace}/{key}
 Content-Type: {object content type}
 X-Skrynia-Mode: {immutable|capability-write|public-write}
+X-Skrynia-Capability: {optional existing capability for capability-write}
 
 {body}
 ```
@@ -79,7 +80,7 @@ Response: `201 Created`
 }
 ```
 
-The capability is returned only for `capability-write` mode.
+The capability is returned only for `capability-write` mode. By default Skrynia generates a fresh high-entropy capability. A caller may instead supply an existing 64-hex capability in `X-Skrynia-Capability`; Skrynia then stores that capability for the new object and returns the same value. This lets several objects intentionally share one bearer write authority without weakening public-read semantics. The header is rejected for other modes and malformed supplied capabilities are rejected.
 
 #### Replace object
 
