@@ -192,6 +192,11 @@ function createServer(opts) {
 
     const mode = req.headers['x-skrynia-mode'] || 'capability-write';
     if (!['immutable','capability-write','public-write'].includes(mode)) return json(res, 400, {error:'invalid_mode'});
+    const suppliedCapability = req.headers['x-skrynia-capability'];
+    if (suppliedCapability !== undefined
+        && (mode !== 'capability-write' || !/^[0-9a-f]{64}$/i.test(suppliedCapability))) {
+      return json(res, 400, {error:'invalid_capability'});
+    }
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 
     const q = shared.recalcQuota(ns);
@@ -232,7 +237,11 @@ function createServer(opts) {
 
     try {
       if (mode === 'capability-write') {
-        const capability = generateCapability();
+        // A caller may deliberately reuse one existing bearer capability for a
+        // family of objects (for example, sharded records belonging to one
+        // logical document). When omitted, creation keeps the original
+        // behavior and generates a fresh capability.
+        const capability = suppliedCapability || generateCapability();
         writeFileSync(shared.nsCapPath(ns, key), sha256hex(capability));
         response.capability = capability;
       }
