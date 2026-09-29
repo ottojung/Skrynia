@@ -103,7 +103,7 @@ function createShared(dataDir) {
         let storedVersion = 0;
         if (fs.existsSync(oldVersionPath)) storedVersion = Number(fs.readFileSync(oldVersionPath, 'utf8').trim());
 
-        const mode = ['immutable', 'capability-write', 'public-write'].includes(oldMeta.mode) ? oldMeta.mode : 'immutable';
+        const mode = ['immutable', 'capability-write', 'public-write'].includes(oldMeta.mode) ? oldMeta.mode : 'public-write';
         const meta = { mode, version: Math.max(dataVersion, validStoredVersion(storedVersion)) };
         if (mode === 'capability-write') {
           if (!fs.existsSync(oldCapPath)) throw new Error('legacy capability object missing verifier: ' + ns + '/' + key);

@@ -20,6 +20,11 @@ const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 
 const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
 
+// Modes accepted at creation. Legacy immutable objects can still exist on disk
+// and stay readable and deletable, but never replaceable and never creatable.
+const CREATE_MODES = ['capability-write', 'public-write'];
+const LEGACY_IMMUTABLE = 'immutable';
+
 const {
   existsSync,
   readFileSync,
@@ -193,7 +198,8 @@ function createServer(opts) {
   function handleCreate(ns, key, body, req, res) {
     if (!requireNsCreate(ns, res)) return;
     const mode = req.headers['x-skrynia-mode'] || 'capability-write';
-    if (!['immutable','capability-write','public-write'].includes(mode)) return json(res, 400, {error:'invalid_mode'});
+    if (mode === LEGACY_IMMUTABLE) return json(res, 400, {error:'mode_removed', detail:'immutable objects can no longer be created; use public-write or capability-write'});
+    if (!CREATE_MODES.includes(mode)) return json(res, 400, {error:'invalid_mode'});
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 
     shared.ensureStoreNamespace(ns);
@@ -239,8 +245,8 @@ function createServer(opts) {
     const op = shared.nsObjPath(ns, key);
     if (!existsSync(op)) return json(res, 404, {error:'not_found'});
     const meta = shared.readObjectMeta(ns, key);
-    if (!meta || !['immutable','capability-write','public-write'].includes(meta.mode)) return json(res, 500, {error:'object_metadata_missing'});
-    if (meta.mode === 'immutable') return json(res, 403, {error:'immutable'});
+    if (!meta || (meta.mode !== LEGACY_IMMUTABLE && !CREATE_MODES.includes(meta.mode))) return json(res, 500, {error:'object_metadata_missing'});
+    if (meta.mode === LEGACY_IMMUTABLE) return json(res, 403, {error:'immutable', detail:'immutable objects can no longer be created; read-only for objects that predate removal'});
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
@@ -277,8 +283,8 @@ function createServer(opts) {
     const op = shared.nsObjPath(ns, key);
     if (!existsSync(op)) return json(res, 404, {error:'not_found'});
     const meta = shared.readObjectMeta(ns, key);
-    if (!meta || !['immutable','capability-write','public-write'].includes(meta.mode)) return json(res, 500, {error:'object_metadata_missing'});
-    if (meta.mode === 'immutable') return json(res, 403, {error:'immutable'});
+    if (!meta || (meta.mode !== LEGACY_IMMUTABLE && !CREATE_MODES.includes(meta.mode))) return json(res, 500, {error:'object_metadata_missing'});
+    // Legacy immutable objects are deletable so superseded storage is reclaimable.
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
