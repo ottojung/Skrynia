@@ -481,15 +481,32 @@ async function test_capability_write() {
   } finally { await stopServer(server); }
 }
 
-async function test_immutable() {
+async function test_immutable_mode_is_not_accepted() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
   try {
-    await request(port, 'POST', '/platform/store/ns/k', 'one', {'X-Skrynia-Mode':'immutable'});
-    let r = await request(port, 'PUT', '/platform/store/ns/k', 'two');
-    assert(r.status === 403, 'immutable put blocked');
-    r = await request(port, 'DELETE', '/platform/store/ns/k');
-    assert(r.status === 403, 'immutable delete blocked');
+    const r = await request(port, 'POST', '/platform/store/ns/k', 'one', {'X-Skrynia-Mode':'immutable'});
+    assert(r.status === 400 && jsonBody(r).error === 'mode_removed', 'immutable creation is rejected explicitly');
+    assert(!fs.existsSync(path.join(TMP, 'store', 'ns', 'k')), 'rejected creation writes no object');
+    const read = await get(port, '/platform/store/ns/k');
+    assert(read.status === 404, 'rejected creation leaves the key absent');
+  } finally { await stopServer(server); }
+}
+
+async function test_legacy_immutable_object_stays_readable_and_reclaimable() {
+  setup(); createNs('ns');
+  fs.writeFileSync(path.join(TMP, 'store', 'ns', 'old'), 'legacy');
+  fs.writeFileSync(path.join(TMP, 'store-meta', 'ns', 'old.json'), JSON.stringify({mode:'immutable', version:1}));
+  const { server, port } = await startServer();
+  try {
+    const read = await get(port, '/platform/store/ns/old');
+    assert(read.status === 200 && read.text === 'legacy', 'legacy immutable object remains readable');
+    const put = await request(port, 'PUT', '/platform/store/ns/old', 'replaced');
+    assert(put.status === 403, 'legacy immutable object cannot be replaced');
+    const del = await request(port, 'DELETE', '/platform/store/ns/old');
+    assert(del.status === 200, 'legacy immutable object can be reclaimed');
+    const after = await get(port, '/platform/store/ns/old');
+    assert(after.status === 404, 'reclaimed object is gone');
   } finally { await stopServer(server); }
 }
 
@@ -1136,7 +1153,8 @@ const tests = [
   ['etag_and_conditional_replace', test_etag_and_conditional_replace],
   ['conditional_replace_authorization_and_race', test_conditional_replace_authorization_and_race],
   ['capability_write', test_capability_write],
-  ['immutable', test_immutable],
+  ['immutable_mode_is_not_accepted', test_immutable_mode_is_not_accepted],
+  ['legacy_immutable_object_stays_readable_and_reclaimable', test_legacy_immutable_object_stays_readable_and_reclaimable],
   ['key_validation', test_key_validation],
   ['quota_and_count_limits', test_quota_and_count_limits],
   ['incomplete_create_is_reclaimed', test_incomplete_create_is_reclaimed],
