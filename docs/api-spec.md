@@ -65,7 +65,7 @@ The public object file is `SKRYNIA_DATA_DIR/store/{namespace}/{key}` exactly. It
 
 ```text
 POST {SKRYNIA_URL}/store/{namespace}/{key}
-X-Skrynia-Mode: {immutable|capability-write|public-write}
+X-Skrynia-Mode: {capability-write|public-write}
 
 {body}
 ```
@@ -81,6 +81,8 @@ Response: `201 Created`
 ```
 
 The capability is returned only for `capability-write` mode.
+
+`X-Skrynia-Mode: immutable` is no longer accepted. Such a request returns `400` with `{"error":"mode_removed"}` and creates nothing; it is not silently downgraded to another mode. Use `public-write` where the object should be mutable and reclaimable by anyone who knows namespace and key, or `capability-write` where only the holder of the returned capability may replace or delete it. Content-addressed designs should use `public-write` and include the content address in the key, since the version/replace path is available in both remaining modes. Objects that were created as `immutable` before removal stay readable and can be deleted, but cannot be replaced.
 
 #### Replace object
 
@@ -115,8 +117,8 @@ Response:
 
 Store errors include:
 
-- `400`: invalid namespace, key, percent encoding, or mode
-- `403`: immutable object, missing capability, or wrong capability
+- `400`: invalid namespace, key, percent encoding, or mode (including `immutable`, which returns `mode_removed`)
+- `403`: replace of a pre-removal immutable object, missing capability, or wrong capability
 - `404`: object or namespace does not exist
 - `409`: create conflicts with an existing object or namespace has not been created
 - `413`: object/request exceeds the configured maximum
@@ -400,9 +402,7 @@ Returns `{ "ok": true, "namespace": "myapp", "key": "orders" }`.
 
 ## Object modes
 
-### immutable
-
-Object cannot be modified or deleted through the store API.
+Two modes are accepted at creation. There is no mode that makes an object permanently undeletable, so superseded objects are always reclaimable.
 
 ### capability-write (default)
 
@@ -411,6 +411,10 @@ Create returns a 64-character hexadecimal capability. PUT/DELETE require that va
 ### public-write
 
 Anyone who knows namespace and key may replace or delete the object.
+
+### immutable (removed)
+
+No longer accepted at creation; `400 {"error":"mode_removed"}`. Objects created as `immutable` before removal remain readable and deletable so their storage can be reclaimed, and `PUT` on them still returns `403 {"error":"immutable"}`. Callers that need write-once-by-convention should create `public-write` objects under a content-addressed key and delete superseded keys themselves.
 
 ## Namespace validation
 

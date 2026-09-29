@@ -5,7 +5,7 @@ A minimal platform for deploying and serving small web apps with durable key-val
 ## Features
 
 - **Deploy from git over SSH**: Clone from an SSH scp-like repo URL, checkout exact commit, build via container, atomic release activation
-- **Storage API**: Namespace-scoped key-value store with immutable, capability-write, and public-write modes
+- **Storage API**: Namespace-scoped key-value store with capability-write and public-write modes
 - **Web Push**: Durable mutation-driven push; exact namespace/key/kinds map to named channels, payload is exactly the channel name
 - **App serving**: Static file serving from active releases under a configurable base path
 - **HTTP management API**: Deployment, rollback, undeploy, release inspection, and namespace management relative to `SKRYNIA_URL`
