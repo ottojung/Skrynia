@@ -503,6 +503,12 @@ async function test_legacy_immutable_object_stays_readable_and_reclaimable() {
     assert(read.status === 200 && read.text === 'legacy', 'legacy immutable object remains readable');
     const put = await request(port, 'PUT', '/platform/store/ns/old', 'replaced');
     assert(put.status === 403, 'legacy immutable object cannot be replaced');
+    const putBody = jsonBody(put);
+    assert(putBody.error === 'immutable', 'the 403 names the immutable rejection');
+    assert(putBody.detail.includes('can no longer be created'), 'the 403 says immutable objects can no longer be created');
+    assert(/not read-only/.test(putBody.detail), 'the 403 disclaims that the object is read-only, which it is not');
+    assert(/replace request is refused/.test(putBody.detail), 'the 403 attributes the refusal to the replace request, not the object');
+    assert(/not protected at the object level/.test(putBody.detail), 'the 403 disclaims object-level protection');
     const del = await request(port, 'DELETE', '/platform/store/ns/old');
     assert(del.status === 200, 'legacy immutable object can be reclaimed');
     const after = await get(port, '/platform/store/ns/old');

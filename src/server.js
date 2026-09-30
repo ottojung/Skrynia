@@ -246,7 +246,7 @@ function createServer(opts) {
     if (!existsSync(op)) return json(res, 404, {error:'not_found'});
     const meta = shared.readObjectMeta(ns, key);
     if (!meta || (meta.mode !== LEGACY_IMMUTABLE && !CREATE_MODES.includes(meta.mode))) return json(res, 500, {error:'object_metadata_missing'});
-    if (meta.mode === LEGACY_IMMUTABLE) return json(res, 403, {error:'immutable', detail:'immutable objects can no longer be created; read-only for objects that predate removal'});
+    if (meta.mode === LEGACY_IMMUTABLE) return json(res, 403, {error:'immutable', detail:'immutable objects can no longer be created; the replace request is refused for an object that predates removal, but the object is not read-only and not protected at the object level: anyone who knows namespace and key may delete it and then create a different object at the same key'});
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
