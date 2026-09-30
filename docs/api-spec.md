@@ -82,7 +82,7 @@ Response: `201 Created`
 
 The capability is returned only for `capability-write` mode.
 
-`X-Skrynia-Mode: immutable` is no longer accepted. Such a request returns `400` with `{"error":"mode_removed"}` and creates nothing; it is not silently downgraded to another mode. Use `public-write` where the object should be mutable and reclaimable by anyone who knows namespace and key, or `capability-write` where only the holder of the returned capability may replace or delete it. Content-addressed designs should use `public-write` and include the content address in the key, since the version/replace path is available in both remaining modes. Objects that were created as `immutable` before removal stay readable and can be deleted, but cannot be replaced.
+`X-Skrynia-Mode: immutable` is no longer accepted. Such a request returns `400` with `{"error":"mode_removed"}` and creates nothing; it is not silently downgraded to another mode. Use `public-write` where the object should be mutable and reclaimable by anyone who knows namespace and key, or `capability-write` where only the holder of the returned capability may replace or delete it. Content-addressed designs should use `public-write` and include the content address in the key, since the version/replace path is available in both remaining modes. Objects that were created as `immutable` before removal stay readable, and they are not protected at the object level: anyone who knows namespace and key may delete them and then create a different object at the same key. `PUT` on such an object returns `403`, but that `403` is a property of the replace request, not a guarantee about the object — delete permission is write permission one request later, and delete permission on a pre-removal object is not restricted to the creator. A deployment that used `immutable` for tamper-evidence or a legal/audit hold no longer has that property.
 
 #### Replace object
 
@@ -118,7 +118,7 @@ Response:
 Store errors include:
 
 - `400`: invalid namespace, key, percent encoding, or mode (including `immutable`, which returns `mode_removed`)
-- `403`: replace of a pre-removal immutable object, missing capability, or wrong capability
+- `403`: replace of a pre-removal immutable object, missing capability, or wrong capability. This is a per-request result: a pre-removal object can still be deleted and its key re-created by anyone who knows namespace and key.
 - `404`: object or namespace does not exist
 - `409`: create conflicts with an existing object or namespace has not been created
 - `413`: object/request exceeds the configured maximum
@@ -414,7 +414,7 @@ Anyone who knows namespace and key may replace or delete the object.
 
 ### immutable (removed)
 
-No longer accepted at creation; `400 {"error":"mode_removed"}`. Objects created as `immutable` before removal remain readable and deletable so their storage can be reclaimed, and `PUT` on them still returns `403 {"error":"immutable"}`. Callers that need write-once-by-convention should create `public-write` objects under a content-addressed key and delete superseded keys themselves.
+No longer accepted at creation; `400 {"error":"mode_removed"}`. Objects created as `immutable` before removal remain readable and are reclaimable, so their storage can be freed. They are not write-once: `PUT` on them returns `403 {"error":"immutable"}`, but that only refuses the replace request. Anyone who knows namespace and key may `DELETE` the object and then `POST` different bytes at the same key, anonymously and with no capability. The key still resolves afterwards, so a pre-removal object can be substituted, not merely lost. Callers that need write-once by convention should create `public-write` objects under a content-addressed key and delete superseded keys themselves.
 
 ## Namespace validation
 

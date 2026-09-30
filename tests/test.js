@@ -510,6 +510,47 @@ async function test_legacy_immutable_object_stays_readable_and_reclaimable() {
   } finally { await stopServer(server); }
 }
 
+function plantLegacyObject(ns, key, meta) {
+  fs.mkdirSync(path.join(TMP, 'storage', ns), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', ns, key + '.dat'), 'legacy-' + key);
+  fs.writeFileSync(path.join(TMP, 'storage', ns, key + '.meta'), JSON.stringify(meta));
+  fs.writeFileSync(path.join(TMP, 'storage', ns, key + '.ver'), '100');
+}
+
+function migratedMeta(ns, key) {
+  return JSON.parse(fs.readFileSync(path.join(TMP, 'store-meta', ns, key + '.json'), 'utf8'));
+}
+
+async function test_legacy_storage_migration_yields_writable_modes() {
+  setup(); createNs('ns');
+  plantLegacyObject('ns', 'kept', {mode:'immutable'});
+  plantLegacyObject('ns', 'odd', {mode:'write-once-forever'});
+  plantLegacyObject('ns', 'bare', {version:7});
+  const { server, port } = await startServer();
+  try {
+    assert(migratedMeta('ns', 'kept').mode === 'immutable', 'a genuine legacy immutable entry migrates as itself, not promoted');
+    assert(migratedMeta('ns', 'odd').mode === 'public-write', 'an unrecognised legacy mode migrates to a writable mode, not to immutable');
+    assert(migratedMeta('ns', 'bare').mode === 'public-write', 'a legacy entry with no mode migrates to a writable mode, not to immutable');
+    for (const key of ['kept', 'odd', 'bare']) {
+      assert(fs.readFileSync(path.join(TMP, 'store', 'ns', key), 'utf8') === 'legacy-' + key, key + ' bytes migrated to the public object path');
+    }
+    for (const key of ['odd', 'bare']) {
+      const put = await request(port, 'PUT', '/platform/store/ns/' + key, 'rewritten');
+      assert(put.status === 200, key + ' is writable in place by an anonymous caller');
+    }
+    const keptPut = await request(port, 'PUT', '/platform/store/ns/kept', 'rewritten');
+    assert(keptPut.status === 403, 'a genuine legacy immutable entry keeps its stored mode, so PUT stays 403');
+    for (const key of ['kept', 'odd', 'bare']) {
+      const del = await request(port, 'DELETE', '/platform/store/ns/' + key);
+      assert(del.status === 200, key + ' is reclaimable, so migration cannot mint an undeletable object');
+      const create = await request(port, 'POST', '/platform/store/ns/' + key, 'replacement', {'X-Skrynia-Mode':'public-write'});
+      assert(create.status === 201, key + ' key is reusable after reclaim');
+      const read = await get(port, '/platform/store/ns/' + key);
+      assert(read.text === 'replacement', key + ' holds the replacement bytes');
+    }
+  } finally { await stopServer(server); }
+}
+
 async function test_key_validation() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
@@ -1155,6 +1196,7 @@ const tests = [
   ['capability_write', test_capability_write],
   ['immutable_mode_is_not_accepted', test_immutable_mode_is_not_accepted],
   ['legacy_immutable_object_stays_readable_and_reclaimable', test_legacy_immutable_object_stays_readable_and_reclaimable],
+  ['legacy_storage_migration_yields_writable_modes', test_legacy_storage_migration_yields_writable_modes],
   ['key_validation', test_key_validation],
   ['quota_and_count_limits', test_quota_and_count_limits],
   ['incomplete_create_is_reclaimed', test_incomplete_create_is_reclaimed],

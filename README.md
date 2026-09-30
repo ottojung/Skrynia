@@ -122,6 +122,8 @@ Environment variables:
 
 Object reads are raw bytes with an opaque strong ETag for the current committed object version. Every successful replacement advances the ETag, even when the bytes are unchanged; deleting and recreating a key also advances it while the namespace is retained. `PUT` accepts an optional `If-Match` ETag for atomic compare-and-replace; a mismatch returns `412` without changing the object. Omitting `If-Match` remains unconditional. Capability authorization is independently required.
 
+There is no mode that makes an object permanently undeletable or write-once, and no mode names its creator: `public-write` objects may be replaced and deleted by anyone who knows namespace and key. Objects created under the removed `immutable` mode before that removal are in the same position — they stay readable, and anyone who knows namespace and key may delete one and create a different object at the same key, even though `PUT` on the object itself returns `403`. Treat the old `403` as a property of the replace request, not as a protection on the object.
+
 The on-disk public store is deliberately static-file compatible: `SKRYNIA_DATA_DIR/store/{namespace}/{key}` is the complete committed object, with no suffix or sidecars in that tree. A reverse proxy may serve store GETs directly from this directory. Configure that location to use `application/octet-stream`; nginx's native ETag matches Skrynia's conditional-write ETag.
 
 See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
