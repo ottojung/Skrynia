@@ -20,10 +20,12 @@ const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 
 const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
 
-// Modes accepted at creation. Legacy immutable objects can still exist on disk
-// and stay readable and deletable, but never replaceable and never creatable.
+// Modes accepted at creation. Legacy immutable objects can still exist on disk;
+// their stored mode is never accepted at creation and never rewritten, but it
+// grants no privilege either, so they behave as public-write for every purpose.
 const CREATE_MODES = ['capability-write', 'public-write'];
 const LEGACY_IMMUTABLE = 'immutable';
+const READABLE_MODES = CREATE_MODES.concat([LEGACY_IMMUTABLE]);
 
 const {
   existsSync,
@@ -245,8 +247,7 @@ function createServer(opts) {
     const op = shared.nsObjPath(ns, key);
     if (!existsSync(op)) return json(res, 404, {error:'not_found'});
     const meta = shared.readObjectMeta(ns, key);
-    if (!meta || (meta.mode !== LEGACY_IMMUTABLE && !CREATE_MODES.includes(meta.mode))) return json(res, 500, {error:'object_metadata_missing'});
-    if (meta.mode === LEGACY_IMMUTABLE) return json(res, 403, {error:'immutable', detail:'immutable objects can no longer be created; the replace request is refused for an object that predates removal, but the object is not read-only and not protected at the object level: anyone who knows namespace and key may delete it and then create a different object at the same key'});
+    if (!meta || !READABLE_MODES.includes(meta.mode)) return json(res, 500, {error:'object_metadata_missing'});
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});
@@ -283,8 +284,7 @@ function createServer(opts) {
     const op = shared.nsObjPath(ns, key);
     if (!existsSync(op)) return json(res, 404, {error:'not_found'});
     const meta = shared.readObjectMeta(ns, key);
-    if (!meta || (meta.mode !== LEGACY_IMMUTABLE && !CREATE_MODES.includes(meta.mode))) return json(res, 500, {error:'object_metadata_missing'});
-    // Legacy immutable objects are deletable so superseded storage is reclaimable.
+    if (!meta || !READABLE_MODES.includes(meta.mode)) return json(res, 500, {error:'object_metadata_missing'});
     if (meta.mode === 'capability-write') {
       const capability = req.headers['x-skrynia-capability'];
       if (!capability) return json(res, 403, {error:'capability_required'});

@@ -493,7 +493,7 @@ async function test_immutable_mode_is_not_accepted() {
   } finally { await stopServer(server); }
 }
 
-async function test_legacy_immutable_object_stays_readable_and_reclaimable() {
+async function test_legacy_immutable_object_is_writable_in_place() {
   setup(); createNs('ns');
   fs.writeFileSync(path.join(TMP, 'store', 'ns', 'old'), 'legacy');
   fs.writeFileSync(path.join(TMP, 'store-meta', 'ns', 'old.json'), JSON.stringify({mode:'immutable', version:1}));
@@ -502,17 +502,48 @@ async function test_legacy_immutable_object_stays_readable_and_reclaimable() {
     const read = await get(port, '/platform/store/ns/old');
     assert(read.status === 200 && read.text === 'legacy', 'legacy immutable object remains readable');
     const put = await request(port, 'PUT', '/platform/store/ns/old', 'replaced');
-    assert(put.status === 403, 'legacy immutable object cannot be replaced');
-    const putBody = jsonBody(put);
-    assert(putBody.error === 'immutable', 'the 403 names the immutable rejection');
-    assert(putBody.detail.includes('can no longer be created'), 'the 403 says immutable objects can no longer be created');
-    assert(/not read-only/.test(putBody.detail), 'the 403 disclaims that the object is read-only, which it is not');
-    assert(/replace request is refused/.test(putBody.detail), 'the 403 attributes the refusal to the replace request, not the object');
-    assert(/not protected at the object level/.test(putBody.detail), 'the 403 disclaims object-level protection');
+    assert(put.status === 200, 'legacy immutable object is writable in place, with no prerequisite');
+    assert((await get(port, '/platform/store/ns/old')).text === 'replaced', 'the in-place replace is visible on a subsequent read');
+    const again = await request(port, 'PUT', '/platform/store/ns/old', 'replaced-again');
+    assert(again.status === 200, 'the stored immutable marker grants no lasting privilege');
     const del = await request(port, 'DELETE', '/platform/store/ns/old');
     assert(del.status === 200, 'legacy immutable object can be reclaimed');
     const after = await get(port, '/platform/store/ns/old');
     assert(after.status === 404, 'reclaimed object is gone');
+  } finally { await stopServer(server); }
+}
+
+async function test_legacy_immutable_object_is_not_migrated() {
+  setup(); createNs('ns');
+  fs.writeFileSync(path.join(TMP, 'store', 'ns', 'old'), 'legacy');
+  fs.writeFileSync(path.join(TMP, 'store-meta', 'ns', 'old.json'), JSON.stringify({mode:'immutable', version:1}));
+  const { server, port } = await startServer();
+  try {
+    const before = JSON.parse(fs.readFileSync(path.join(TMP, 'store-meta', 'ns', 'old.json'), 'utf8'));
+    assert(before.mode === 'immutable', 'the stored mode is left as it was found');
+    const put = await request(port, 'PUT', '/platform/store/ns/old', 'replaced');
+    assert(put.status === 200, 'the object is writable without any prior migration step');
+    const after = JSON.parse(fs.readFileSync(path.join(TMP, 'store-meta', 'ns', 'old.json'), 'utf8'));
+    assert(after.mode === 'immutable', 'a replace does not re-key, copy or rewrite the stored mode');
+    assert(fs.existsSync(path.join(TMP, 'store', 'ns', 'old')), 'the object keeps its key and is not relocated');
+    assert(!fs.existsSync(path.join(TMP, 'store', 'ns', 'old.rekeyed')), 'no re-keyed copy is produced');
+  } finally { await stopServer(server); }
+}
+
+async function test_capability_write_is_unaffected_by_legacy_mode() {
+  setup(); createNs('ns');
+  fs.writeFileSync(path.join(TMP, 'store', 'ns', 'old'), 'legacy');
+  fs.writeFileSync(path.join(TMP, 'store-meta', 'ns', 'old.json'), JSON.stringify({mode:'immutable', version:1}));
+  const { server, port } = await startServer();
+  try {
+    const created = await request(port, 'POST', '/platform/store/ns/cw', 'one', {'X-Skrynia-Mode':'capability-write'});
+    const cap = jsonBody(created).capability;
+    assert(created.status === 201 && cap, 'capability-write object created');
+    assert((await request(port, 'PUT', '/platform/store/ns/cw', 'two')).status === 403, 'capability-write still refuses an uncapped replace');
+    assert((await request(port, 'DELETE', '/platform/store/ns/cw')).status === 403, 'capability-write still refuses an uncapped delete');
+    assert((await request(port, 'PUT', '/platform/store/ns/cw', 'two', {'X-Skrynia-Capability':cap})).status === 200, 'the capability still permits replace');
+    assert((await request(port, 'DELETE', '/platform/store/ns/cw', null, {'X-Skrynia-Capability':'0'.repeat(64)})).status === 403, 'a wrong capability is still refused');
+    assert((await get(port, '/platform/store/ns/cw')).text === 'two', 'capability-write object still holds the replaced bytes');
   } finally { await stopServer(server); }
 }
 
@@ -545,7 +576,8 @@ async function test_legacy_storage_migration_yields_writable_modes() {
       assert(put.status === 200, key + ' is writable in place by an anonymous caller');
     }
     const keptPut = await request(port, 'PUT', '/platform/store/ns/kept', 'rewritten');
-    assert(keptPut.status === 403, 'a genuine legacy immutable entry keeps its stored mode, so PUT stays 403');
+    assert(keptPut.status === 200, 'a genuine legacy immutable entry keeps its stored mode and is still writable in place');
+    assert(migratedMeta('ns', 'kept').mode === 'immutable', 'a replace leaves the migrated mode as itself rather than rewriting it');
     for (const key of ['kept', 'odd', 'bare']) {
       const del = await request(port, 'DELETE', '/platform/store/ns/' + key);
       assert(del.status === 200, key + ' is reclaimable, so migration cannot mint an undeletable object');
@@ -1201,7 +1233,9 @@ const tests = [
   ['conditional_replace_authorization_and_race', test_conditional_replace_authorization_and_race],
   ['capability_write', test_capability_write],
   ['immutable_mode_is_not_accepted', test_immutable_mode_is_not_accepted],
-  ['legacy_immutable_object_stays_readable_and_reclaimable', test_legacy_immutable_object_stays_readable_and_reclaimable],
+  ['legacy_immutable_object_is_writable_in_place', test_legacy_immutable_object_is_writable_in_place],
+  ['legacy_immutable_object_is_not_migrated', test_legacy_immutable_object_is_not_migrated],
+  ['capability_write_is_unaffected_by_legacy_mode', test_capability_write_is_unaffected_by_legacy_mode],
   ['legacy_storage_migration_yields_writable_modes', test_legacy_storage_migration_yields_writable_modes],
   ['key_validation', test_key_validation],
   ['quota_and_count_limits', test_quota_and_count_limits],
