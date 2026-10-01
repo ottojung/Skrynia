@@ -341,6 +341,19 @@ GET {SKRYNIA_URL}/ns/inspect?namespace={ns}&token={token}
 
 Returns namespace quota/usage plus deployment metadata when present.
 
+### Namespace object inventory
+
+GET {SKRYNIA_URL}/ns/objects/list?namespace={ns}&token={token}
+
+Optional query parameters are prefix, after, and limit. Results are sorted by
+key. limit defaults to 1000 and must be from 1 through 5000. Each object entry
+contains its key, byte size, modification timestamp, and stored mutation mode.
+When more matching objects remain, nextAfter contains the last returned key and
+can be supplied as after on the next request.
+
+This is an administrative accounting and garbage-collection surface. It returns
+no object contents or mutation capabilities and performs no deletion itself.
+
 ### Namespace list
 
 ```text
