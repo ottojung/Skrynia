@@ -392,7 +392,6 @@ function createServer(opts) {
     '/ns/create': params => management.namespaceCreate(params),
     '/ns/remove': params => management.namespaceRemove(params),
     '/ns/inspect': params => management.namespaceInspect(params),
-    '/ns/objects/list': params => management.namespaceObjectList(params),
     '/ns/list': () => management.namespaceList(),
     '/push/rules/set': params => management.pushRuleSet(params),
     '/push/rules/get': params => management.pushRuleGet(params),

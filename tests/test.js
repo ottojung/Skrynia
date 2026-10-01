@@ -361,28 +361,6 @@ async function test_namespace_http_api() {
     assert(r.status === 200, 'ns inspect');
     assert(jsonBody(r).namespace === 'web', 'inspect namespace');
 
-    r = await request(port, 'POST', '/platform/store/web/alpha', 'one', {'X-Skrynia-Mode':'public-write'});
-    assert(r.status === 201, 'inventory public object created');
-    r = await request(port, 'POST', '/platform/store/web/beta', 'two', {'X-Skrynia-Mode':'capability-write'});
-    assert(r.status === 201, 'inventory capability object created');
-
-    r = await managementGet(port, 'ns/objects/list', { namespace: 'web', prefix: 'a', limit: 1 });
-    assert(r.status === 200, 'ns object list');
-    assert(jsonBody(r).objects.length === 1, 'object list prefix and limit');
-    assert(jsonBody(r).objects[0].key === 'alpha', 'object list key');
-    assert(jsonBody(r).objects[0].bytes === 3, 'object list byte size');
-    assert(jsonBody(r).objects[0].mode === 'public-write', 'object list mode');
-    assert(typeof jsonBody(r).objects[0].mtime === 'string', 'object list mtime');
-    assert(jsonBody(r).nextAfter === null, 'filtered inventory exhausted');
-
-    r = await managementGet(port, 'ns/objects/list', { namespace: 'web', limit: 1 });
-    assert(r.status === 200 && jsonBody(r).nextAfter === 'alpha', 'object list paginates');
-    r = await managementGet(port, 'ns/objects/list', { namespace: 'web', after: 'alpha', limit: 1 });
-    assert(r.status === 200 && jsonBody(r).objects[0].key === 'beta', 'object list cursor resumes');
-
-    r = await managementGet(port, 'ns/objects/list', { namespace: 'web', limit: 0 });
-    assert(r.status === 400 && jsonBody(r).error === 'invalid_limit', 'object list validates limit');
-
     r = await managementGet(port, 'ns/list', {});
     assert(r.status === 200, 'ns list');
     assert(jsonBody(r).namespaces.length === 1, 'one namespace listed');

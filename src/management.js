@@ -511,45 +511,6 @@ function createManagement(opts) {
     return { namespace: ns, quota: shared.recalcQuota(ns), deployment: loadConfig(ns) };
   }
 
-  function namespaceObjectList(params) {
-    const ns = params.namespace;
-    validateNamespace(ns);
-    if (!fs.existsSync(shared.nsQuotaPath(ns))) fail(404, 'namespace_not_found', 'namespace ' + ns + ' not found');
-
-    const prefix = params.prefix == null ? '' : String(params.prefix);
-    const after = params.after == null ? '' : String(params.after);
-    let limit = params.limit == null || params.limit === '' ? 1000 : Number(params.limit);
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 5000) {
-      fail(400, 'invalid_limit', 'limit must be an integer from 1 to 5000');
-    }
-
-    const dir = shared.nsStoreDir(ns);
-    const keys = fs.existsSync(dir)
-      ? fs.readdirSync(dir).filter(key => key.startsWith(prefix) && key > after).sort()
-      : [];
-    const selected = keys.slice(0, limit);
-    const objects = selected.map(key => {
-      const objectPath = shared.nsObjPath(ns, key);
-      const stat = fs.statSync(objectPath);
-      let mode = null;
-      try {
-        const meta = JSON.parse(fs.readFileSync(shared.nsMetaPath(ns, key), 'utf8'));
-        if (meta && typeof meta.mode === 'string') mode = meta.mode;
-      } catch {}
-      return {
-        key,
-        bytes: stat.size,
-        mtime: stat.mtime.toISOString(),
-        mode,
-      };
-    });
-    return {
-      namespace: ns,
-      objects,
-      nextAfter: keys.length > selected.length && selected.length ? selected[selected.length - 1] : null,
-    };
-  }
-
   function namespaceList() {
     if (!fs.existsSync(STATE_DIR)) return { namespaces: [] };
     const namespaces = fs.readdirSync(STATE_DIR).filter(ns => validNs(ns) && fs.existsSync(shared.nsQuotaPath(ns))).sort().map(ns => ({
@@ -607,7 +568,6 @@ function createManagement(opts) {
     namespaceCreate,
     namespaceRemove,
     namespaceInspect,
-    namespaceObjectList,
     namespaceList,
     pushRuleSet,
     pushRuleGet,
