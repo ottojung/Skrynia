@@ -384,6 +384,28 @@ async function test_store_requires_namespace() {
   } finally { await stopServer(server); }
 }
 
+async function test_store_absence_does_not_disclose_namespace_existence() {
+  setup(); createNs('present');
+  const { server, port } = await startServer();
+  try {
+    const methods = [
+      ['GET', null],
+      ['PUT', 'body'],
+      ['DELETE', null],
+    ];
+    for (const [method, data] of methods) {
+      const headers = method === 'PUT' ? { 'X-Skrynia-Capability': '00'.repeat(32) } : {};
+      const present = await request(port, method, '/platform/store/present/absentkey', data, headers);
+      const absent = await request(port, method, '/platform/store/absent/absentkey', data, headers);
+      assert(present.status === 404, method + ' on an existing namespace with an absent key is 404, got ' + present.status);
+      assert(absent.status === present.status, method + ' status must not reveal namespace existence');
+      assert(absent.text === present.text, method + ' body must not reveal namespace existence: ' + JSON.stringify(absent.text) + ' vs ' + JSON.stringify(present.text));
+      assert(absent.headers['content-type'] === present.headers['content-type'], method + ' content type must not reveal namespace existence');
+      assert(JSON.parse(absent.text).error === 'not_found', method + ' on an absent namespace answers not_found');
+    }
+  } finally { await stopServer(server); }
+}
+
 async function test_store_crud() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
@@ -1229,6 +1251,7 @@ const tests = [
   ['namespace_http_api', test_namespace_http_api],
   ['store_requires_namespace', test_store_requires_namespace],
   ['store_crud', test_store_crud],
+  ['store_absence_does_not_disclose_namespace_existence', test_store_absence_does_not_disclose_namespace_existence],
   ['etag_and_conditional_replace', test_etag_and_conditional_replace],
   ['conditional_replace_authorization_and_race', test_conditional_replace_authorization_and_race],
   ['capability_write', test_capability_write],

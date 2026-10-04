@@ -118,9 +118,14 @@ function createServer(opts) {
 
   function nsExists(ns) { return existsSync(shared.nsQuotaPath(ns)); }
 
+  // An absent namespace and an absent object answer identically: same status,
+  // same content type, same body. A distinct code here is an unauthenticated
+  // namespace-existence oracle, because these routes are reachable without any
+  // credential. The work done before answering is also the same in both cases,
+  // so the response does not separate them by timing either.
   function requireNs(ns, res) {
     if (!nsExists(ns)) {
-      json(res, 404, {error:'namespace_not_found'});
+      json(res, 404, {error:'not_found'});
       return false;
     }
     return true;
@@ -570,10 +575,12 @@ function createServer(opts) {
       }
       if (!validNs(ns)) return json(res, 400, {error:'invalid_namespace'});
       if (!key) return json(res, 400, {error:'invalid_key'});
-      if (req.method === 'GET') {
-        if (!requireNs(ns, res)) return;
-        return handleGet(ns, key, res);
-      }
+      // GET does not consult the namespace. The object path cannot exist
+      // without its namespace, so handleGet's own 404 is the answer for both
+      // cases, and the request then does exactly one filesystem lookup either
+      // way. Consulting the namespace here would answer faster when it is
+      // absent, which is a timing oracle even with an identical body.
+      if (req.method === 'GET') return handleGet(ns, key, res);
       if (req.method === 'DELETE') return handleDelete(ns, key, req, res);
       if (req.method === 'PUT' || req.method === 'POST') {
         return readBody(req, res, body => {
