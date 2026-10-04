@@ -276,6 +276,20 @@ async function test_private_files_are_0600() {
       const mode = fs.statSync(f).mode & 0o777;
       assert(mode === 0o600, 'private file is 0600: ' + f + ' got ' + mode.toString(8));
     }
+    // The names of private files are themselves informative (a subscription
+    // id, a channel), so the directories that hold them are not listable by
+    // another local account either.
+    const dirs = [
+      path.join(TMP, 'state'),
+      path.join(TMP, 'state', '_push'),
+      path.join(TMP, 'state', '_push', 'outbox'),
+      path.join(TMP, 'state', 'n1'),
+      path.join(TMP, 'state', 'n1', 'push-subs'),
+    ];
+    for (const d of dirs) {
+      const mode = fs.statSync(d).mode & 0o777;
+      assert(mode === 0o700, 'private directory is 0700: ' + d + ' got ' + mode.toString(8));
+    }
   } finally { await stopServer(server); }
 }
 
