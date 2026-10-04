@@ -104,8 +104,15 @@ function createServer(opts) {
     push,
   });
 
+  // Nothing this server returns should be usable as a referrer for a secret
+  // store path, and no response should be retained by an intermediary on
+  // behalf of a bearer URL. no-referrer also covers the management API, whose
+  // token travels in the query string.
+  const REFERRER_POLICY = 'no-referrer';
+  const NO_STORE = 'no-store';
+
   function json(res, status, body) {
-    res.writeHead(status, {'Content-Type':'application/json'});
+    res.writeHead(status, {'Content-Type':'application/json', 'Cache-Control': NO_STORE});
     res.end(JSON.stringify(body));
   }
 
@@ -193,12 +200,13 @@ function createServer(opts) {
 
   function handleGet(ns, key, res) {
     const op = shared.nsObjPath(ns, key);
-    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
+    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json', 'Cache-Control': NO_STORE}); res.end(JSON.stringify({error:'not_found'})); return; }
     const data = readFileSync(op);
     res.writeHead(200, {
       'Content-Type': 'application/octet-stream',
       'Content-Length': String(data.length),
       'ETag': staticFileEtag(op),
+      'Cache-Control': NO_STORE,
     });
     res.end(data);
   }
@@ -506,6 +514,10 @@ function createServer(opts) {
   }
 
   function route(req, res) {
+    // Set once for every response, including the refusals and the plain-text
+    // ones, so no page served here can send a store URL as a Referer and no
+    // path is reachable only through a header a single route remembered to add.
+    res.setHeader('Referrer-Policy', REFERRER_POLICY);
     let url;
     try { url = new URL(req.url, 'http://' + req.headers.host); }
     catch { res.writeHead(400); res.end('Bad request'); return; }
