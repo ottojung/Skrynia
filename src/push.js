@@ -50,7 +50,7 @@ function timingSafeEqualHex(a, b) {
 // survives OS-level crashes, then the containing directory is fsynced so
 // the rename itself is durable.
 function atomicWrite(filePath, data) {
-  ensureDir(path.dirname(filePath));
+  ensureDir(path.dirname(filePath), 0o700);
   const tmp = filePath + '.tmp.' + process.pid;
   const fd = fs.openSync(tmp, 'w', 0o600);
   try {
@@ -122,7 +122,7 @@ function createPush(opts) {
     } catch (e) {
       if (e.code !== 'ENOENT') throw e;
     }
-    ensureDir(pushDir);
+    ensureDir(pushDir, 0o700);
     // The pinned web-push library is mandatory for VAPID generation: if it
     // is unavailable, startup fails loudly rather than minting keys with
     // hand-rolled cryptography.
@@ -148,7 +148,7 @@ function createPush(opts) {
   }
 
   function saveRules(ns, rules) {
-    ensureDir(path.dirname(rulesPath(ns)));
+    ensureDir(path.dirname(rulesPath(ns)), 0o700);
     atomicWrite(rulesPath(ns), JSON.stringify({ rules }, null, 2));
   }
 
@@ -310,7 +310,7 @@ function createPush(opts) {
       capHash: sha256hex(capability),
       created: new Date().toISOString(),
     };
-    ensureDir(subsDir(ns));
+    ensureDir(subsDir(ns), 0o700);
     atomicWrite(subPath(ns, id), JSON.stringify(record, null, 2));
     return { id, capability, deduped: false };
   }
@@ -390,7 +390,7 @@ function createPush(opts) {
   function enqueue(ns, key, kind) {
     const channels = matchChannels(ns, key, kind);
     if (!channels.length) return [];
-    ensureDir(outboxDir);
+    ensureDir(outboxDir, 0o700);
     // Backpressure before commit: capacity for ALL matching channels is
     // verified synchronously before any entry is written, so a configured
     // mutation never commits without complete durable notification state.
@@ -531,7 +531,7 @@ function createPush(opts) {
   }
 
   function start() {
-    ensureDir(outboxDir);
+    ensureDir(outboxDir, 0o700);
     getVapidKeys();
     if (manual) return;
     pumpTick(); // startup recovery: redeliver anything durable in the outbox
