@@ -446,6 +446,26 @@ async function test_etag_and_conditional_replace() {
   } finally { await stopServer(server); }
 }
 
+async function test_large_object_read_declares_exact_length() {
+  setup(); createNs('ns');
+  const { server, port } = await startServer();
+  try {
+    const payload = Buffer.alloc(300 * 1024);
+    for (let i = 0; i < payload.length; i++) payload[i] = (i * 31 + (i >> 8)) & 0xff;
+    let r = await request(port, 'POST', '/platform/store/ns/big', payload, {'X-Skrynia-Mode':'public-write'});
+    assert(r.status === 201, 'create large object');
+
+    r = await get(port, '/platform/store/ns/big');
+    assert(r.status === 200, 'large object read succeeds');
+    assert(r.headers['content-length'] === String(payload.length), 'large object read declares exact content-length');
+    assert(!r.headers['transfer-encoding'], 'large object read is not chunked');
+    assert(r.body.length === payload.length && r.body.equals(payload), 'large object body arrives complete');
+    const st = fs.statSync(path.join(TMP, 'store', 'ns', 'big'));
+    const expectedEtag = '"' + Math.floor(st.mtimeMs / 1000).toString(16) + '-' + st.size.toString(16) + '"';
+    assert(r.headers.etag === expectedEtag, 'large object read keeps the nginx-compatible etag');
+  } finally { await stopServer(server); }
+}
+
 async function test_conditional_replace_authorization_and_race() {
   setup(); createNs('ns');
   const { server, port } = await startServer();
@@ -1230,6 +1250,7 @@ const tests = [
   ['store_requires_namespace', test_store_requires_namespace],
   ['store_crud', test_store_crud],
   ['etag_and_conditional_replace', test_etag_and_conditional_replace],
+  ['large_object_read_declares_exact_length', test_large_object_read_declares_exact_length],
   ['conditional_replace_authorization_and_race', test_conditional_replace_authorization_and_race],
   ['capability_write', test_capability_write],
   ['immutable_mode_is_not_accepted', test_immutable_mode_is_not_accepted],

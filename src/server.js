@@ -192,6 +192,7 @@ function createServer(opts) {
     const data = readFileSync(op);
     res.writeHead(200, {
       'Content-Type': 'application/octet-stream',
+      'Content-Length': data.length,
       'ETag': staticFileEtag(op),
     });
     res.end(data);
