@@ -414,6 +414,7 @@ async function test_etag_and_conditional_replace() {
     const firstStat = fs.statSync(path.join(TMP, 'store', 'ns', 'k'));
     const nginxEtag = '"' + Math.floor(firstStat.mtimeMs / 1000).toString(16) + '-' + firstStat.size.toString(16) + '"';
     assert(r.status === 200 && firstEtag === nginxEtag, 'read exposes nginx-compatible static-file etag');
+    assert(r.headers['content-length'] === String(Buffer.byteLength('one')), 'read exposes exact content length');
 
     r = await get(port, '/platform/store/ns/k');
     assert(r.headers.etag === firstEtag, 'unchanged reread has same etag');
