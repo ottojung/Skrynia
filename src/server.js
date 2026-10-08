@@ -69,7 +69,15 @@ function createServer(opts) {
 
   const buildInfo = opts.buildInfo || loadBuildInfo(opts.buildInfoDir);
   const shared = createShared(opts.dataDir);
-  shared.migrateLegacyStorage();
+  // A store object key is a bearer credential, and filesystem error messages
+  // embed the failing path, so a migration failure rethrows with the error
+  // code only. The deterministic migration refusals carry no path at all.
+  try {
+    shared.migrateLegacyStorage();
+  } catch (e) {
+    if (e && e.code) throw new Error('legacy storage migration failed: ' + e.code);
+    throw e;
+  }
   const { RELEASES_DIR, STATE_DIR } = shared;
 
   const CLIENT_PATH = path.join(__dirname, 'client.js');
@@ -477,7 +485,8 @@ function createServer(opts) {
       if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
       if (e.code === 'channel_full') return json(res, 507, {error:'channel_full'});
       if (e.code === 'namespace_full') return json(res, 507, {error:'namespace_full', detail:'subscription quota'});
-      throw e;
+      console.error('skrynia push error:', e && e.code ? e.code : (e && e.stack ? e.stack : e));
+      return json(res, 500, {error:'internal_error'});
     }
   }
 
@@ -508,7 +517,8 @@ function createServer(opts) {
       if (e.code === 'not_found') return json(res, 404, {error:'not_found'});
       if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
       if (e.code === 'endpoint_in_use') return json(res, 409, {error:'endpoint_in_use'});
-      throw e;
+      console.error('skrynia push error:', e && e.code ? e.code : (e && e.stack ? e.stack : e));
+      return json(res, 500, {error:'internal_error'});
     }
   }
 
@@ -521,7 +531,8 @@ function createServer(opts) {
     } catch (e) {
       if (e.code === 'not_found') return json(res, 404, {error:'not_found'});
       if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
-      throw e;
+      console.error('skrynia push error:', e && e.code ? e.code : (e && e.stack ? e.stack : e));
+      return json(res, 500, {error:'internal_error'});
     }
   }
 
@@ -589,7 +600,11 @@ function createServer(opts) {
         .then(result => json(res, 200, result))
         .catch(e => {
           if (e instanceof ManagementError) return json(res, e.status, {error:e.code, detail:e.detail});
-          console.error('skrynia management error:', e && e.stack ? e.stack : e);
+          // A filesystem error message embeds the failing path, which can be
+          // the namespace — half of the bearer store path — so those log a
+          // code only. A stack is logged when there is no code, because a
+          // stack carries source positions, never runtime values.
+          console.error('skrynia management error:', e && e.code ? e.code : (e && e.stack ? e.stack : e));
           return json(res, 500, {error:'internal_error'});
         });
       return;
@@ -607,17 +622,32 @@ function createServer(opts) {
       }
       if (!validNs(ns)) return json(res, 400, {error:'invalid_namespace'});
       if (!key) return json(res, 400, {error:'invalid_key'});
+      // A filesystem failure anywhere on the store path answers a stable 500
+      // and logs only an error code: a filesystem error message embeds the
+      // failing path, which is the namespace and the object key. A stack is
+      // logged only when there is no code, because a stack carries source
+      // positions, never runtime values.
+      const storeFailure = e => {
+        console.error('skrynia store error:', e && e.code ? e.code : (e && e.stack ? e.stack : e));
+        return json(res, 500, {error:'internal_error'});
+      };
       // GET does not consult the namespace. The object path cannot exist
       // without its namespace, so handleGet's own 404 is the answer for both
       // cases, and the request then does exactly one filesystem lookup either
       // way. Consulting the namespace here would answer faster when it is
       // absent, which is a timing oracle even with an identical body.
-      if (req.method === 'GET') return handleGet(ns, key, res);
-      if (req.method === 'DELETE') return handleDelete(ns, key, req, res);
+      if (req.method === 'GET') {
+        try { return handleGet(ns, key, res); } catch (e) { return storeFailure(e); }
+      }
+      if (req.method === 'DELETE') {
+        try { return handleDelete(ns, key, req, res); } catch (e) { return storeFailure(e); }
+      }
       if (req.method === 'PUT' || req.method === 'POST') {
         return readBody(req, res, body => {
-          if (req.method === 'POST') handleCreate(ns, key, body, req, res);
-          else handlePut(ns, key, body, req, res);
+          try {
+            if (req.method === 'POST') handleCreate(ns, key, body, req, res);
+            else handlePut(ns, key, body, req, res);
+          } catch (e) { storeFailure(e); }
         });
       }
       res.writeHead(405, {'Cache-Control': NO_STORE});

@@ -98,9 +98,9 @@ function createShared(dataDir) {
 
         if (!fs.existsSync(oldDataPath)) {
           if (fs.existsSync(newDataPath) && fs.existsSync(newMetaPath)) continue;
-          throw new Error('legacy committed object missing data: ' + ns + '/' + key);
+          throw new Error('legacy committed object missing data');
         }
-        if (fs.existsSync(newDataPath)) throw new Error('legacy migration target already exists: ' + ns + '/' + key);
+        if (fs.existsSync(newDataPath)) throw new Error('legacy migration target already exists');
 
         const oldMeta = JSON.parse(fs.readFileSync(oldMetaPath, 'utf8'));
         const dataVersion = Math.floor(fs.statSync(oldDataPath).mtimeMs / 1000);
@@ -110,7 +110,7 @@ function createShared(dataDir) {
         const mode = ['immutable', 'capability-write', 'public-write'].includes(oldMeta.mode) ? oldMeta.mode : 'public-write';
         const meta = { mode, version: Math.max(dataVersion, validStoredVersion(storedVersion)) };
         if (mode === 'capability-write') {
-          if (!fs.existsSync(oldCapPath)) throw new Error('legacy capability object missing verifier: ' + ns + '/' + key);
+          if (!fs.existsSync(oldCapPath)) throw new Error('legacy capability object missing verifier');
           meta.capHash = fs.readFileSync(oldCapPath, 'utf8').trim();
         }
 
