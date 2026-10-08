@@ -78,19 +78,43 @@ decision.
 8. **Backup handling** — `DATA_DIR` backups are credential material; encrypt,
    access-control, and verify `store-meta/` and `state/` permissions after restore.
 
+## Human blocker (issue #152)
+
+No repo-side work remains. The secret-URL audit is complete on
+release/2026-09-30 at 1fe263e (origin tip). All repo-side guards are in place,
+pinned by non-vacuous tests, and the full suite passes (105/105).
+
+The following items are human-only edge items that cannot be enforced from
+this repository:
+
+1. **HSTS** — send `Strict-Transport-Security` on the store and app locations.
+2. **Referrer-Policy on nginx store location** — when nginx serves store GETs
+   directly from `DATA_DIR/store/`, nginx's headers replace Skrynia's. The
+   `Referrer-Policy: no-referrer` must be set on the nginx store location too.
+3. **Cache-Control on nginx store location** — same nginx static-file path;
+   `Cache-Control: no-store` must be set on the nginx store location.
+4. **Port-80 redirect** — nginx must redirect port 80 to TLS.
+5. **Key-free access log** — `access_log off` on the store and management
+   locations.
+6. **CDN retention** — no CDN, WAF, or log shipper may retain request paths.
+7. **Deploying the nginx fix** — the nginx config changes must be deployed.
+8. **Backup handling** — `DATA_DIR` backups are credential material.
+
+These are operator-owned and recorded in docs/secret-store-path-guard.md.
+
 ## Board comment
 
 ```
-Secret-URL audit for #152 is landed on release/2026-09-30 (885b4f8).
+Secret-URL audit for #152 is landed on release/2026-09-30 (1fe263e).
 
 Verdict: complete. 105/105 tests pass on the exact release head. All repo-side
-guards are in place and pinned by non-vacuous tests.
+guards are in place and pinned by non-vacuous tests. No repo-side work remains.
 
 Remaining blockers are operator-owned and recorded in
 docs/secret-store-path-landing-report.md:
-- port-80 redirect, HSTS, Referrer-Policy and Cache-Control on the nginx store
-  location, key-free access log, CDN retention, deploying the nginx fix, and
-  backup handling.
+- HSTS, Referrer-Policy and Cache-Control on the nginx store location,
+  port-80 redirect, key-free access log, CDN retention, deploying the nginx
+  fix, and backup handling.
 
 gh is absent so no PR was opened; the merge was done locally and pushed.
 ```
