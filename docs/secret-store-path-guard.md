@@ -21,7 +21,9 @@ Measured, not asserted:
   `tests/test.js:test_store_path_neither_logs_nor_reflects_the_secret_url`, which captures
   the process streams across the whole store path and fails on a single byte, and by
   `tests/test.js:test_store_error_logging_is_path_free`, which forces a metadata write
-  failure and asserts that neither the namespace nor the key appears.
+  failure and asserts that neither the namespace nor the key appears, and by
+  `tests/test-push.js:test_push_pump_error_logging_is_path_free`, which forces a
+  push pump failure and asserts that the namespace does not appear.
 - **No echo.** No store response body or response header reflects the namespace, the key
   or the capability. Same test.
 - **No referrer.** Every store response, every management response, and every served app

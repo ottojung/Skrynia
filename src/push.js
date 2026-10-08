@@ -526,7 +526,7 @@ function createPush(opts) {
     if (pumping) return;
     pumping = true;
     try { await pumpOnce(); }
-    catch (e) { console.error('skrynia push pump error:', e && e.message ? e.message : e); }
+    catch (e) { console.error('skrynia push pump error:', e && e.code ? e.code : 'unknown_error'); }
     finally { pumping = false; }
   }
 
