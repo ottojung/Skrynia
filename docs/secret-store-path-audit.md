@@ -29,7 +29,7 @@ covered in `docs/secret-store-path-guard.md`.
 | Area | Verdict | Evidence |
 |------|---------|----------|
 | Skrynia access logging | Pass after fix | No request-URL logging in `src/`; store refusals write nothing; internal store failures now log a code only |
-| Skrynia error logging | **Fixed** | See defects B and D |
+| Skrynia error logging | **Fixed** | See defects B, D, E, F, G and H |
 | Store response retention | **Fixed** | See defect A |
 | Referrer behavior | Pass | `Referrer-Policy: no-referrer` set once in `route()` for every response; pinned by test |
 | Browser client | Pass | `src/client.js` puts capabilities in `X-Skrynia-Capability`, never in a URL; sets no cookies; no `console`/`localStorage` writes |
@@ -37,6 +37,12 @@ covered in `docs/secret-store-path-guard.md`.
 | Reverse proxy | Operator | `docs/secret-store-path-guard.md` |
 | Backup tooling | Operator | `docs/secret-store-path-guard.md` |
 | HTTPS | Guarded | Server refuses a non-loopback plain-http `SKRYNIA_URL`; TLS remains the proxy's job |
+
+A first pass over the request path found defects A-D. A second pass over every
+remaining site that can write a store-path component to stderr — the startup
+migration, the uncaught store read, the management error log and the push
+subscription handlers — found four more of the same family, now defects E-H.
+All eight are pinned by tests; `make test` passes 105/105.
 
 ## Defect A: a store `405` was retained
 
@@ -110,6 +116,115 @@ Pinned by `tests/test-push.js:test_push_pump_error_logging_is_path_free`, which
 forces the subscription-directory failure and asserts the namespace is absent
 while the failure is still surfaced.
 
+## Defect E: the startup migration threw the namespace and key
+
+`migrateLegacyStorage` in `src/shared.js` runs at server startup, where a throw
+is an uncaught exception: Node prints the full message to stderr before the
+process exits. Three of its refusals embedded `ns + '/' + key` in the message,
+so one inconsistent legacy object wrote the bearer key to stderr — container
+logs, journald, log shippers — exactly the channel defect B closed on the
+request path.
+
+Reproduction before the fix (legacy `.meta` planted without its `.dat`):
+
+```
+EVIDENCE-E thrown message: "legacy committed object missing data: legacy-ns/legacy-key-9f3a"
+```
+
+Fix: the three refusals now state the condition without naming the object, and
+the call site in `src/server.js` rethrows a migration filesystem failure with
+the error code only. After the fix:
+
+```
+EVIDENCE-E thrown message: "legacy committed object missing data"
+EVIDENCE-E filesystem failure message: "legacy storage migration failed: EIO"
+```
+
+Pinned by `tests/test.js:test_legacy_migration_failure_is_path_free` and
+`tests/test.js:test_legacy_migration_filesystem_failure_is_path_free`.
+
+## Defect F: an uncaught store read failure crashed with the object path
+
+`handleGet` reads the object with `readFileSync` and frames the response with
+`statSync`. A filesystem failure there (EIO, EACCES) threw out of the request
+listener with no catch anywhere on the path, so the process died and Node
+printed the error — whose message embeds the full object path — to stderr. The
+audit's own guard promises "no namespace, object key, or capability on any
+outcome including an internal filesystem failure"; this outcome was missed.
+
+Reproduction before the fix (object read forced to fail as EIO):
+
+```
+EVIDENCE-F uncaught: "EIO: input/output error, read '/tmp/.../store/secret-ns/secret-key-4d2e9b'"
+```
+
+Fix: the store branch of `route()` now catches any failure from the four store
+handlers and answers a stable `500 internal_error`, logging a code when the
+error carries one (filesystem errors) and a stack otherwise (a stack carries
+source positions, never runtime values). After the fix, the same failure:
+
+```
+EVIDENCE-F status: 500 captured stderr: "skrynia store error: EISDIR"
+EVIDENCE-F stderr contains namespace: false
+EVIDENCE-F stderr contains key: false
+```
+
+Pinned by `tests/test.js:test_store_read_failure_is_path_free_and_answered`,
+which replaces the object with a directory so the read fails the way EIO or
+EACCES would, with a real path-embedding message and no stubbing.
+
+## Defect G: the management error log embedded the namespace
+
+The management catch-all logged `e.stack` for unexpected errors. The first line
+of a stack is the error message, and a filesystem error message embeds the
+failing path — for namespace state (`state/{ns}/config.json`, the releases
+tree) that is the namespace, half of the bearer store path. An EACCES or EIO
+on any management read therefore reached stderr as a stack.
+
+Reproduction before the fix (config read forced to fail as EACCES):
+
+```
+EVIDENCE-G captured stderr: "skrynia management error: Error: EACCES: permission denied, open '/tmp/.../state/mgmt-ns/config.json'\n    at ..."
+EVIDENCE-G stderr contains namespace: true
+```
+
+Fix: the log now prints `e.code` when there is one and the stack otherwise, so
+filesystem errors are recorded as a code and programmer errors keep their
+stack. After the fix:
+
+```
+EVIDENCE-G captured stderr: "skrynia management error: EACCES"
+EVIDENCE-G stderr contains namespace: false
+```
+
+Pinned by `tests/test.js:test_management_filesystem_failure_is_path_free`.
+
+## Defect H: the push subscription handlers rethrew filesystem errors
+
+`handlePushRegister`, `handlePushUpdate` and `handlePushDelete` catch the
+expected push error codes and rethrow everything else. A filesystem failure
+reading or writing a subscription record (`state/{ns}/push-subs/{id}.json`)
+therefore escaped the handler and crashed the process with the record path —
+the namespace — in stderr, the same defect family as D on the request path
+rather than the pump.
+
+Reproduction before the fix (subscription read forced to fail as EACCES):
+
+```
+EVIDENCE-H uncaught: "EACCES: permission denied, open '/tmp/.../state/push-ns/push-subs/aaaa....json'"
+EVIDENCE-H stderr contains namespace: true
+```
+
+Fix: the three handlers now answer a stable `500 internal_error` and log a code
+when there is one, a stack otherwise. After the fix:
+
+```
+EVIDENCE-H status: 500 captured stderr: "skrynia push error: EACCES"
+EVIDENCE-H stderr contains namespace: false
+```
+
+Pinned by `tests/test.js:test_push_subscription_failure_is_path_free`.
+
 ## Defect C (operator guidance): management URLs carry secrets too
 
 The management API is at the root, not under `/store/`, so the store location's
@@ -123,6 +238,16 @@ guide now documents turning request logging off for the management endpoints as 
   streams stay clean and no store response echoes namespace, key or capability.
 - `tests/test.js:test_store_error_logging_is_path_free` — internal store failure keeps the
   namespace and key out of stderr.
+- `tests/test.js:test_store_read_failure_is_path_free_and_answered` — an uncaught store
+  read failure answers 500 and keeps the namespace and key out of stderr.
+- `tests/test.js:test_legacy_migration_failure_is_path_free` — the startup migration
+  refusal names neither the namespace nor the key.
+- `tests/test.js:test_legacy_migration_filesystem_failure_is_path_free` — a migration
+  filesystem failure is rethrown with the error code only.
+- `tests/test.js:test_management_filesystem_failure_is_path_free` — an unexpected
+  management failure logs a code, not a path-embedding stack.
+- `tests/test.js:test_push_subscription_failure_is_path_free` — a push subscription
+  filesystem failure answers 500 and keeps the namespace out of stderr.
 - `tests/test.js:test_secret_url_responses_forbid_referrer_and_retention` — every store and
   management response forbids the referrer and is `no-store`, including `405`.
 - `tests/test.js:test_store_absence_does_not_disclose_namespace_existence` — an absent
@@ -134,7 +259,7 @@ guide now documents turning request logging off for the management endpoints as 
 - `tests/test-push.js:test_push_pump_error_logging_is_path_free` — a push pump failure
   keeps the namespace out of stderr.
 
-`make test` passes on the candidate head in under 10 seconds.
+`make test` passes on the candidate head in under 10 seconds (105 tests).
 
 ## Residual operator responsibilities
 

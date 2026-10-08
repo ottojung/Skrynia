@@ -21,22 +21,34 @@ pinned by non-vacuous tests, and the full suite passes on the exact release head
   logged `e.message`, which embeds the namespace on filesystem failures. Fixed to
   log a stable error code only, pinned by
   `tests/test-push.js:test_push_pump_error_logging_is_path_free`.
+- A reconciliation pass over every remaining stderr site then found and landed
+  four more defects of the same family, documented as defects E-H in
+  `docs/secret-store-path-audit.md`: the startup legacy migration threw errors
+  embedding `ns/key`; an uncaught store read failure crashed the process with
+  the full object path in stderr; the management catch-all logged `e.stack`,
+  whose first line can embed the namespace; and the push subscription handlers
+  rethrew filesystem errors, crashing with the record path in stderr.
 
 ## Test evidence
 
 `make test` on the merged release head:
 
-- Core: 47 passed, 0 failed
+- Core: 52 passed, 0 failed
 - Regression: 16 passed, 0 failed
 - Store: 15 passed, 0 failed
 - Push: 22 passed, 0 failed
 
-Total: 100 passed, 0 failed.
+Total: 105 passed, 0 failed.
 
 ## Guards landed
 
 - `tests/test.js:test_store_path_neither_logs_nor_reflects_the_secret_url`
 - `tests/test.js:test_store_error_logging_is_path_free`
+- `tests/test.js:test_store_read_failure_is_path_free_and_answered`
+- `tests/test.js:test_legacy_migration_failure_is_path_free`
+- `tests/test.js:test_legacy_migration_filesystem_failure_is_path_free`
+- `tests/test.js:test_management_filesystem_failure_is_path_free`
+- `tests/test.js:test_push_subscription_failure_is_path_free`
 - `tests/test.js:test_secret_url_responses_forbid_referrer_and_retention`
 - `tests/test.js:test_store_absence_does_not_disclose_namespace_existence`
 - `tests/test.js:test_plain_http_public_root_is_rejected`
@@ -71,7 +83,7 @@ decision.
 ```
 Secret-URL audit for #152 is landed on release/2026-09-30 (885b4f8).
 
-Verdict: complete. 100/100 tests pass on the exact release head. All repo-side
+Verdict: complete. 105/105 tests pass on the exact release head. All repo-side
 guards are in place and pinned by non-vacuous tests.
 
 Remaining blockers are operator-owned and recorded in

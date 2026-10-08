@@ -17,11 +17,20 @@ Measured, not asserted:
   the object key or a capability to stdout or stderr, on any outcome including every
   refusal and an internal filesystem failure. Normal refusals write nothing at all; an
   internal failure logs only a stable error code, never `e.message`, because filesystem
-  error messages embed the failing path. Pinned by
+  error messages embed the failing path. The same rule covers the startup legacy
+  migration, the management catch-all and the push subscription handlers: a filesystem
+  failure anywhere on those paths logs a code when the error carries one and a stack
+  otherwise, because a stack carries source positions, never runtime values. Pinned by
   `tests/test.js:test_store_path_neither_logs_nor_reflects_the_secret_url`, which captures
-  the process streams across the whole store path and fails on a single byte, and by
+  the process streams across the whole store path and fails on a single byte, by
   `tests/test.js:test_store_error_logging_is_path_free`, which forces a metadata write
-  failure and asserts that neither the namespace nor the key appears, and by
+  failure and asserts that neither the namespace nor the key appears, by
+  `tests/test.js:test_store_read_failure_is_path_free_and_answered`, which forces a store
+  read failure and asserts a stable 500 with clean streams, by
+  `tests/test.js:test_legacy_migration_failure_is_path_free` and
+  `tests/test.js:test_legacy_migration_filesystem_failure_is_path_free`, by
+  `tests/test.js:test_management_filesystem_failure_is_path_free`, by
+  `tests/test.js:test_push_subscription_failure_is_path_free`, and by
   `tests/test-push.js:test_push_pump_error_logging_is_path_free`, which forces a
   push pump failure and asserts that the namespace does not appear.
 - **No echo.** No store response body or response header reflects the namespace, the key

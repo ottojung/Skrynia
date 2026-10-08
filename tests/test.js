@@ -531,6 +531,156 @@ async function test_store_error_logging_is_path_free() {
   } finally { await stopServer(server); }
 }
 
+// The legacy storage migration runs at startup, where a throw is an uncaught
+// exception whose message reaches stderr. A store object key is a bearer
+// credential, so the migration refusal must not name the namespace or key.
+function test_legacy_migration_failure_is_path_free() {
+  setup();
+  const ns = 'migr-ns';
+  const key = 'migr-key-7c21';
+  fs.mkdirSync(path.join(TMP, 'storage', ns), { recursive: true });
+  fs.writeFileSync(path.join(TMP, 'storage', ns, key + '.meta'), JSON.stringify({ mode: 'immutable' }));
+  let caught = null;
+  try {
+    createServer({ dataDir: TMP, token: TOKEN, skryniaUrl: 'https://example.test/platform' });
+  } catch (e) {
+    caught = e;
+  }
+  assert(caught, 'inconsistent legacy state fails the migration');
+  assert(!caught.message.includes(ns), 'migration refusal must not name the namespace: ' + caught.message);
+  assert(!caught.message.includes(key), 'migration refusal must not name the object key: ' + caught.message);
+}
+
+// A filesystem failure during the migration must also reach stderr without
+// the failing path, so it is rethrown with the error code only.
+function test_legacy_migration_filesystem_failure_is_path_free() {
+  setup();
+  fs.mkdirSync(path.join(TMP, 'storage', 'migr-ns'), { recursive: true });
+  const realReaddir = fs.readdirSync;
+  fs.readdirSync = function (p) {
+    if (typeof p === 'string' && p.endsWith('storage')) {
+      const e = new Error("EIO: input/output error, scandir '" + p + "'");
+      e.code = 'EIO';
+      throw e;
+    }
+    return realReaddir.apply(fs, arguments);
+  };
+  let caught = null;
+  try {
+    createServer({ dataDir: TMP, token: TOKEN, skryniaUrl: 'https://example.test/platform' });
+  } catch (e) {
+    caught = e;
+  } finally {
+    fs.readdirSync = realReaddir;
+  }
+  assert(caught, 'a filesystem failure during migration fails startup');
+  assert(caught.message.includes('EIO'), 'the failure is still surfaced as a code: ' + caught.message);
+  assert(!caught.message.includes(TMP), 'migration filesystem failure must not name the path: ' + caught.message);
+}
+
+// A filesystem failure on the store read path must answer a stable 500 and
+// keep the namespace and key out of stderr. The object path is a directory,
+// so the read fails the way EIO or EACCES would: a message that embeds the
+// failing path.
+async function test_store_read_failure_is_path_free_and_answered() {
+  setup();
+  const ns = 'read-ns';
+  const key = 'read-key-5b1f';
+  const { server, port } = await startServer();
+  try {
+    await managementGet(port, 'ns/create', { namespace: ns });
+    await request(port, 'POST', `/platform/store/${ns}/${key}`, 'v1', { 'X-Skrynia-Mode': 'public-write' });
+    fs.rmSync(path.join(TMP, 'store', ns, key));
+    fs.mkdirSync(path.join(TMP, 'store', ns, key));
+
+    let captured = '';
+    const realErr = process.stderr.write;
+    process.stderr.write = chunk => { captured += chunk; return true; };
+    let r;
+    try {
+      r = await get(port, `/platform/store/${ns}/${key}`);
+    } finally {
+      process.stderr.write = realErr;
+    }
+    assert(r.status === 500, 'a store read filesystem failure answers 500, got ' + r.status);
+    assert(captured.includes('store error'), 'the failure is still surfaced to the operator: ' + JSON.stringify(captured));
+    assert(!captured.includes(ns), 'store read failure must not name the namespace: ' + JSON.stringify(captured));
+    assert(!captured.includes(key), 'store read failure must not name the object key: ' + JSON.stringify(captured));
+  } finally { await stopServer(server); }
+}
+
+// An unexpected management failure used to log e.stack, whose first line is
+// the error message, and a filesystem error message embeds the failing path,
+// which for namespace state is the namespace. Those failures now log a code
+// only.
+async function test_management_filesystem_failure_is_path_free() {
+  setup();
+  const ns = 'mgmt-ns';
+  const { server, port } = await startServer();
+  try {
+    await managementGet(port, 'ns/create', { namespace: ns });
+    const configPath = path.join(TMP, 'state', ns, 'config.json');
+    fs.writeFileSync(configPath, '{}');
+    const realRead = fs.readFileSync;
+    fs.readFileSync = function (p) {
+      if (typeof p === 'string' && p === configPath) {
+        const e = new Error("EACCES: permission denied, open '" + p + "'");
+        e.code = 'EACCES';
+        throw e;
+      }
+      return realRead.apply(fs, arguments);
+    };
+    let captured = '';
+    const realErr = process.stderr.write;
+    process.stderr.write = chunk => { captured += chunk; return true; };
+    let r;
+    try {
+      r = await managementGet(port, 'ns/inspect', { namespace: ns });
+    } finally {
+      process.stderr.write = realErr;
+      fs.readFileSync = realRead;
+    }
+    assert(r.status === 500, 'a management filesystem failure answers 500, got ' + r.status);
+    assert(captured.includes('management error'), 'the failure is still surfaced to the operator: ' + JSON.stringify(captured));
+    assert(!captured.includes(ns), 'management failure must not name the namespace: ' + JSON.stringify(captured));
+  } finally { await stopServer(server); }
+}
+
+// The push subscription handlers rethrew unexpected errors, so a filesystem
+// failure reading a subscription record crashed the process with the record
+// path, which contains the namespace, in stderr. Those failures now answer a
+// stable 500 and log a code only.
+async function test_push_subscription_failure_is_path_free() {
+  setup();
+  const ns = 'push-ns';
+  const { server, port } = await startServer();
+  try {
+    await managementGet(port, 'ns/create', { namespace: ns });
+    const realRead = fs.readFileSync;
+    fs.readFileSync = function (p) {
+      if (typeof p === 'string' && p.includes('push-subs')) {
+        const e = new Error("EACCES: permission denied, open '" + p + "'");
+        e.code = 'EACCES';
+        throw e;
+      }
+      return realRead.apply(fs, arguments);
+    };
+    let captured = '';
+    const realErr = process.stderr.write;
+    process.stderr.write = chunk => { captured += chunk; return true; };
+    let r;
+    try {
+      r = await request(port, 'PUT', '/platform/push/subscriptions/' + 'a'.repeat(32), '{"endpoint":"https://push.example/other"}', { 'X-Skrynia-Capability': '0'.repeat(64) });
+    } finally {
+      process.stderr.write = realErr;
+      fs.readFileSync = realRead;
+    }
+    assert(r.status === 500, 'a push subscription filesystem failure answers 500, got ' + r.status);
+    assert(captured.includes('push error'), 'the failure is still surfaced to the operator: ' + JSON.stringify(captured));
+    assert(!captured.includes(ns), 'push failure must not name the namespace: ' + JSON.stringify(captured));
+  } finally { await stopServer(server); }
+}
+
 // A plain-http public root would put every bearer store URL on the wire in the
 // clear. Skrynia cannot terminate TLS, so it refuses the misconfiguration and
 // requires an explicit override.
@@ -1455,6 +1605,11 @@ const tests = [
   ['store_absence_does_not_disclose_namespace_existence', test_store_absence_does_not_disclose_namespace_existence],
   ['store_path_neither_logs_nor_reflects_the_secret_url', test_store_path_neither_logs_nor_reflects_the_secret_url],
   ['store_error_logging_is_path_free', test_store_error_logging_is_path_free],
+  ['legacy_migration_failure_is_path_free', test_legacy_migration_failure_is_path_free],
+  ['legacy_migration_filesystem_failure_is_path_free', test_legacy_migration_filesystem_failure_is_path_free],
+  ['store_read_failure_is_path_free_and_answered', test_store_read_failure_is_path_free_and_answered],
+  ['management_filesystem_failure_is_path_free', test_management_filesystem_failure_is_path_free],
+  ['push_subscription_failure_is_path_free', test_push_subscription_failure_is_path_free],
   ['secret_url_responses_forbid_referrer_and_retention', test_secret_url_responses_forbid_referrer_and_retention],
   ['plain_http_public_root_is_rejected', test_plain_http_public_root_is_rejected],
   ['etag_and_conditional_replace', test_etag_and_conditional_replace],
