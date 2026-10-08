@@ -13,18 +13,23 @@ the other half, which lives in the reverse proxy and in operator tooling and the
 
 Measured, not asserted:
 
-- **No access log.** The store request path writes nothing to stdout or stderr, on any
-  outcome including every refusal. Pinned by
+- **No secret in the process streams.** The store request path never writes the namespace,
+  the object key or a capability to stdout or stderr, on any outcome including every
+  refusal and an internal filesystem failure. Normal refusals write nothing at all; an
+  internal failure logs only a stable error code, never `e.message`, because filesystem
+  error messages embed the failing path. Pinned by
   `tests/test.js:test_store_path_neither_logs_nor_reflects_the_secret_url`, which captures
-  the process streams across the whole store path and fails on a single byte.
+  the process streams across the whole store path and fails on a single byte, and by
+  `tests/test.js:test_store_error_logging_is_path_free`, which forces a metadata write
+  failure and asserts that neither the namespace nor the key appears.
 - **No echo.** No store response body or response header reflects the namespace, the key
   or the capability. Same test.
 - **No referrer.** Every store response, every management response, and every served app
   file carry `Referrer-Policy: no-referrer`, including the plain-text refusals and the
   client library, because the header is set once for every response rather than per route.
-  Store and management responses additionally
-  carry `Cache-Control: no-store`. Pinned by
-  `tests/test.js:test_secret_url_responses_forbid_referrer_and_retention`.
+  Store and management responses additionally carry `Cache-Control: no-store`, including
+  the store and management `405` method refusals (405 is heuristically cacheable). Pinned
+  by `tests/test.js:test_secret_url_responses_forbid_referrer_and_retention`.
   This matters for the management API in particular, because `SKRYNIA_TOKEN` travels in
   the query string there.
 - **Capabilities never travel in a URL.** Store capabilities (`X-Skrynia-Capability`) and
@@ -73,6 +78,24 @@ log_format store_safe '$remote_addr [$time_local] "$request_method" '
 with the namespace extracted by a `map` on `$uri`. Verify it by making one request with a
 throwaway key and reading the resulting line.
 
+### Reverse proxy: management access logging
+
+The management API lives at the root, not under `/store/`, so `access_log off` on the
+store location does not cover it. Two secrets travel in management query strings:
+`SKRYNIA_TOKEN` on every management request, and the exact object key on
+`push/rules/set`, `push/rules/get` and `push/rules/remove`. A default root access log
+therefore retains both. Turn request logging off for the management endpoints too, or use a
+format that emits neither the query string nor the path:
+
+```nginx
+location ~ ^/(deploy|undeploy|rollback|releases|inspect|ns/|push/rules/) {
+    # SKRYNIA_TOKEN and, for push rules, the object key live in the query string.
+    access_log off;
+    error_log /var/log/nginx/skrynia-error.log warn;
+    ...
+}
+```
+
 ### Reverse proxy: error logging
 
 `error_log` at `warn` or above on the store location does not echo the request URI for
@@ -86,8 +109,10 @@ Skrynia's own error output is separately pinned: see "What Skrynia already guara
 
 Terminate TLS in front of Skrynia and redirect port 80 rather than serving it. Send HSTS
 on the store location and on the app location, not only on some other vhost. Skrynia
-listens on `127.0.0.1` and speaks clear HTTP; TLS is the proxy's job and Skrynia cannot
-assert anything about it.
+listens on `127.0.0.1` and speaks clear HTTP; TLS is the proxy's job. As a guard against
+declaring a cleartext public root, the server refuses to start when `SKRYNIA_URL` uses
+`http:` for a non-loopback host, unless `SKRYNIA_ALLOW_INSECURE_HTTP=1` is set. Pinned by
+`tests/test.js:test_plain_http_public_root_is_rejected`.
 
 Note the nginx static-file replacement path: when nginx serves store GETs from
 `DATA_DIR/store/` directly, nginx's headers, not Skrynia's, are what the client sees. The
@@ -113,7 +138,9 @@ are the directory tree, not the file contents. Consequently:
   installation's VAPID private key. Both are already `0600`; a backup must preserve that,
   because restoring them `0644` would expose them to every local account;
 - when restoring, verify `DATA_DIR/store-meta` and `DATA_DIR/state` permissions before the
-  server starts.
+  server starts. Skrynia re-applies `0700` to those two roots at startup, but per-namespace
+  subdirectories are re-pinned only when they are next written, so inspect the trees
+  directly rather than assuming the startup fix reached every subdirectory.
 
 Skrynia cannot enforce any of this: backups are taken by operator tooling outside this
 repository.

@@ -489,6 +489,70 @@ const { server, port } = await startServer();
   } finally { await stopServer(server); }
 }
 
+// A filesystem failure on the store path must still not retain the bearer URL.
+// The cleanup catch used to log e.message, and filesystem errors embed the
+// failing path, which is the namespace and the object key.
+async function test_store_error_logging_is_path_free() {
+  setup();
+  const ns = 'error-ns';
+  const key = 'error-key-9f3a';
+  const { server, port } = await startServer();
+  try {
+    await managementGet(port, 'ns/create', { namespace: ns });
+    const created = JSON.parse((await request(port, 'POST', `/platform/store/${ns}/${key}`, 'v1', { 'X-Skrynia-Mode': 'capability-write' })).text);
+    const metaPath = path.join(TMP, 'store-meta', ns, key + '.json');
+
+    // Simulate the filesystem error the way ENOSPC/EIO presents: a message that
+    // embeds the meta path (namespace + key). Only the meta rename fails.
+    const realRename = fs.renameSync;
+    fs.renameSync = function (from, to) {
+      if (to === metaPath) {
+        const e = new Error("ENOSPC: no space left on device, rename '" + from + "' -> '" + to + "'");
+        e.code = 'ENOSPC';
+        throw e;
+      }
+      return realRename.apply(fs, arguments);
+    };
+    let captured = '';
+    const realErr = process.stderr.write;
+    process.stderr.write = chunk => { captured += chunk; return true; };
+    let del;
+    try {
+      del = await request(port, 'DELETE', `/platform/store/${ns}/${key}`, null, { 'X-Skrynia-Capability': created.capability });
+    } finally {
+      process.stderr.write = realErr;
+      fs.renameSync = realRename;
+    }
+
+    assert(del.status === 200, 'the delete still commits when metadata cleanup fails, got ' + del.status);
+    assert(captured.includes('metadata cleanup'), 'the failure is still surfaced to the operator: ' + JSON.stringify(captured));
+    assert(!captured.includes(ns), 'store error output must not contain the namespace: ' + JSON.stringify(captured));
+    assert(!captured.includes(key), 'store error output must not contain the object key: ' + JSON.stringify(captured));
+  } finally { await stopServer(server); }
+}
+
+// A plain-http public root would put every bearer store URL on the wire in the
+// clear. Skrynia cannot terminate TLS, so it refuses the misconfiguration and
+// requires an explicit override.
+function test_plain_http_public_root_is_rejected() {
+  setup();
+  let rejected = false;
+  try {
+    createServer({ dataDir: TMP, token: TOKEN, skryniaUrl: 'http://example.test/platform' });
+  } catch (e) {
+    rejected = /plain http/.test(e.message);
+  }
+  assert(rejected, 'a non-loopback plain-http public root is rejected');
+
+  // Loopback and https roots are unaffected, and the override is explicit.
+  const loop = createServer({ dataDir: TMP, token: TOKEN, skryniaUrl: 'http://127.0.0.1:17380/platform' });
+  loop.close();
+  const https = createServer({ dataDir: TMP, token: TOKEN, skryniaUrl: 'https://example.test/platform' });
+  https.close();
+  const forced = createServer({ dataDir: TMP, token: TOKEN, skryniaUrl: 'http://example.test/platform', allowInsecureHttp: true });
+  forced.close();
+}
+
 async function test_secret_url_responses_forbid_referrer_and_retention() {
   setup();
   const { server, port } = await startServer();
@@ -498,27 +562,33 @@ async function test_secret_url_responses_forbid_referrer_and_retention() {
     assert(created.capability, 'capability-write create returns a capability');
     const withCapability = { 'X-Skrynia-Capability': created.capability };
 
+    // Each probe carries whether the response is served for a bearer URL (or a
+    // management token URL) and must therefore never be retained.
     const probes = [
-      ['store read', await get(port, '/platform/store/refns/secret-key-77aa21')],
-      ['store absence', await get(port, '/platform/store/refns/absent-key')],
-      ['store refusal', await request(port, 'PUT', '/platform/store/refns/secret-key-77aa21', 'x', withCapability)],
-      ['store create refusal', await request(port, 'POST', '/platform/store/refns/secret-key-77aa21', 'x')],
-      ['management answer', await managementGet(port, 'ns/inspect', { namespace: 'refns' })],
-      ['management refusal', await managementGet(port, 'ns/inspect', { namespace: 'refns' }, 'wrong-token')],
+      ['store read', await get(port, '/platform/store/refns/secret-key-77aa21'), true],
+      ['store absence', await get(port, '/platform/store/refns/absent-key'), true],
+      ['store refusal', await request(port, 'PUT', '/platform/store/refns/secret-key-77aa21', 'x', withCapability), true],
+      ['store create refusal', await request(port, 'POST', '/platform/store/refns/secret-key-77aa21', 'x'), true],
+      // A method refusal is a store response too. 405 is heuristically
+      // cacheable, so it needs no-store like every other store answer.
+      ['store method refusal', await request(port, 'PATCH', '/platform/store/refns/secret-key-77aa21', 'x'), true],
+      ['management answer', await managementGet(port, 'ns/inspect', { namespace: 'refns' }), true],
+      ['management refusal', await managementGet(port, 'ns/inspect', { namespace: 'refns' }, 'wrong-token'), true],
+      ['management method refusal', await request(port, 'POST', managementUrl('ns/list', {})), true],
       // Refusals and plain-text answers are responses a browser can render
       // too, so the guarantee cannot depend on a route remembering to add it.
-      ['method refusal', await request(port, 'POST', '/platform/health', 'x')],
-      ['unknown route', await get(port, '/platform/nothing-here')],
-      ['client library', await get(port, '/platform/client/skrynia.js')],
+      ['method refusal', await request(port, 'POST', '/platform/health', 'x'), false],
+      ['unknown route', await get(port, '/platform/nothing-here'), false],
+      ['client library', await get(port, '/platform/client/skrynia.js'), false],
     ];
 
-    for (const [label, r] of probes) {
+    for (const [label, r, retained] of probes) {
       assert(r.headers['referrer-policy'] === 'no-referrer',
         label + ' forbids the referrer, got ' + JSON.stringify(r.headers['referrer-policy']));
-    }
-    for (const [label, r] of probes.slice(0, 4)) {
-      assert(r.headers['cache-control'] === 'no-store',
-        label + ' is not retained by an intermediary, got ' + JSON.stringify(r.headers['cache-control']));
+      if (retained) {
+        assert(r.headers['cache-control'] === 'no-store',
+          label + ' is not retained by an intermediary, got ' + JSON.stringify(r.headers['cache-control']));
+      }
     }
 
     // The app document is the response a browser renders and can navigate
@@ -566,6 +636,7 @@ async function test_etag_and_conditional_replace() {
     const firstStat = fs.statSync(path.join(TMP, 'store', 'ns', 'k'));
     const nginxEtag = '"' + Math.floor(firstStat.mtimeMs / 1000).toString(16) + '-' + firstStat.size.toString(16) + '"';
     assert(r.status === 200 && firstEtag === nginxEtag, 'read exposes nginx-compatible static-file etag');
+    assert(r.headers['content-length'] === String(Buffer.byteLength('one')), 'read exposes exact content length');
 
     r = await get(port, '/platform/store/ns/k');
     assert(r.headers.etag === firstEtag, 'unchanged reread has same etag');
@@ -1383,7 +1454,9 @@ const tests = [
   ['store_crud', test_store_crud],
   ['store_absence_does_not_disclose_namespace_existence', test_store_absence_does_not_disclose_namespace_existence],
   ['store_path_neither_logs_nor_reflects_the_secret_url', test_store_path_neither_logs_nor_reflects_the_secret_url],
+  ['store_error_logging_is_path_free', test_store_error_logging_is_path_free],
   ['secret_url_responses_forbid_referrer_and_retention', test_secret_url_responses_forbid_referrer_and_retention],
+  ['plain_http_public_root_is_rejected', test_plain_http_public_root_is_rejected],
   ['etag_and_conditional_replace', test_etag_and_conditional_replace],
   ['conditional_replace_authorization_and_race', test_conditional_replace_authorization_and_race],
   ['capability_write', test_capability_write],

@@ -20,6 +20,13 @@ const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 
 const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
 
+// A store URL is a bearer credential, so a plain-http public root would put the
+// key on the wire in the clear. Skrynia does not terminate TLS, but it refuses
+// to accept a non-loopback http root unless the operator explicitly overrides.
+function isLoopbackHost(host) {
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+}
+
 // Modes accepted at creation. Legacy immutable objects can still exist on disk;
 // their stored mode is never accepted at creation and never rewritten, but it
 // grants no privilege either, so they behave as public-write for every purpose.
@@ -76,6 +83,11 @@ function createServer(opts) {
   catch { throw new Error('SKRYNIA_URL must be an absolute URL'); }
   if (publicUrl.protocol !== 'http:' && publicUrl.protocol !== 'https:') throw new Error('SKRYNIA_URL must use http or https');
   if (publicUrl.search || publicUrl.hash) throw new Error('SKRYNIA_URL must not contain query or fragment components');
+  const ALLOW_INSECURE_HTTP = opts.allowInsecureHttp === true ||
+    process.env.SKRYNIA_ALLOW_INSECURE_HTTP === '1';
+  if (publicUrl.protocol === 'http:' && !isLoopbackHost(publicUrl.hostname) && !ALLOW_INSECURE_HTTP) {
+    throw new Error('SKRYNIA_URL uses plain http for a non-loopback host; store URLs are bearer credentials and must be served over HTTPS by a TLS-terminating proxy (set SKRYNIA_ALLOW_INSECURE_HTTP=1 to override)');
+  }
   const HTTP_BASE_PATH = normalizeBasePath(publicUrl.pathname || '/');
 
   const MAX_KEY_LENGTH = parseInt(process.env.SKRYNIA_MAX_KEY_LENGTH || '256', 10);
@@ -110,6 +122,13 @@ function createServer(opts) {
   // token travels in the query string.
   const REFERRER_POLICY = 'no-referrer';
   const NO_STORE = 'no-store';
+
+  // A store object key is a bearer credential. Filesystem error messages embed
+  // the failing path, which is the namespace and the object key, so a store-path
+  // failure logs only a stable, request-independent error code.
+  function logStoreError(what, e) {
+    console.error(what, e && e.code ? e.code : 'unknown_error');
+  }
 
   function json(res, status, body) {
     res.writeHead(status, {'Content-Type':'application/json', 'Cache-Control': NO_STORE});
@@ -204,6 +223,7 @@ function createServer(opts) {
     const data = readFileSync(op);
     res.writeHead(200, {
       'Content-Type': 'application/octet-stream',
+      'Content-Length': String(data.length),
       'ETag': staticFileEtag(op),
       'Cache-Control': NO_STORE,
     });
@@ -241,7 +261,7 @@ function createServer(opts) {
         push.enqueue(ns, key, 'create');
       } catch (e) {
         if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-        console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+        logStoreError('skrynia push enqueue error:', e);
         return json(res, 500, {error:'push_enqueue_failed'});
       }
       try { linkSync(tmp, op); }
@@ -277,7 +297,7 @@ function createServer(opts) {
       push.enqueue(ns, key, 'replace');
     } catch (e) {
       if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+      logStoreError('skrynia push enqueue error:', e);
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
@@ -307,14 +327,14 @@ function createServer(opts) {
       push.enqueue(ns, key, 'delete');
     } catch (e) {
       if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+      logStoreError('skrynia push enqueue error:', e);
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
     const version = Math.max(Number.isSafeInteger(meta.version) ? meta.version : 0, Math.floor(statSync(op).mtimeMs / 1000));
     unlinkSync(op);
     try { shared.writeObjectMeta(ns, key, {version}); }
-    catch (e) { console.error('skrynia metadata cleanup error:', e && e.message ? e.message : e); }
+    catch (e) { logStoreError('skrynia metadata cleanup error:', e); }
     json(res, 200, {ok:true});
   }
 
@@ -560,7 +580,7 @@ function createServer(opts) {
 
     const managementHandler = p === null ? undefined : managementRoutes[p];
     if (managementHandler) {
-      if (req.method !== 'GET') { res.writeHead(405); res.end('Method not allowed'); return; }
+      if (req.method !== 'GET') { res.writeHead(405, {'Cache-Control': NO_STORE}); res.end('Method not allowed'); return; }
       if (!requireManagementToken(url, res)) return;
       const params = Object.fromEntries(url.searchParams.entries());
       delete params.token;
@@ -600,7 +620,7 @@ function createServer(opts) {
           else handlePut(ns, key, body, req, res);
         });
       }
-      res.writeHead(405);
+      res.writeHead(405, {'Cache-Control': NO_STORE});
       res.end('Method not allowed');
       return;
     }
