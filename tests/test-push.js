@@ -666,6 +666,55 @@ async function test_outbox_full_blocks_mutation() {
   } finally { await stopServer(server); }
 }
 
+async function test_push_pump_error_logging_is_path_free() {
+  setup();
+  const ns = 'pump-error-ns';
+  const key = 'pump-error-key-7c2d';
+  createNs(ns);
+  const push = createPush({
+    dataDir: TMP,
+    skryniaUrl: 'https://example.test/platform',
+    pushManual: false,
+    pushPollMs: 0,
+    pushSendTimeoutMs: 50,
+    webPushLib: {
+      generateVAPIDKeys() {
+        return { publicKey: 'public-test-key', privateKey: 'private-test-key' };
+      },
+      async sendNotification() {},
+    },
+  });
+  try {
+    push.start();
+    push.setRule(ns, key, ['create'], ['test-channel']);
+    push.createSub(ns, 'test-channel', 'https://push.example/test', SUB_KEYS);
+    const subsDir = path.join(TMP, 'state', ns, 'push-subs');
+    const realReaddir = fs.readdirSync;
+    fs.readdirSync = function (dir) {
+      if (typeof dir === 'string' && dir === subsDir) {
+        const e = new Error("EACCES: permission denied, scandir '" + dir + "'");
+        e.code = 'EACCES';
+        throw e;
+      }
+      return realReaddir.apply(fs, arguments);
+    };
+    let captured = '';
+    const realErr = process.stderr.write;
+    process.stderr.write = chunk => { captured += chunk; return true; };
+    try {
+      push.enqueue(ns, key, 'create');
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } finally {
+      process.stderr.write = realErr;
+      fs.readdirSync = realReaddir;
+    }
+    assert(captured.includes('push pump error'), 'the failure is still surfaced to the operator: ' + JSON.stringify(captured));
+    assert(!captured.includes(ns), 'push pump error output must not contain the namespace: ' + JSON.stringify(captured));
+  } finally {
+    push.close();
+  }
+}
+
 const tests = [
   ['rule_management', test_rule_management],
   ['register_dedupe_validation', test_register_dedupe_validation],
@@ -688,6 +737,7 @@ const tests = [
   ['expired_stale_send_does_not_delete_refresh', test_expired_stale_send_does_not_delete_refresh],
   ['expired_removed_and_isolation', test_expired_removed_and_isolation],
   ['broken_subscription_isolation', test_broken_subscription_isolation],
+  ['push_pump_error_logging_is_path_free', test_push_pump_error_logging_is_path_free],
 ];
 
 (async () => {

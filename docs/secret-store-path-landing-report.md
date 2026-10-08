@@ -17,6 +17,10 @@ pinned by non-vacuous tests, and the full suite passes on the exact release head
 - `fix/152-namespace-oracle` (`88961a4`) is pushed; local matches origin exactly.
 - `release/2026-09-30` is the active release branch (not yet promoted to `main`).
 - The fix branch was merged into `release/2026-09-30` and pushed (`885b4f8`).
+- A remaining repo-side gap was found and landed: the push pump error handler
+  logged `e.message`, which embeds the namespace on filesystem failures. Fixed to
+  log a stable error code only, pinned by
+  `tests/test-push.js:test_push_pump_error_logging_is_path_free`.
 
 ## Test evidence
 
@@ -25,9 +29,9 @@ pinned by non-vacuous tests, and the full suite passes on the exact release head
 - Core: 47 passed, 0 failed
 - Regression: 16 passed, 0 failed
 - Store: 15 passed, 0 failed
-- Push: 21 passed, 0 failed
+- Push: 22 passed, 0 failed
 
-Total: 99 passed, 0 failed.
+Total: 100 passed, 0 failed.
 
 ## Guards landed
 
@@ -37,6 +41,7 @@ Total: 99 passed, 0 failed.
 - `tests/test.js:test_store_absence_does_not_disclose_namespace_existence`
 - `tests/test.js:test_plain_http_public_root_is_rejected`
 - `tests/test-push.js:test_private_files_are_0600`
+- `tests/test-push.js:test_push_pump_error_logging_is_path_free`
 
 ## Remaining blockers (human / externally owned)
 
@@ -66,7 +71,7 @@ decision.
 ```
 Secret-URL audit for #152 is landed on release/2026-09-30 (885b4f8).
 
-Verdict: complete. 99/99 tests pass on the exact release head. All repo-side
+Verdict: complete. 100/100 tests pass on the exact release head. All repo-side
 guards are in place and pinned by non-vacuous tests.
 
 Remaining blockers are operator-owned and recorded in

@@ -29,7 +29,7 @@ covered in `docs/secret-store-path-guard.md`.
 | Area | Verdict | Evidence |
 |------|---------|----------|
 | Skrynia access logging | Pass after fix | No request-URL logging in `src/`; store refusals write nothing; internal store failures now log a code only |
-| Skrynia error logging | **Fixed** | See defect B |
+| Skrynia error logging | **Fixed** | See defects B and D |
 | Store response retention | **Fixed** | See defect A |
 | Referrer behavior | Pass | `Referrer-Policy: no-referrer` set once in `route()` for every response; pinned by test |
 | Browser client | Pass | `src/client.js` puts capabilities in `X-Skrynia-Capability`, never in a URL; sets no cookies; no `console`/`localStorage` writes |
@@ -83,6 +83,33 @@ EVIDENCE-B stderr contains key: false
 Pinned by `tests/test.js:test_store_error_logging_is_path_free`, which forces the failure
 and asserts the namespace and key are absent while the failure is still surfaced.
 
+## Defect D: the push pump logged the namespace
+
+The durable push pump (`pumpTick` in `src/push.js`) caught any error and logged
+`e.message`. The pump reads `state/{ns}/push-subs/` through `allSubs`, so a
+filesystem failure there (EACCES, ENOSPC, EIO) embeds the namespace — half of the
+bearer store path — in the message. This is the same pattern as defect B, on the
+asynchronous store-mutation path rather than the request path.
+
+Reproduction before the fix (subscription directory forced to fail as EACCES):
+
+```
+EVIDENCE-D captured stderr: "skrynia push pump error: EACCES: permission denied, scandir '/tmp/.../state/pump-error-ns/push-subs'\n"
+EVIDENCE-D stderr contains namespace: true
+```
+
+Fix: the pump error handler now logs only a stable error code, never `e.message`,
+matching `logStoreError` in `src/server.js`. After the fix:
+
+```
+EVIDENCE-D captured stderr: "skrynia push pump error: EACCES\n"
+EVIDENCE-D stderr contains namespace: false
+```
+
+Pinned by `tests/test-push.js:test_push_pump_error_logging_is_path_free`, which
+forces the subscription-directory failure and asserts the namespace is absent
+while the failure is still surfaced.
+
 ## Defect C (operator guidance): management URLs carry secrets too
 
 The management API is at the root, not under `/store/`, so the store location's
@@ -104,6 +131,8 @@ guide now documents turning request logging off for the management endpoints as 
   public root is refused unless explicitly overridden.
 - `tests/test-push.js:test_private_files_are_0600` — private files `0600` under `0700`
   directories.
+- `tests/test-push.js:test_push_pump_error_logging_is_path_free` — a push pump failure
+  keeps the namespace out of stderr.
 
 `make test` passes on the candidate head in under 10 seconds.
 
