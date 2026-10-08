@@ -20,6 +20,13 @@ const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 
 const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
 
+// A store URL is a bearer credential, so a plain-http public root would put the
+// key on the wire in the clear. Skrynia does not terminate TLS, but it refuses
+// to accept a non-loopback http root unless the operator explicitly overrides.
+function isLoopbackHost(host) {
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+}
+
 // Modes accepted at creation. Legacy immutable objects can still exist on disk;
 // their stored mode is never accepted at creation and never rewritten, but it
 // grants no privilege either, so they behave as public-write for every purpose.
@@ -76,6 +83,11 @@ function createServer(opts) {
   catch { throw new Error('SKRYNIA_URL must be an absolute URL'); }
   if (publicUrl.protocol !== 'http:' && publicUrl.protocol !== 'https:') throw new Error('SKRYNIA_URL must use http or https');
   if (publicUrl.search || publicUrl.hash) throw new Error('SKRYNIA_URL must not contain query or fragment components');
+  const ALLOW_INSECURE_HTTP = opts.allowInsecureHttp === true ||
+    process.env.SKRYNIA_ALLOW_INSECURE_HTTP === '1';
+  if (publicUrl.protocol === 'http:' && !isLoopbackHost(publicUrl.hostname) && !ALLOW_INSECURE_HTTP) {
+    throw new Error('SKRYNIA_URL uses plain http for a non-loopback host; store URLs are bearer credentials and must be served over HTTPS by a TLS-terminating proxy (set SKRYNIA_ALLOW_INSECURE_HTTP=1 to override)');
+  }
   const HTTP_BASE_PATH = normalizeBasePath(publicUrl.pathname || '/');
 
   const MAX_KEY_LENGTH = parseInt(process.env.SKRYNIA_MAX_KEY_LENGTH || '256', 10);
@@ -104,8 +116,22 @@ function createServer(opts) {
     push,
   });
 
+  // Nothing this server returns should be usable as a referrer for a secret
+  // store path, and no response should be retained by an intermediary on
+  // behalf of a bearer URL. no-referrer also covers the management API, whose
+  // token travels in the query string.
+  const REFERRER_POLICY = 'no-referrer';
+  const NO_STORE = 'no-store';
+
+  // A store object key is a bearer credential. Filesystem error messages embed
+  // the failing path, which is the namespace and the object key, so a store-path
+  // failure logs only a stable, request-independent error code.
+  function logStoreError(what, e) {
+    console.error(what, e && e.code ? e.code : 'unknown_error');
+  }
+
   function json(res, status, body) {
-    res.writeHead(status, {'Content-Type':'application/json'});
+    res.writeHead(status, {'Content-Type':'application/json', 'Cache-Control': NO_STORE});
     res.end(JSON.stringify(body));
   }
 
@@ -118,9 +144,14 @@ function createServer(opts) {
 
   function nsExists(ns) { return existsSync(shared.nsQuotaPath(ns)); }
 
+  // An absent namespace and an absent object answer identically: same status,
+  // same content type, same body. A distinct code here is an unauthenticated
+  // namespace-existence oracle, because these routes are reachable without any
+  // credential. The work done before answering is also the same in both cases,
+  // so the response does not separate them by timing either.
   function requireNs(ns, res) {
     if (!nsExists(ns)) {
-      json(res, 404, {error:'namespace_not_found'});
+      json(res, 404, {error:'not_found'});
       return false;
     }
     return true;
@@ -188,11 +219,13 @@ function createServer(opts) {
 
   function handleGet(ns, key, res) {
     const op = shared.nsObjPath(ns, key);
-    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
+    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json', 'Cache-Control': NO_STORE}); res.end(JSON.stringify({error:'not_found'})); return; }
     const data = readFileSync(op);
     res.writeHead(200, {
       'Content-Type': 'application/octet-stream',
+      'Content-Length': String(data.length),
       'ETag': staticFileEtag(op),
+      'Cache-Control': NO_STORE,
     });
     res.end(data);
   }
@@ -228,7 +261,7 @@ function createServer(opts) {
         push.enqueue(ns, key, 'create');
       } catch (e) {
         if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-        console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+        logStoreError('skrynia push enqueue error:', e);
         return json(res, 500, {error:'push_enqueue_failed'});
       }
       try { linkSync(tmp, op); }
@@ -264,7 +297,7 @@ function createServer(opts) {
       push.enqueue(ns, key, 'replace');
     } catch (e) {
       if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+      logStoreError('skrynia push enqueue error:', e);
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
@@ -294,14 +327,14 @@ function createServer(opts) {
       push.enqueue(ns, key, 'delete');
     } catch (e) {
       if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
+      logStoreError('skrynia push enqueue error:', e);
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
     const version = Math.max(Number.isSafeInteger(meta.version) ? meta.version : 0, Math.floor(statSync(op).mtimeMs / 1000));
     unlinkSync(op);
     try { shared.writeObjectMeta(ns, key, {version}); }
-    catch (e) { console.error('skrynia metadata cleanup error:', e && e.message ? e.message : e); }
+    catch (e) { logStoreError('skrynia metadata cleanup error:', e); }
     json(res, 200, {ok:true});
   }
 
@@ -500,6 +533,10 @@ function createServer(opts) {
   }
 
   function route(req, res) {
+    // Set once for every response, including the refusals and the plain-text
+    // ones, so no page served here can send a store URL as a Referer and no
+    // path is reachable only through a header a single route remembered to add.
+    res.setHeader('Referrer-Policy', REFERRER_POLICY);
     let url;
     try { url = new URL(req.url, 'http://' + req.headers.host); }
     catch { res.writeHead(400); res.end('Bad request'); return; }
@@ -543,7 +580,7 @@ function createServer(opts) {
 
     const managementHandler = p === null ? undefined : managementRoutes[p];
     if (managementHandler) {
-      if (req.method !== 'GET') { res.writeHead(405); res.end('Method not allowed'); return; }
+      if (req.method !== 'GET') { res.writeHead(405, {'Cache-Control': NO_STORE}); res.end('Method not allowed'); return; }
       if (!requireManagementToken(url, res)) return;
       const params = Object.fromEntries(url.searchParams.entries());
       delete params.token;
@@ -570,10 +607,12 @@ function createServer(opts) {
       }
       if (!validNs(ns)) return json(res, 400, {error:'invalid_namespace'});
       if (!key) return json(res, 400, {error:'invalid_key'});
-      if (req.method === 'GET') {
-        if (!requireNs(ns, res)) return;
-        return handleGet(ns, key, res);
-      }
+      // GET does not consult the namespace. The object path cannot exist
+      // without its namespace, so handleGet's own 404 is the answer for both
+      // cases, and the request then does exactly one filesystem lookup either
+      // way. Consulting the namespace here would answer faster when it is
+      // absent, which is a timing oracle even with an identical body.
+      if (req.method === 'GET') return handleGet(ns, key, res);
       if (req.method === 'DELETE') return handleDelete(ns, key, req, res);
       if (req.method === 'PUT' || req.method === 'POST') {
         return readBody(req, res, body => {
@@ -581,7 +620,7 @@ function createServer(opts) {
           else handlePut(ns, key, body, req, res);
         });
       }
-      res.writeHead(405);
+      res.writeHead(405, {'Cache-Control': NO_STORE});
       res.end('Method not allowed');
       return;
     }

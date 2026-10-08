@@ -46,6 +46,10 @@ function createShared(dataDir) {
     ensureDir(STORE_DIR, 0o755);
     ensureDir(STORE_META_DIR, 0o700);
     ensureDir(STORE_TMP_DIR, 0o700);
+    // Namespaces live under state/, and so do the private push records.
+    // It is created as a side effect of creating a namespace child, so pin
+    // its mode explicitly rather than inheriting the process umask.
+    ensureDir(STATE_DIR, 0o700);
   }
 
   function ensureStoreNamespace(ns) {

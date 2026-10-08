@@ -26,6 +26,7 @@ Skrynia is configured via environment variables or `createServer()` options:
 | `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Default max objects per namespace |
 | `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
 | `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max single object size (10 MiB) |
+| `SKRYNIA_ALLOW_INSECURE_HTTP` | (none) | Set to `1` to allow a non-loopback `http:` `SKRYNIA_URL`; store URLs are bearer credentials and must otherwise be served over HTTPS |
 | `SKRYNIA_PUSH_SUBJECT` | (SKRYNIA_URL) | VAPID subject (`mailto:` or URL) identifying the push sender |
 | `SKRYNIA_PUSH_SEND_TIMEOUT_MS` | `10000` | Per-subscription delivery timeout; timeout is retried as a transient failure |
 
