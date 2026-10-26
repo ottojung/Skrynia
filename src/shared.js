@@ -37,6 +37,7 @@ function createShared(dataDir) {
   function nsObjPath(ns, key) { return path.join(nsStoreDir(ns), key); }
   function nsMetaPath(ns, key) { return path.join(nsStoreMetaDir(ns), key + '.json'); }
   function nsQuotaPath(ns) { return path.join(STATE_DIR, ns, 'quota.json'); }
+  function nsVersionPath(ns) { return path.join(STATE_DIR, ns, 'etag-sequence'); }
   function nsCurrentLink(ns) { return path.join(RELEASES_DIR, ns, 'current'); }
   function nsConfigPath(ns) { return path.join(STATE_DIR, ns, 'config.json'); }
   function nsStagingDir(ns) { return path.join(RELEASES_DIR, ns, '.staging-' + process.pid); }
@@ -64,14 +65,22 @@ function createShared(dataDir) {
     atomicWrite(nsMetaPath(ns, key), JSON.stringify(meta, null, 2), 0o600);
   }
 
-  function validStoredVersion(value) {
-    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+  function nextVersion(ns) {
+    const p = nsVersionPath(ns);
+    let previous = 0;
+    try { previous = Number(fs.readFileSync(p, 'utf8')); }
+    catch (e) { if (e.code !== 'ENOENT') throw e; }
+    if (!Number.isSafeInteger(previous) || previous < 0) throw new Error('invalid ETag sequence');
+    const next = Math.max(Math.floor(Date.now() / 1000), previous + 1);
+    if (!Number.isSafeInteger(next)) throw new Error('ETag sequence exhausted');
+    atomicWrite(p, String(next), 0o600);
+    return next;
   }
 
   return {
     dataDir, RELEASES_DIR, STORE_DIR, STORE_META_DIR, STORE_TMP_DIR, STATE_DIR,
     DEFAULT_QUOTA_BYTES, DEFAULT_MAX_OBJECTS,
-    nsStoreDir, nsStoreMetaDir, nsObjPath, nsMetaPath, nsQuotaPath, nsCurrentLink, nsConfigPath, nsStagingDir,
+    nsStoreDir, nsStoreMetaDir, nsObjPath, nsMetaPath, nsQuotaPath, nsVersionPath, nextVersion, nsCurrentLink, nsConfigPath, nsStagingDir,
     ensureStoreRoots, ensureStoreNamespace, readObjectMeta, writeObjectMeta,
   };
 }
