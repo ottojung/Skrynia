@@ -5,7 +5,7 @@
  * Convenience methods .text() and .json() decode via TextDecoder on demand.
  *
  * Usage:
- *   const store = Skrynia.store('my-namespace');
+ *   const store = Skrynia.store('my-namespace', grantUserToken);
  *   const result = await store.get('key');
  *   const text = await result.bytes.text();
  *   const obj = await result.bytes.json();
@@ -32,15 +32,16 @@
     return '';
   }
 
-  var BASE = detectRoot() + '/store';
+  var ROOT = detectRoot();
+  var BASE = ROOT + '/store';
 
   function SkryniaClient() {}
 
-  SkryniaClient.prototype.store = function(ns) {
-    return new Store(ns);
+  SkryniaClient.prototype.store = function(ns, grantUserToken) {
+    return new Store(ns, grantUserToken);
   };
 
-  function Store(ns) { this.ns = ns; }
+  function Store(ns, grantUserToken) { this.ns = ns; this.grantUserToken = grantUserToken; }
 
   function RawBytes(xhr) {
     this._xhr = xhr;
@@ -116,6 +117,8 @@
     var headers = {
       'X-Skrynia-Mode': opts.mode || 'capability-write',
     };
+    var grantToken = opts.grantUserToken || this.grantUserToken;
+    if (grantToken) headers['X-Skrynia-Grant'] = grantToken;
     return request('POST', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
       if (raw.status() !== 201) throw new Error('create failed: ' + raw.status());
       return raw.json();
@@ -147,6 +150,44 @@
       if (raw.status() !== 200) throw new Error('delete failed: ' + raw.status());
       return raw.json();
     });
+  };
+
+  function grantRequest(method, url, token, body) {
+    return request(method, ROOT + url, body == null ? null : JSON.stringify(body),
+      { 'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json' }, 'arraybuffer')
+      .then(function(raw) {
+        if (raw.status() !== 200) throw new Error('grant request failed: ' + raw.status());
+        return raw.json();
+      });
+  }
+
+  SkryniaClient.prototype.createGrant = function(ns, parentUserToken, maxBytes, maxObjects) {
+    return grantRequest('POST', '/grants', parentUserToken,
+      {namespace:ns, maxBytes:maxBytes, maxObjects:maxObjects});
+  };
+  SkryniaClient.prototype.grant = function(ns, id, userToken) {
+    var endpoint = '/grants/' + encodeURIComponent(id) + '?namespace=' + encodeURIComponent(ns);
+    return {
+      inspect: function() { return grantRequest('GET', endpoint, userToken); },
+      createUser: function() {
+        return grantRequest('POST', '/grants/' + encodeURIComponent(id) +
+          '/users?namespace=' + encodeURIComponent(ns), userToken);
+      },
+      confirm: function(need) {
+        return grantRequest('POST', '/grants/' + encodeURIComponent(id) +
+          '/confirmation?namespace=' + encodeURIComponent(ns), userToken,
+          {need: Boolean(need)});
+      }
+    };
+  };
+  SkryniaClient.prototype.cleanGrant = function(ns, id, issuerToken) {
+    return grantRequest('DELETE', '/grants/' + encodeURIComponent(id) +
+      '/space?namespace=' + encodeURIComponent(ns), issuerToken);
+  };
+  SkryniaClient.prototype.revokeGrant = function(ns, id, issuerToken) {
+    return grantRequest('DELETE', '/grants/' + encodeURIComponent(id) +
+      '?namespace=' + encodeURIComponent(ns), issuerToken);
   };
 
   root.Skrynia = new SkryniaClient();

@@ -1,148 +1,169 @@
 # Skrynia
 
-A minimal platform for deploying and serving small web apps with durable key-value storage.
+A minimal, self-hosted platform for deploying static web apps with
+grant-accounted persistent key-value storage and Web Push.
 
-## Features
+**This release is intentionally incompatible with earlier persisted storage.
+There are no migrations. Deploy it against a fresh data directory.**
 
-- **Deploy from git over SSH**: Clone from an SSH scp-like repo URL, checkout exact commit, build via container, atomic release activation
-- **Storage API**: Namespace-scoped key-value store with capability-write and public-write modes
-- **Web Push**: Durable mutation-driven push; exact namespace/key/kinds map to named channels, payload is exactly the channel name
-- **App serving**: Static file serving from active releases under a configurable base path
-- **HTTP management API**: Deployment, rollback, undeploy, release inspection, and namespace management relative to `SKRYNIA_URL`
-- **Client library**: Tiny browser library served relative to `SKRYNIA_URL` at `/client/skrynia.js`
+## Concept
 
-Skrynia has no administrative CLI. Management is performed through the HTTP server.
+Skrynia does not execute application-specific server code. Browser apps store
+arbitrary bytes and independently interpret/validate them. Skrynia enforces
+only generic permissions, atomicity, retention, and resource limits.
 
-## Quick start
+All persistent app-created storage must be funded by a **grant**:
 
-Skrynia has no reserved HTTP path prefix. `SKRYNIA_URL` is the complete externally visible root; all health, management, storage, and client-library endpoints are resolved relative to it. Examples in this README that use `/platform` assume `SKRYNIA_URL=http://127.0.0.1:17380/platform`; that path is illustrative only.
+- The first successful deployment of an app creates a **root grant**.
+- Each grant has one **issuer token** (unconditional cleanup or revocation)
+  and one or more **user tokens** (object creation, subgrants, retention
+  confirmation and issuing additional user tokens).
+- Creating a subgrant charges its metadata against its parent's allowance.
+  Every subtree's actual consumption is bounded by its grant and all ancestors.
+- Independent write capabilities still protect the contents of individual
+  stored objects; user tokens authorize *new allocation*.
+- Cleanup removes all stored objects and descendant grants but **preserves the
+  cleaned grant and its tokens**. Full revocation removes even that grant.
+
+### 24-hour retention decisions
+
+Grant users may signal `need:true` (keep) or `need:false` (propose cleanup).
+At the grant's next 24-hour checkpoint it is cleaned if at least one release
+was proposed and **nobody in its entire subtree** affirmed a need to keep it.
+
+A descendant's affirmative confirmation protects every ancestor. Total
+silence preserves everything. Issuer actions override confirmations.
+
+This protocol does not assume token holders represent individual people;
+they may represent apps, scripts, custodians or other resource users.
+
+## Deploy and bootstrap a root grant
 
 ```sh
-# Build the builder image (required for deploys)
 make builder
+SKRYNIA_URL=http://127.0.0.1:17380/platform \
+SKRYNIA_TOKEN=replace-me node src/server.js
+```
 
-# Configure the management token and start the server
-SKRYNIA_URL=http://127.0.0.1:17380/platform SKRYNIA_TOKEN=replace-me node src/server.js
+`SKRYNIA_URL` is the complete canonical HTTP root. Any path component is
+supported; all paths below are relative to it.
 
-# Check health and the exact running build
-curl http://127.0.0.1:17380/platform/health
-curl http://127.0.0.1:17380/platform/version
-
-# Deploy an app. Quote URLs containing '&'.
+```sh
 curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
 ```
 
-## Management API
+The deploy response includes a `rootGrant` containing `id`,
+`issuerToken`, and `userToken` **on first successful deployment only**.
+Store the secrets immediately. Deployments of the same namespace retain its
+existing root grant and do **not** return the tokens again.
 
-All management endpoints are `GET` requests relative to `SKRYNIA_URL` and require a `token` query parameter equal to `SKRYNIA_TOKEN`.
+Deployment accepts optional `quota` and `maxObjects` for the initial root.
+Defaults are `SKRYNIA_DEFAULT_QUOTA_BYTES=10485760` and
+`SKRYNIA_MAX_OBJECT_COUNT=10000`.
 
-```text
-GET /platform/deploy?repo=...&commit=...&subdir=...&namespace=...&token=...
-GET /platform/undeploy?namespace=...&token=...
-GET /platform/rollback?namespace=...&release=...&token=...
-GET /platform/releases?namespace=...&token=...
-GET /platform/inspect?namespace=...&token=...
-GET /platform/ns/create?namespace=...&quota=...&token=...
-GET /platform/ns/remove?namespace=...&token=...
-GET /platform/ns/inspect?namespace=...&token=...
-GET /platform/ns/list?token=...
-GET /platform/push/rules/set?namespace=...&key=...&channels=...&on=...&token=...
-GET /platform/push/rules/get?namespace=...&key=...&token=...
-GET /platform/push/rules/list?namespace=...&token=...
-GET /platform/push/rules/remove?namespace=...&key=...&token=...
+The [bundled GitHub deploy action](action/deploy/action.yml) exposes
+`root-grant-id`, `root-user-token`, and `root-issuer-token` as masked
+one-time action outputs.
+
+## Create storage with a grant
+
+```http
+POST /store/myapp/hello
+X-Skrynia-Grant: <root-user-token>
+X-Skrynia-Mode: capability-write
+
+Hello world
 ```
 
-`release`, `builder`, and `quota` are optional where shown. Deploy requires `repo`, `commit`, `subdir`, and `namespace`. `repo` must be an SSH Git URL in scp-like form `user@host:path` (e.g. `git@github.com:myorg/myapp.git`). Local paths, `file://`, `http://`, `https://`, `ssh://`, and other URL schemes are rejected. `commit` must be a full 40- or 64-character hexadecimal git object id, and Skrynia verifies that the checked-out HEAD exactly matches it.
+The response contains a write capability for `PUT`/`DELETE` on that object.
+`GET` remains publicly readable. `If-Match` supports atomic
+compare-and-replace using the returned ETag. `public-write` mode permits
+any caller to update/delete that particular object.
 
-If `SKRYNIA_TOKEN` is unset, management endpoints return `503 management_api_disabled`. Missing or incorrect tokens return `401 invalid_token`.
+To create a subgrant:
 
-Management calls return JSON. A deployment request stays open while clone, build, validation, activation, and cleanup run.
+```http
+POST /grants
+Authorization: Bearer <parent-user-token>
+Content-Type: application/json
 
-## Deployment
-
-Deploy process:
-
-1. Validate SSH scp-like repo URL, namespace, exact commit id, and repository subdirectory.
-2. Clone the repository into a disposable workspace under `DATA_DIR/builds/`.
-3. Check out the exact commit and verify HEAD.
-4. Run `make build` in the configured builder container.
-5. Validate `build/` output and reject symlinks/special files.
-6. Auto-create the namespace only after a valid build.
-7. Atomically install the immutable release directory.
-8. Atomically activate the release through one symlink.
-9. Keep the three newest releases.
-
-The builder container is writable and disposable (`--rm`) and uses Docker host networking. The repository is mounted read-write and npm is present in the default builder image.
-
-### Included examples
-
-```sh
-curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/hello&namespace=hello-app&token=replace-me'
-
-curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/birthday-list&namespace=birthday-list&token=replace-me'
+{"namespace":"myapp","maxBytes":5242880,"maxObjects":100}
 ```
 
-`example/hello` is a minimal Makefile-driven app. `example/birthday-list` is an npm-built wishlist reservation app demonstrating Skrynia shared storage and create-if-absent reservation semantics.
+Returns an independent child `id`, `issuerToken`, and `userToken`.
+
+To send a retention confirmation:
+
+```http
+POST /grants/<id>/confirmation?namespace=myapp
+Authorization: Bearer <user-token>
+Content-Type: application/json
+
+{"need":true}
+```
+
+To clean a grant (including all descendants), while retaining its authority:
+
+```http
+DELETE /grants/<id>/space?namespace=myapp
+Authorization: Bearer <issuer-token>
+```
+
+To revoke the grant and all its descendants, including all tokens:
+
+```http
+DELETE /grants/<id>?namespace=myapp
+Authorization: Bearer <issuer-token>
+```
+
+See [the complete HTTP API](docs/api-spec.md) for grant-user issuance,
+inspection, resource accounting, voting intervals, and error semantics.
+
+## Deployment architecture
+
+Deploys clone exact SSH Git commits, check out and verify the full hash, run
+`make build` inside a disposable Docker builder, validate the static output,
+and atomically activate a new release via symlink swap. Up to three releases
+are retained for rollback. A build failure leaves the active app unchanged.
+
+- Node.js single-process server, one owner per data directory
+- Raw storage files under `store/{namespace}/{key}` (nginx may serve GETs)
+- Private per-object capabilities and grant records under separate state dirs
+- Strong static-file-compatible ETags with a namespace-wide monotonic version
+  counter: deleting an object removes its metadata, without leaving tombstones
+- Recursive cleanup is restart-recoverable using persistent deletion records
+- Durable Web Push notifications for store mutations, with subscription
+  creation charged to a grant
+
+Management routes (token-authenticated `GET`) are `/deploy`, `/undeploy`,
+`/rollback`, `/releases`, `/inspect`, `/ns/inspect`, `/ns/list`,
+and `/push/rules/{set,get,list,remove}`.
+
+Storage operations: `GET`, `POST`, `PUT`, `DELETE` on
+`/store/{namespace}/{key}`. Web Push registration requires a grant user
+token on first registration. The small browser library is served at
+`/client/skrynia.js`.
 
 ## Configuration
 
-Environment variables:
+| Variable | Default | Purpose |
+|---|---|---|
+| `SKRYNIA_PORT` | `17380` | HTTP listener |
+| `SKRYNIA_URL` | required | Canonical HTTP root, including path |
+| `SKRYNIA_TOKEN` | none | Management token |
+| `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Persistent files |
+| `SKRYNIA_APP_BASE_PATH` | `/apps` | App serving base |
+| `SKRYNIA_APP_DIR` | none | External app symlinks |
+| `SKRYNIA_BUILDER_IMAGE` | `skrynia-builder:0.1.0` | Build container |
+| `SKRYNIA_DEFAULT_QUOTA_BYTES` | `10485760` | Root grant byte limit |
+| `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Root object-count limit |
+| `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Per-object payload limit |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SKRYNIA_PORT` | `17380` | Server listen port |
-| `SKRYNIA_URL` | (required) | Canonical externally visible root URL for all Skrynia HTTP endpoints; may contain any path component |
-| `SKRYNIA_TOKEN` | (none) | Required token for all management HTTP endpoints |
-| `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Mutable state directory |
-| `SKRYNIA_APP_BASE_PATH` | `/apps` | URL prefix for app serving (set to match your proxy) |
-| `SKRYNIA_APP_DIR` | (none) | Filesystem dir for exposed app symlinks |
-| `SKRYNIA_BUILDER_IMAGE` | `skrynia-builder:0.1.0` | Builder Docker image |
-| `SKRYNIA_GIT_TIMEOUT_MS` | `120000` | Maximum duration of each deployment Git subprocess |
-| `SKRYNIA_BUILD_TIMEOUT_MS` | `900000` | Maximum builder duration; timed-out containers are force-removed before deployment lock release |
-| `SKRYNIA_DEFAULT_QUOTA_BYTES` | `10485760` | Default namespace quota |
-| `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Max objects per namespace |
-| `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
-| `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max object size |
-| `SKRYNIA_PUSH_SEND_TIMEOUT_MS` | `10000` | Maximum time for one Web Push delivery attempt before retrying it as transient |
-
-## Storage API
-
-- `GET /platform/health` — health check
-- `GET /platform/version` — exact running server image version and source commit
-- `GET /platform/client/skrynia.js` — browser client library
-- `GET /platform/store/{ns}/{key}` — read object
-- `POST /platform/store/{ns}/{key}` — create object
-- `PUT /platform/store/{ns}/{key}` — replace object
-- `DELETE /platform/store/{ns}/{key}` — delete object
-- `GET /platform/push/vapid` — VAPID public key
-- `POST /platform/push/subscriptions?namespace={ns}&channel={ch}` — register a browser PushSubscription; replacing an existing endpoint requires its `X-Skrynia-Capability`
-- `PUT /platform/push/subscriptions/{id}` — update a subscription with `X-Skrynia-Capability`
-- `DELETE /platform/push/subscriptions/{id}` — delete a subscription with `X-Skrynia-Capability`
-- `GET {base_path}/{ns}/{path}` — serve app static files
-
-Object reads are raw bytes with an opaque strong ETag for the current committed object version. Every successful replacement advances the ETag, even when the bytes are unchanged; deleting and recreating a key also advances it while the namespace is retained. `PUT` accepts an optional `If-Match` ETag for atomic compare-and-replace; a mismatch returns `412` without changing the object. Omitting `If-Match` remains unconditional. Capability authorization is independently required.
-
-There is no mode that makes an object permanently undeletable or write-once, and no mode names its creator: `public-write` objects may be replaced and deleted by anyone who knows namespace and key. Objects created under the removed `immutable` mode before that removal are in the same position — they stay readable, and anyone who knows namespace and key may replace one in place with `PUT` or delete it and create a different object at the same key, with no migration, re-key or capability in between. The stored mode is not rewritten to anything else and confers no privilege.
-
-The on-disk public store is deliberately static-file compatible: `SKRYNIA_DATA_DIR/store/{namespace}/{key}` is the complete committed object, with no suffix or sidecars in that tree. A reverse proxy may serve store GETs directly from this directory. Configure that location to use `application/octet-stream`; nginx's native ETag matches Skrynia's conditional-write ETag.
-
-See [docs/api-spec.md](docs/api-spec.md) for the complete HTTP API.
-
-## Architecture
-
-- **Server**: Single-process Node.js HTTP server; storage and management operations share one process
-- **Management**: Token-authenticated HTTP endpoints; there is no admin CLI or `admin.js`
-- **Builder**: Published to GHCR from `builder/Dockerfile` (`node:24-bookworm-slim` + make + git + npm); containers are writable and disposable with `--rm`
-- **Storage**: Filesystem-based; public bytes are exactly `store/{ns}/{key}`; private mutation metadata lives separately under `store-meta/{ns}/{key}.json`; the public file itself is the commit marker
-- **Releases**: Immutable directories under `RELEASES_DIR/{ns}/`; atomic symlink swap for activation
-- **APP_DIR**: Optional external exposure; `APP_DIR/{ns}` symlink points directly to the active release
-
-## Running tests
+## Testing
 
 ```sh
+npm ci
 make test
 ```
 
-## License
-
-Skrynia is free software licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (`AGPL-3.0-or-later`).
+Licensed under the GNU Affero General Public License v3.0 or later.

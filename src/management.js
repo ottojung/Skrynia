@@ -21,7 +21,8 @@ function createManagement(opts) {
   opts = opts || {};
 
   const shared = createShared(opts.dataDir);
-  const { RELEASES_DIR, LEGACY_STORAGE_DIR, STATE_DIR } = shared;
+  const { RELEASES_DIR, STATE_DIR } = shared;
+  const grants = opts.grants;
 
   const BUILDS_DIR = path.join(shared.dataDir, 'builds');
   const BUILDER_IMAGE = opts.builderImage || process.env.SKRYNIA_BUILDER_IMAGE || 'skrynia-builder:0.1.0';
@@ -374,7 +375,9 @@ function createManagement(opts) {
       const permIssues = validateTreePermissions(stageDir);
       if (permIssues.length) fail(500, 'tree_permissions_invalid', permIssues.join('; '));
 
-      ensureNamespace(ns);
+      const rootGrant = grants.createRoot(ns,
+        params.quota == null ? shared.DEFAULT_QUOTA_BYTES : Number(params.quota),
+        params.maxObjects == null ? shared.DEFAULT_MAX_OBJECTS : Number(params.maxObjects));
 
       const ts = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 17);
       const releaseId = ts + '-' + crypto.randomBytes(3).toString('hex');
@@ -399,7 +402,8 @@ function createManagement(opts) {
       const releases = listReleases(ns);
       for (const old of releases.slice(0, Math.max(0, releases.length - 3))) rmrfDir(path.join(RELEASES_DIR, ns, old));
 
-      return { ok: true, namespace: ns, release: releaseId, path: APP_BASE_PATH + '/' + ns + '/' };
+      return { ok: true, namespace: ns, release: releaseId, path: APP_BASE_PATH + '/' + ns + '/',
+        rootGrant };
     } finally {
       deploymentInProgress = false;
       if (workDir) rmrfDir(workDir);
@@ -415,7 +419,6 @@ function createManagement(opts) {
     rmrfDir(path.join(RELEASES_DIR, ns));
     rmrfDir(shared.nsStoreDir(ns));
     rmrfDir(shared.nsStoreMetaDir(ns));
-    rmrfDir(path.join(LEGACY_STORAGE_DIR, ns));
     rmrfDir(path.join(STATE_DIR, ns));
     return { ok: true, namespace: ns };
   }
@@ -464,68 +467,26 @@ function createManagement(opts) {
     return cfg;
   }
 
-  function ensureNamespace(ns, quotaBytes) {
-    shared.ensureStoreNamespace(ns);
-    ensureDir(path.join(STATE_DIR, ns));
-    const p = shared.nsQuotaPath(ns);
-    if (fs.existsSync(p)) {
-      shared.loadQuota(ns);
-      return { created: false, quota: shared.recalcQuota(ns) };
-    }
-    const q = {
-      quotaBytes: quotaBytes || shared.DEFAULT_QUOTA_BYTES,
-      maxObjects: shared.DEFAULT_MAX_OBJECTS,
-    };
-    fs.writeFileSync(p, JSON.stringify(q, null, 2));
-    return { created: true, quota: q };
-  }
-
-  function namespaceCreate(params) {
-    requireNoDeployment();
-    const ns = params.namespace;
-    validateNamespace(ns);
-    let quota = shared.DEFAULT_QUOTA_BYTES;
-    if (params.quota != null && params.quota !== '') {
-      quota = Number(params.quota);
-      if (!Number.isSafeInteger(quota) || quota <= 0) fail(400, 'invalid_quota', 'quota must be a positive integer');
-    }
-    const result = ensureNamespace(ns, quota);
-    return { ok: true, namespace: ns, created: result.created, quota: result.quota };
-  }
-
-  function namespaceRemove(params) {
-    requireNoDeployment();
-    const ns = params.namespace;
-    validateNamespace(ns);
-    rmrfDir(shared.nsStoreDir(ns));
-    rmrfDir(shared.nsStoreMetaDir(ns));
-    rmrfDir(path.join(LEGACY_STORAGE_DIR, ns));
-    rmrfDir(path.join(STATE_DIR, ns));
-    return { ok: true, namespace: ns };
-  }
-
   function namespaceInspect(params) {
     const ns = params.namespace;
     validateNamespace(ns);
-    if (!fs.existsSync(shared.nsQuotaPath(ns))) fail(404, 'namespace_not_found', 'namespace ' + ns + ' not found');
-    return { namespace: ns, quota: shared.recalcQuota(ns), deployment: loadConfig(ns) };
+    const g = grants.root(ns);
+    if (!g) fail(404, 'namespace_not_found', 'namespace ' + ns + ' not found');
+    return { namespace: ns, rootGrant: {id: g.id, maxBytes: g.maxBytes,
+      maxObjects: g.maxObjects, usage: grants.usage(ns, g.id)}, deployment: loadConfig(ns) };
   }
 
   function namespaceList() {
     if (!fs.existsSync(STATE_DIR)) return { namespaces: [] };
-    const namespaces = fs.readdirSync(STATE_DIR).filter(ns => validNs(ns) && fs.existsSync(shared.nsQuotaPath(ns))).sort().map(ns => ({
-      namespace: ns,
-      quota: shared.recalcQuota(ns),
-      deployment: loadConfig(ns),
-    }));
-    return { namespaces };
+    return { namespaces: fs.readdirSync(STATE_DIR).filter(validNs)
+      .map(ns => grants.root(ns) ? namespaceInspect({namespace: ns}) : null).filter(Boolean) };
   }
 
   // --- Web Push rules: exact namespace + exact key + kinds -> channels ---
 
   function requirePushNs(ns) {
     validateNamespace(ns);
-    if (!fs.existsSync(shared.nsQuotaPath(ns))) fail(404, 'namespace_not_found', 'namespace ' + ns + ' not found');
+    if (!grants.root(ns)) fail(404, 'namespace_not_found', 'namespace ' + ns + ' not found');
   }
 
   function pushRuleSet(params) {
@@ -565,8 +526,6 @@ function createManagement(opts) {
     rollback,
     releases,
     inspect,
-    namespaceCreate,
-    namespaceRemove,
     namespaceInspect,
     namespaceList,
     pushRuleSet,

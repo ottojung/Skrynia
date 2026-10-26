@@ -45,7 +45,18 @@ button { padding: .4rem .8rem; border: none; border-radius: 4px; cursor: pointer
     { key: 'gift-5', label: 'Gift card' },
   ];
 
+  // A grant user token must be provisioned by the app's sponsor.
+  // This demonstration asks for one when the visitor first reserves a gift;
+  // no root grant credential is embedded in the public static application.
   var store = Skrynia.store(NS);
+  function reservationGrant() {
+    var value = sessionStorage.getItem('birthday-list-grant-user-token');
+    if (!value) {
+      value = prompt('Enter a grant user token for reservations:');
+      if (value) sessionStorage.setItem('birthday-list-grant-user-token', value);
+    }
+    return value;
+  }
   var state = {}; // key -> { reserved: bool, name: str, cap: str|null }
 
   function setStatus(msg, cls) {
@@ -112,7 +123,9 @@ button { padding: .4rem .8rem; border: none; border-radius: 4px; cursor: pointer
     var name = prompt('Your name:');
     if (!name) return;
     setStatus('Reserving...');
-    store.create(key, name, { mode: 'capability-write', contentType: 'text/plain' })
+    var token = reservationGrant();
+    if (!token) { setStatus('A grant token is required to reserve a gift.', 'error'); return; }
+    store.create(key, name, { grantUserToken: token, mode: 'capability-write' })
       .then(function(resp) {
         state[key] = { reserved: true, name: name, cap: resp.capability };
         render();

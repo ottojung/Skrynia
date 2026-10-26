@@ -159,6 +159,16 @@ async function deploy() {
     fail('Deploy returned ok=false: ' + redact(JSON.stringify(data), token));
   }
 
+  if (data.rootGrant && data.rootGrant.created) {
+    const {userToken, issuerToken} = data.rootGrant;
+    // GitHub Actions masking must precede any outputs/logging.
+    console.log('::add-mask::' + userToken);
+    console.log('::add-mask::' + issuerToken);
+    setOutput('root-grant-id', data.rootGrant.id);
+    setOutput('root-user-token', userToken);
+    setOutput('root-issuer-token', issuerToken);
+  }
+
   setOutput('release', data.release);
   setOutput('path', data.path);
 

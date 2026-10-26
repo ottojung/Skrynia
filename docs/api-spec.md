@@ -1,446 +1,214 @@
-# Skrynia HTTP API Specification
+# Skrynia HTTP API
 
-All endpoints in this document are relative to `SKRYNIA_URL`. `SKRYNIA_URL` is the complete externally visible root and may contain any path component; Skrynia adds no reserved prefix.
+This is the **grant-only** storage model. Older namespace quota files,
+unassociated objects and subscriptions are unsupported. There is no migration
+path or compatibility API; initialize a new data directory for this release.
 
-## Public endpoints
+All routes below are relative to `SKRYNIA_URL`, which may include a path
+component. Grant credentials are bearer secrets; use HTTPS, do not place them
+in URLs, and store them securely. No token can be recovered from its verifier.
 
-### Health check
+## Deployment and root grant
 
-```text
-GET {SKRYNIA_URL}/health
-```
+`GET /deploy?repo=git@github.com:org/app.git&commit=<full-sha>&subdir=.&namespace=app&token=<management-token>`
 
-Response: `200 OK`
+A successful first deployment validates and builds the app, then creates a
+root grant for its namespace. Optional `quota` and `maxObjects` parameters
+set that root's limits; otherwise defaults are taken from
+`SKRYNIA_DEFAULT_QUOTA_BYTES` (10 MiB) and
+`SKRYNIA_MAX_OBJECT_COUNT` (10,000).
 
-```json
-{ "ok": true }
-```
-
-### Running version
-
-```text
-GET {SKRYNIA_URL}/version
-```
-
-Response: `200 OK`
-
+The first deploy response includes:
 ```json
 {
-  "version": "1.0.0-122-g9829feb",
-  "commit": "9829febf3466d6668f511ca46c867fb03f87a774"
+  "ok": true, "namespace": "app", "release": "example", "path": "/apps/app/",
+  "rootGrant": {
+    "id": "32-hex-id",
+    "created": true,
+    "issuerToken": "64-hex-secret",
+    "userToken": "64-hex-secret",
+    "maxBytes": 10485760,
+    "maxObjects": 10000,
+    "nextCheckAt": 0
+  }
 }
 ```
 
-The values identify the server image currently executing. Published images bake
-the existing `git describe` release version and exact source commit into the
-image at build time. This endpoint is public and requires no management token.
-Source-tree development without baked image metadata reports a distinct
-`development` fallback.
+`nextCheckAt` is a Unix timestamp in **milliseconds** (the example above is
+a placeholder). Later deployments preserve the root grant and its contents
+and return `{"rootGrant":{"created":false,"id":"..."}}`, never its secrets.
+The bundled GitHub deploy action masks and exports the credentials as
+`root-user-token` and `root-issuer-token` outputs, only on first creation.
 
-Only `GET` is accepted; other methods return `405`.
+No ordinary storage or grant creation works without an existing grant.
+`/ns/create` and `/ns/remove` have been removed.
 
-### Client library
+## Grant authority
 
-```text
-GET {SKRYNIA_URL}/client/skrynia.js
-```
+Every grant belongs to exactly one namespace and has one parent, except the
+namespace root. Every grant has an **issuer token** and one or more **user
+tokens**. Tokens are separate random bearer secrets.
 
-Serves the browser client library.
+- An issuer token can **clean the grant's entire space** or **revoke the
+  grant entirely**, immediately and unconditionally; it cannot create
+  objects, create subgrants, mint user tokens or vote.
+- A user token can create objects funded by the grant, create subgrants,
+  mint additional user tokens for that grant, and confirm `need` or
+  `release`. It cannot unilaterally revoke the grant.
+- Existing object write capabilities remain separate: grant user tokens
+  authorize *allocation*, not modification of an already-created object.
 
-### Store operations
-
-Base path: `{SKRYNIA_URL}/store/{namespace}/{key}`
-
-#### Read object
-
-```text
-GET {SKRYNIA_URL}/store/{namespace}/{key}
-```
-
-Response `200` body is the raw object bytes. The response content type is `application/octet-stream` and the response includes `ETag`. Mutation mode and creation time are not exposed by reads. The ETag is an opaque strong validator for the current committed object version. Rereading the same committed version returns the same ETag; every successful replacement advances it even if the bytes are unchanged. Deleting and recreating a key also advances it while the namespace is retained. Clients must treat the value as opaque.
-
-The public object file is `SKRYNIA_DATA_DIR/store/{namespace}/{key}` exactly. Its existence is the committed existence of the object. Deployments may serve GET requests directly from that tree with a static web server; nginx must use `application/octet-stream` for this location so behavior does not depend on the key's filename extension.
-
-#### Create object
-
-```text
-POST {SKRYNIA_URL}/store/{namespace}/{key}
-X-Skrynia-Mode: {capability-write|public-write}
-
-{body}
-```
-
-Response: `201 Created`
-
-```json
-{
-  "ok": true,
-  "mode": "capability-write",
-  "capability": "64-char-hex-string"
-}
-```
-
-The capability is returned only for `capability-write` mode.
-
-`X-Skrynia-Mode: immutable` is no longer accepted. Such a request returns `400` with `{"error":"mode_removed"}` and creates nothing; it is not silently downgraded to another mode. Use `public-write` where the object should be mutable and reclaimable by anyone who knows namespace and key, or `capability-write` where only the holder of the returned capability may replace or delete it. Content-addressed designs should use `public-write` and include the content address in the key, since the version/replace path is available in both remaining modes. Objects that were created as `immutable` before removal are treated as `public-write`: anyone who knows namespace and key may replace one in place with `PUT` or delete it with `DELETE`, with no migration, re-key or capability in between, and the stored mode is never rewritten. A deployment that used `immutable` for tamper-evidence or a legal/audit hold no longer has that property.
-
-#### Replace object
-
-```text
-PUT {SKRYNIA_URL}/store/{namespace}/{key}
-X-Skrynia-Capability: {capability}
-If-Match: {etag} (optional)
-
-{body}
-```
-
-Response:
-
-```json
-{ "ok": true }
-```
-
-`PUT` without `If-Match` is an unconditional replacement. With `If-Match`, the server compares the supplied ETag with the current committed object version as an atomic compare-and-replace. A mismatch returns `412` with `{"error":"etag_mismatch"}` and does not change the object. Capability authorization is independently required and is checked before replacement. Competing conditional writers using the same current ETag cannot both succeed.
-
-#### Delete object
-
-```text
-DELETE {SKRYNIA_URL}/store/{namespace}/{key}
-X-Skrynia-Capability: {capability}
-```
-
-Response:
-
-```json
-{ "ok": true }
-```
-
-Store errors include:
-
-- `400`: invalid namespace, key, percent encoding, or mode (including `immutable`, which returns `mode_removed`)
-- `403`: missing capability, or wrong capability, on a `capability-write` object
-- `404`: object or namespace does not exist
-- `409`: create conflicts with an existing object or namespace has not been created
-- `413`: object/request exceeds the configured maximum
-- `507`: namespace byte/object quota exceeded
-
-### App serving
-
-```text
-GET {base_path}/{namespace}/{path}
-```
-
-`base_path` defaults to `/apps` and is configurable via `SKRYNIA_APP_BASE_PATH`. There is no canonical application URL prefix.
-
-Static files are served from the currently active release. Directory requests use `index.html` when present.
-
-### Web Push
-
-Generic durable push driven by store mutations. A management-owned rule maps
-an exact namespace + exact key + selected mutation kinds
-(`create`, `replace`, `delete`) to one or more named channels. A matching
-mutation durably persists one outbox item per channel before the mutation
-becomes committed/visible, then the server delivers the channel name
-asynchronously. The push payload is exactly the channel name.
-
-#### VAPID public key
-
-```text
-GET {SKRYNIA_URL}/push/vapid
-```
-
-Response:
-
-```json
-{ "publicKey": "base64url-encoded-key" }
-```
-
-#### Register a subscription
-
-```text
-POST {SKRYNIA_URL}/push/subscriptions?namespace={ns}&channel={channel}
-Content-Type: application/json
-
-{ "endpoint": "https://push.example/...", "keys": { "p256dh": "...", "auth": "..." } }
-```
-
-Response `201 Created`:
-
-```json
-{
-  "ok": true,
-  "id": "32-char-hex-string",
-  "capability": "64-char-hex-string",
-  "deduped": false
-}
-```
-
-The `id` is opaque and the `capability` is bearer authority for update/delete.
-Re-registering an endpoint that already exists for the same namespace/channel
-is a replacement operation: it must present the current
-`X-Skrynia-Capability` header. An authorized re-registration returns the same
-id with a fresh capability and `"deduped": true`; the previous capability is
-invalidated. There is no public endpoint that enumerates subscriptions. A full
-channel returns `507 channel_full`; a namespace that already holds 2000
-subscriptions returns `507 namespace_full`.
-
-#### Update a subscription
-
-```text
-PUT {SKRYNIA_URL}/push/subscriptions/{id}
-X-Skrynia-Capability: {capability}
-Content-Type: application/json
-
-{ "endpoint": "https://push.example/...", "keys": { "p256dh": "...", "auth": "..." } }
-```
-
-Either or both of `endpoint`/`keys` may be supplied. The capability travels
-in the `X-Skrynia-Capability` header (as with store object capabilities),
-never in the URL. Response: `{ "ok": true }`.
-
-#### Delete a subscription
-
-```text
-DELETE {SKRYNIA_URL}/push/subscriptions/{id}
-X-Skrynia-Capability: {capability}
-```
-
-Response: `{ "ok": true }`.
-
-Push errors include `400` (invalid namespace, channel, or subscription),
-`403` (missing/wrong capability), `404` (unknown id or namespace),
-`409 endpoint_in_use` (an update would duplicate another registration in the
-same namespace/channel), `413` (request too large), and `507` (channel or
-namespace subscription quota exceeded).
-
-When the durable delivery outbox is full, a matching store mutation is not
-committed and fails with `507 push_outbox_full` instead of committing
-without notification state; retrying the mutation after the outbox drains
-succeeds. Unexpected enqueue I/O failures return `500 push_enqueue_failed`.
-
-## Management endpoints
-
-Skrynia has no administrative CLI. All lifecycle/namespace administration is exposed over HTTP by the same server process.
-
-Every management request is a `GET` under `{SKRYNIA_URL}/` and must contain a `token` query parameter exactly equal to `SKRYNIA_TOKEN`.
-
-If `SKRYNIA_TOKEN` is unset, management requests return:
+### Create a subgrant
 
 ```http
-503 Service Unavailable
+POST /grants
+Authorization: Bearer <parent-user-token>
+Content-Type: application/json
+
+{"namespace":"app","maxBytes":5242880,"maxObjects":100}
 ```
 
-```json
-{ "error": "management_api_disabled", "detail": "SKRYNIA_TOKEN is not configured" }
+Response (200) contains `id`, `issuerToken`, `userToken`, `maxBytes`,
+`maxObjects`, `nextCheckAt`.
+
+The child shares its parent's namespace. A parent does **not** reserve its
+whole maximum for each child. Actual consumption of every subtree must
+remain under the limits of **every ancestor**. Sibling grants can share
+unused headroom and can also compete for it.
+
+### Mint an additional user token
+
+```http
+POST /grants/<id>/users?namespace=app
+Authorization: Bearer <existing-user-token>
 ```
 
-Missing or incorrect tokens return `401` with `{"error":"invalid_token"}`.
+Returns `{"grantId":"...","userToken":"..."}`.
+This consumes grant metadata allowance. Each token represents an independent
+bearer credential, not necessarily a human identity.
 
-### Deploy
+### Inspect a grant
+
+```http
+GET /grants/<id>?namespace=app
+Authorization: Bearer <user-token>
+```
+
+Returns public grant fields and current subtree `usage`, excluding token
+verifiers. It is usable only by a user token for that exact grant.
+
+## Store
+
+Every newly created object has a funding grant:
+
+```http
+POST /store/app/my-key
+X-Skrynia-Grant: <grant-user-token>
+X-Skrynia-Mode: capability-write
+
+<arbitrary bytes>
+```
+
+Returns `201` and a one-time per-object write capability (default mode).
+`X-Skrynia-Mode: public-write` is also supported. No anonymous creation,
+no immutable mode and no legacy object formats.
+
+- `GET /store/{namespace}/{key}` returns raw bytes with a strong ETag,
+  without needing a token.
+- `PUT /store/{namespace}/{key}` requires the object's write capability
+  when in `capability-write` mode. `If-Match: <etag>` is an optional
+  compare-and-replace precondition. Growth is charged to the object's
+  original grant and every ancestor, even if a different writer holds the
+  object's write capability.
+- `DELETE /store/{namespace}/{key}` requires that same object capability
+  when applicable and removes the object and its private metadata.
+
+ETag versions use a single monotonic namespace counter, so deletion does not
+leave unbounded per-key tombstones, yet delete/recreate cannot reuse an ETag.
+Files remain nginx-static-file compatible.
+
+## Resource accounting
+
+Every subtree must obey:
 
 ```text
-GET {SKRYNIA_URL}/deploy?repo={ssh-url}&commit={sha}&subdir={path}&namespace={ns}&token={token}
+sum(object byte lengths)
++ 512 bytes per stored object (reserved metadata)
++ 2,048 bytes per grant (including the root)
++ 128 bytes per additional grant user token
++ 4,096 bytes per browser PushSubscription
+<= maxBytes
 ```
 
-Optional parameter: `builder={docker-image}`.
+`maxObjects` counts stored objects and browser push subscriptions in the
+subtree. Grants themselves use byte allowance, not object-count allowance.
+These charges are conservative upper bounds on private records; no recursive
+creation is free. A root grant can have only the resources established at
+deployment. There is no separate namespace quota layer.
 
-`repo` must be an SSH Git repository URL in canonical scp-like form `user@host:path` (for example `git@github.com:myorg/myapp.git`). Local paths, `file://`, `http://`, `https://`, `ssh://`, and other URL schemes are rejected.
+## Confirmation-based cleanup
 
-Required constraints:
+Every grant has a 24-hour checkpoint period. Each user token may submit:
 
-- `commit` is a full 40- or 64-hex git object id;
-- `subdir` is relative and cannot contain `..`;
-- namespace matches the normal namespace grammar.
+```http
+POST /grants/<id>/confirmation?namespace=app
+Authorization: Bearer <grant-user-token>
+Content-Type: application/json
 
-The request is synchronous and returns after clone, build, validation, release activation, and cleanup.
-
-Successful response:
-
-```json
-{
-  "ok": true,
-  "namespace": "myapp",
-  "release": "20260910120000000-abc123",
-  "path": "/apps/myapp/"
-}
+{"need":true}
 ```
 
-Errors:
+Or `{"need":false}` to propose cleanup. Signals accumulate within the
+period. Grant user tokens can be shared and need not represent persons.
 
-- `400 invalid_repo`: repo is not a valid SSH scp-like URL
+At its checkpoint, a grant is **cleaned** exactly if:
+1. At least one negative confirmation was recorded for the grant during
+   its period; and
+2. **No** positive confirmation was recorded during that period for this
+   grant **or any descendant**.
 
-### Undeploy
+Thus one descendant's `need:true` protects all its ancestors. Positive
+confirmations do not protect sibling or descendant grants against their own
+independently authorized cleanup. Total silence preserves the space.
+Checks are performed in the running server and after the next request following
+a delay/restart. A server restart does not imply a vote.
 
-```text
-GET {SKRYNIA_URL}/undeploy?namespace={ns}&token={token}
+A **clean** deletes every object funded by the target or descendants, and
+all descendant grants and their tokens. The target grant itself, its user and
+issuer tokens, and its limits survive, and can be reused immediately.
+
+### Issuer operations
+
+```http
+DELETE /grants/<id>/space?namespace=app
+Authorization: Bearer <issuer-token>
 ```
 
-Deletes the active link, all releases, all stored namespace data, and namespace state.
+Unconditionally cleans the space while preserving that grant.
 
-```json
-{ "ok": true, "namespace": "myapp" }
+```http
+DELETE /grants/<id>?namespace=app
+Authorization: Bearer <issuer-token>
 ```
 
-### Rollback
+Unconditionally revokes the grant itself and the entire subtree, including
+all objects, descendants, and tokens. It overrides all confirmations.
 
-```text
-GET {SKRYNIA_URL}/rollback?namespace={ns}&token={token}
-GET {SKRYNIA_URL}/rollback?namespace={ns}&release={release-id}&token={token}
-```
+Both deletion operations persist their complete affected subtree in a private
+pending-deletion record first and resume an interrupted deletion on process
+restart. Operations are synchronous for the single server process; no
+concurrent writes can recreate doomed objects during deletion.
 
-Without `release`, activates the previous release. With `release`, activates that exact retained release.
+## Push, management and deployment
 
-```json
-{ "ok": true, "namespace": "myapp", "release": "20260910120000000-abc123" }
-```
+The PushSubscription creation endpoint
+`POST /push/subscriptions?namespace={ns}&channel={channel}` additionally
+requires `X-Skrynia-Grant: <user-token>` for new subscriptions. Subscriptions
+retain independent update/delete capabilities and are deleted when their
+funding grant is cleaned. Other push endpoints and management endpoints
+remain documented in the README. Management authentication still uses
+`SKRYNIA_TOKEN`.
 
-### Releases
-
-```text
-GET {SKRYNIA_URL}/releases?namespace={ns}&token={token}
-```
-
-```json
-{
-  "namespace": "myapp",
-  "current": "20260910120000000-abc123",
-  "releases": ["20260910110000000-def456", "20260910120000000-abc123"]
-}
-```
-
-### Deployment inspection
-
-```text
-GET {SKRYNIA_URL}/inspect?namespace={ns}&token={token}
-```
-
-Returns the saved deployment metadata for the namespace.
-
-### Namespace create
-
-```text
-GET {SKRYNIA_URL}/ns/create?namespace={ns}&token={token}
-GET {SKRYNIA_URL}/ns/create?namespace={ns}&quota={bytes}&token={token}
-```
-
-Creating an existing namespace preserves its existing quota.
-
-### Namespace remove
-
-```text
-GET {SKRYNIA_URL}/ns/remove?namespace={ns}&token={token}
-```
-
-Removes namespace storage and state. This operation is distinct from undeploy and does not manage retained release directories.
-
-### Namespace inspect
-
-```text
-GET {SKRYNIA_URL}/ns/inspect?namespace={ns}&token={token}
-```
-
-Returns namespace quota/usage plus deployment metadata when present.
-
-### Namespace list
-
-```text
-GET {SKRYNIA_URL}/ns/list?token={token}
-```
-Returns:
-
-```json
-{
-  "namespaces": [
-    {
-      "namespace": "myapp",
-      "quota": { "bytes": 0, "count": 0, "quotaBytes": 10485760, "maxObjects": 10000 },
-      "deployment": null
-    }
-  ]
-}
-```
-
-### Push rule set
-
-```text
-GET {SKRYNIA_URL}/push/rules/set?namespace={ns}&key={key}&channels={a,b}&on={create,replace,delete}&token={token}
-```
-
-Maps one exact namespace + exact key plus the selected mutation kinds to one
-or more named channels. `channels` is a comma-separated list of channel names
-(`^[a-z0-9][a-z0-9_-]{0,63}$`, at most 8 per rule). `on` is a
-comma-separated subset of `create,replace,delete` and defaults to all three.
-Setting a rule for an existing key replaces it.
-
-```json
-{ "ok": true, "rule": { "key": "orders", "kinds": ["create", "replace"], "channels": ["shop"] } }
-```
-
-### Push rule get
-
-```text
-GET {SKRYNIA_URL}/push/rules/get?namespace={ns}&key={key}&token={token}
-```
-
-Returns `{ "namespace": "myapp", "rule": { ... } }`, or `404 push_rule_not_found`.
-
-### Push rule list
-
-```text
-GET {SKRYNIA_URL}/push/rules/list?namespace={ns}&token={token}
-```
-
-Returns `{ "namespace": "myapp", "rules": [ ... ] }`.
-
-### Push rule remove
-
-```text
-GET {SKRYNIA_URL}/push/rules/remove?namespace={ns}&key={key}&token={token}
-```
-
-Returns `{ "ok": true, "namespace": "myapp", "key": "orders" }`.
-
-## Object modes
-
-Two modes are accepted at creation. There is no mode that makes an object permanently undeletable, so superseded objects are always reclaimable.
-
-### capability-write (default)
-
-Create returns a 64-character hexadecimal capability. PUT/DELETE require that value in `X-Skrynia-Capability`. Only its SHA-256 verifier is stored server-side.
-
-### public-write
-
-Anyone who knows namespace and key may replace or delete the object.
-
-### immutable (removed)
-
-No longer accepted at creation; `400 {"error":"mode_removed"}`. Objects created as `immutable` before removal are treated exactly as `public-write`: `PUT` replaces them in place with no prerequisite, and `DELETE` reclaims them, both anonymously and with no capability. The stored mode is not rewritten and confers no privilege; a replace carries it forward unchanged. Callers that need write-once by convention should create `public-write` objects under a content-addressed key and delete superseded keys themselves.
-
-## Namespace validation
-
-Namespaces match `^[a-z0-9][a-z0-9_-]{0,63}$`.
-
-## Key validation
-
-- non-empty;
-- maximum configured length (default 256);
-- no NUL, `..`, leading slash, double slash, or slash;
-- URL-decoded before validation.
-
-## Namespace quotas
-
-Each namespace records `quotaBytes`, `maxObjects`, current `bytes`, and current `count`. Usage is recalculated from committed object metadata before mutations/inspection.
-
-## Error response format
-
-Errors are JSON:
-
-```json
-{ "error": "error_code" }
-```
-
-and may include `detail`:
-
-```json
-{ "error": "invalid_commit", "detail": "commit must be a full 40 or 64 hex git object id" }
-```
+The node process must remain the single owner of its data directory.
+This implementation offers no distributed transaction processing and no
+in-place upgrade path for existing storage data.
