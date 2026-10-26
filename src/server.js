@@ -232,6 +232,12 @@ function createServer(opts) {
       }
     } finally {
       discardTemp(tmp);
+      // Creation may abort after metadata is staged (e.g. push backpressure).
+      // No committed object means no permanent metadata or uncharged disk use.
+      if (!existsSync(op)) {
+        try { unlinkSync(shared.nsMetaPath(ns, key)); }
+        catch (e) { if (e.code !== 'ENOENT') throw e; }
+      }
     }
     json(res, 201, response);
   }
