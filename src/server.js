@@ -163,12 +163,6 @@ function createServer(opts) {
     return '"' + mtimeSeconds.toString(16) + '-' + st.size.toString(16) + '"';
   }
 
-  function nextObjectVersion(meta, filePath) {
-    const previous = meta && Number.isSafeInteger(meta.version) && meta.version >= 0 ? meta.version : 0;
-    const current = existsSync(filePath) ? Math.floor(statSync(filePath).mtimeMs / 1000) : 0;
-    return Math.max(Math.floor(Date.now() / 1000), previous + 1, current + 1);
-  }
-
   function setObjectVersion(filePath, versionSeconds) {
     const when = new Date(versionSeconds * 1000);
     fs.utimesSync(filePath, when, when);
@@ -212,8 +206,7 @@ function createServer(opts) {
     if (existsSync(op)) return json(res, 409, {error:'already_exists'});
     const grantId = grants.accountCreate(ns, req.headers['x-skrynia-grant'], body.length);
 
-    const previousMeta = shared.readObjectMeta(ns, key) || {};
-    const version = nextObjectVersion(previousMeta, op);
+    const version = shared.nextVersion(ns);
     const response = { ok: true, mode };
     const meta = { mode, version, grantId };
     if (mode === 'capability-write') {
@@ -268,7 +261,7 @@ function createServer(opts) {
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
-    const version = nextObjectVersion(meta, op);
+    const version = shared.nextVersion(ns);
     const tmp = prepareObjectTemp(ns, body, version);
     try {
       shared.writeObjectMeta(ns, key, Object.assign({}, meta, {version}));
@@ -300,10 +293,8 @@ function createServer(opts) {
       return json(res, 500, {error:'push_enqueue_failed'});
     }
 
-    const version = Math.max(Number.isSafeInteger(meta.version) ? meta.version : 0, Math.floor(statSync(op).mtimeMs / 1000));
     unlinkSync(op);
-    try { shared.writeObjectMeta(ns, key, {version}); }
-    catch (e) { console.error('skrynia metadata cleanup error:', e && e.message ? e.message : e); }
+    unlinkSync(shared.nsMetaPath(ns, key));
     json(res, 200, {ok:true});
   }
 
