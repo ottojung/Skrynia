@@ -84,6 +84,7 @@ function backoffMs(attempts) {
 function createPush(opts) {
   opts = opts || {};
   const dataDir = opts.dataDir || process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
+  const authorizeNewSubscription = opts.onSubscriptionCreate || (() => { throw new Error('grant accounting required'); });
   const stateDir = path.join(dataDir, 'state');
   const pushDir = path.join(stateDir, '_push');
   const outboxDir = path.join(pushDir, 'outbox');
@@ -267,7 +268,7 @@ function createPush(opts) {
     return null;
   }
 
-  function createSub(ns, channel, endpoint, keys, existingCapability) {
+  function createSub(ns, channel, endpoint, keys, existingCapability, grantToken) {
     const subs = allSubs(ns);
     const existing = subs.find(s => s.channel === channel && s.endpoint === endpoint);
     if (existing) {
@@ -299,11 +300,13 @@ function createPush(opts) {
       err.code = 'channel_full';
       throw err;
     }
+    const grantId = authorizeNewSubscription(ns, grantToken);
     const id = randomHex(SUB_ID_BYTES);
     const capability = randomHex(CAP_BYTES);
     const record = {
       id,
       ns,
+      grantId,
       channel,
       endpoint,
       keys: { p256dh: keys.p256dh, auth: keys.auth },
