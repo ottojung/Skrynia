@@ -188,8 +188,8 @@ async function testDeployment() {
   execFileSync('git',['-C',source,'add','.']);
   execFileSync('git',['-C',source,'commit','-m','initial']);
   const sha=execFileSync('git',['-C',source,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
-  const fakeGit = '#!/bin/sh\\nif [ "$1" = "clone" ]; then exec /usr/bin/git clone --quiet "$SKRYNIA_TEST_SOURCE_REPO" "$4"; fi\\nexec /usr/bin/git "$@"\\n';
-  const fakeDocker = '#!/bin/sh\\nset -eu\\nrepo=""\\nwhile [ "$#" -gt 0 ]; do case "$1" in -v) repo="${2%%:*}"; shift 2;; *) shift;; esac; done\\n[ -n "$repo" ]\\nmkdir -p "$repo/build"\\ncp "$repo/index.html" "$repo/build/index.html"\\n';
+  const fakeGit = '#!/bin/sh\nif [ "$1" = "clone" ]; then exec /usr/bin/git clone --quiet "$SKRYNIA_TEST_SOURCE_REPO" "$4"; fi\nexec /usr/bin/git "$@"\n';
+  const fakeDocker = '#!/bin/sh\nset -eu\nrepo=""\nwhile [ "$#" -gt 0 ]; do case "$1" in -v) repo="${2%%:*}"; shift 2;; *) shift;; esac; done\n[ -n "$repo" ]\nmkdir -p "$repo/build"\ncp "$repo/index.html" "$repo/build/index.html"\n';
   fs.writeFileSync(path.join(bin,'git'),fakeGit,{mode:0o755});
   fs.writeFileSync(path.join(bin,'docker'),fakeDocker,{mode:0o755});
   const oldPath=process.env.PATH, oldRepo=process.env.SKRYNIA_TEST_SOURCE_REPO;
