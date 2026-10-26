@@ -5,7 +5,7 @@
  * Convenience methods .text() and .json() decode via TextDecoder on demand.
  *
  * Usage:
- *   const store = Skrynia.store('my-namespace');
+ *   const store = Skrynia.store('my-namespace', grantUserToken);
  *   const result = await store.get('key');
  *   const text = await result.bytes.text();
  *   const obj = await result.bytes.json();
