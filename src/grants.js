@@ -12,6 +12,7 @@ const DAY = 24 * 60 * 60 * 1000;
 // tiny grant from minting unlimited empty descendants or object metadata.
 const GRANT_COST = 2048;
 const OBJECT_COST = 512;
+const PUSH_SUB_COST = 4096;
 const ID_RE = /^[a-f0-9]{32}$/;
 
 function fault(status, code) {
@@ -107,6 +108,14 @@ function createGrants(shared) {
       return { key, grantId: meta.grantId, bytes: fs.statSync(file).size };
     }).filter(Boolean);
   }
+  function subscriptionEntries(ns) {
+    const p = path.join(stateDir, ns, 'push-subs');
+    if (!fs.existsSync(p)) return [];
+    return fs.readdirSync(p).filter(x => x.endsWith('.json')).map(x => ({
+      file: path.join(p, x),
+      data: JSON.parse(fs.readFileSync(path.join(p, x), 'utf8')),
+    }));
+  }
   function usage(ns, grantId) {
     const grants = all(ns), map = validateTree(grants);
     let bytes = 0, objects = 0;
@@ -115,6 +124,14 @@ function createGrants(shared) {
       if (!map.has(o.grantId)) throw new Error('orphaned object: ' + ns + '/' + o.key);
       if (isDescendant(map, o.grantId, grantId)) {
         bytes += o.bytes + OBJECT_COST;
+        objects++;
+      }
+    }
+    for (const sub of subscriptionEntries(ns)) {
+      if (!sub.data.grantId) throw new Error('unsupported old push subscription schema');
+      if (!map.has(sub.data.grantId)) throw new Error('orphaned push subscription');
+      if (isDescendant(map, sub.data.grantId, grantId)) {
+        bytes += PUSH_SUB_COST;
         objects++;
       }
     }
@@ -167,6 +184,9 @@ function createGrants(shared) {
     assertCapacity(ns, g.id, length + OBJECT_COST, 1);
     return g.id;
   }
+  function accountSubscription(ns, secret) {
+    return accountCreate(ns, secret, PUSH_SUB_COST - OBJECT_COST);
+  }
   function accountReplace(ns, grantId, previousSize, nextSize) {
     sweep();
     find(ns, grantId);
@@ -184,6 +204,9 @@ function createGrants(shared) {
   }
   function deleteData(ns, ids) {
     const owned = new Set(ids);
+    for (const sub of subscriptionEntries(ns)) {
+      if (owned.has(sub.data.grantId)) fs.unlinkSync(sub.file);
+    }
     for (const obj of objectEntries(ns)) {
       if (!owned.has(obj.grantId)) continue;
       fs.unlinkSync(shared.nsObjPath(ns, obj.key));
@@ -283,7 +306,7 @@ function createGrants(shared) {
     return {...safe, usage: usage(ns, id)};
   }
   return { DAY, GRANT_COST, OBJECT_COST, root, createRoot, createChild, accountCreate,
-    accountReplace, requireUser, confirmation, issuerAction, inspect, usage,
+    accountReplace, accountSubscription, requireUser, confirmation, issuerAction, inspect, usage,
     recover, sweep, assertCapacity, fault };
 }
 module.exports = {createGrants};
