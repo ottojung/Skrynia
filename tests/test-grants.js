@@ -58,11 +58,28 @@ async function test() {
     r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:20000,maxObjects:10},user(root.userToken));
     assert.equal(r.status,200);
     const child=r.json;
+    r=await request(port,'POST','/grants/'+child.id+'/users?namespace=forum',
+      null,user(child.userToken));
+    assert.equal(r.status,200,'grant users may mint more user tokens');
+    const otherUser=r.json.userToken;
+    assert.notEqual(otherUser,child.userToken);
+    assert.equal(grants.inspect('forum',child.id,otherUser).userCount,2);
+    r=await request(port,'POST','/grants/'+child.id+'/users?namespace=forum',
+      null,user(child.issuerToken));
+    assert.equal(r.status,403,'issuer cannot mint user tokens');
     r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:6000,maxObjects:5},user(child.userToken));
     assert.equal(r.status,200);
     const grand=r.json;
     r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:6000,maxObjects:5},user(root.userToken));
     const sibling=r.json; assert.equal(r.status,200);
+
+    r=await request(port,'POST','/push/subscriptions?namespace=forum&channel=updates',
+      {endpoint:'https://push.example.test/p/1',keys:{p256dh:'sample-key',auth:'auth-key'}});
+    assert.equal(r.status,401,'push subscription cannot be created anonymously');
+    r=await request(port,'POST','/push/subscriptions?namespace=forum&channel=updates',
+      {endpoint:'https://push.example.test/p/1',keys:{p256dh:'sample-key',auth:'auth-key'}},
+      grant(child.userToken));
+    assert.equal(r.status,201,'push subscription grant sponsorship');
 
     r=await request(port,'POST','/store/forum/post','hello',grant(child.userToken));
     assert.equal(r.status,201);
