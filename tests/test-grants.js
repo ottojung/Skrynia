@@ -114,7 +114,15 @@ async function test() {
       fs.writeFileSync(p,JSON.stringify(g));
     }
     due('forum',root.id);
+    const beforeRoot=JSON.parse(fs.readFileSync(path.join(dir,'state','forum','grants',root.id+'.json')));
+    const beforeGrand=JSON.parse(fs.readFileSync(path.join(dir,'state','forum','grants',grand.id+'.json')));
+    assert(beforeGrand.keepAt >= beforeRoot.windowStart &&
+      beforeGrand.keepAt < beforeRoot.nextCheckAt,
+      'positive descendant keep must precede root checkpoint: '+JSON.stringify({beforeRoot,beforeGrand}));
     grants.sweep(Date.now());
+    assert(fs.existsSync(path.join(dir,'state','forum','grants',grand.id+'.json')),
+      'transitive keep must preserve descendant grant');
+
     assert.equal(grants.root('forum').id,root.id);
     assert.equal((await request(port,'GET','/store/forum/grand')).status,200);
 
