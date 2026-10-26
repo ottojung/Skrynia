@@ -13,6 +13,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const GRANT_COST = 2048;
 const OBJECT_COST = 512;
 const PUSH_SUB_COST = 4096;
+const EXTRA_USER_COST = 128;
 const ID_RE = /^[a-f0-9]{32}$/;
 
 function fault(status, code) {
@@ -85,7 +86,7 @@ function createGrants(shared) {
   function requireUser(ns, secret, id) {
     if (typeof secret !== 'string') throw fault(401, 'grant_user_token_required');
     const h = digest(secret);
-    const g = all(ns).find(x => same(x.userHash, h) && (!id || x.id === id));
+    const g = all(ns).find(x => x.userHashes.some(u => same(u, h)) && (!id || x.id === id));
     if (!g) throw fault(403, 'invalid_grant_user_token');
     return g;
   }
@@ -119,7 +120,9 @@ function createGrants(shared) {
   function usage(ns, grantId) {
     const grants = all(ns), map = validateTree(grants);
     let bytes = 0, objects = 0;
-    for (const g of grants) if (isDescendant(map, g.id, grantId)) bytes += GRANT_COST;
+    for (const g of grants) if (isDescendant(map, g.id, grantId)) {
+      bytes += GRANT_COST + (g.userHashes.length - 1) * EXTRA_USER_COST;
+    }
     for (const o of objectEntries(ns)) {
       if (!map.has(o.grantId)) throw new Error('orphaned object: ' + ns + '/' + o.key);
       if (isDescendant(map, o.grantId, grantId)) {
@@ -154,7 +157,7 @@ function createGrants(shared) {
     const now = Date.now();
     const id = crypto.randomBytes(16).toString('hex');
     const record = { id, namespace: ns, parent, maxBytes, maxObjects,
-      issuerHash: digest(issuerToken), userHash: digest(userToken),
+      issuerHash: digest(issuerToken), userHashes: [digest(userToken)],
       windowStart: now, nextCheckAt: now + DAY, keepAt: null, releaseAt: null };
     if (Buffer.byteLength(JSON.stringify(record)) > GRANT_COST) throw new Error('grant record cost exceeded');
     atomicJson(recordPath(ns, id), record);
@@ -191,6 +194,17 @@ function createGrants(shared) {
     sweep();
     find(ns, grantId);
     if (nextSize > previousSize) assertCapacity(ns, grantId, nextSize - previousSize, 0);
+  }
+  function createUser(ns, id, secret) {
+    sweep();
+    const g = requireUser(ns, secret, id);
+    assertCapacity(ns, id, EXTRA_USER_COST, 0);
+    const userToken = token();
+    g.userHashes.push(digest(userToken));
+    const cost = GRANT_COST + (g.userHashes.length - 1) * EXTRA_USER_COST;
+    if (Buffer.byteLength(JSON.stringify(g)) > cost) throw new Error('grant metadata exceeds charged cost');
+    atomicJson(recordPath(ns, id), g);
+    return {grantId: id, userToken};
   }
   function confirmation(ns, id, secret, need) {
     sweep();
@@ -302,11 +316,12 @@ function createGrants(shared) {
     sweep();
     requireUser(ns, secret, id);
     const g = find(ns, id);
-    const {issuerHash, userHash, ...safe} = g;
+    const {issuerHash, userHashes, ...safe} = g;
+    safe.userCount = userHashes.length;
     return {...safe, usage: usage(ns, id)};
   }
   return { DAY, GRANT_COST, OBJECT_COST, root, createRoot, createChild, accountCreate,
-    accountReplace, accountSubscription, requireUser, confirmation, issuerAction, inspect, usage,
+    accountReplace, accountSubscription, requireUser, createUser, confirmation, issuerAction, inspect, usage,
     recover, sweep, assertCapacity, fault };
 }
 module.exports = {createGrants};
