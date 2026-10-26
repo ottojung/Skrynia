@@ -177,4 +177,52 @@ async function test() {
     fs.rmSync(dir,{recursive:true,force:true});
   }
 }
-test().catch(e=>{console.error(e);process.exitCode=1;});
+async function testDeployment() {
+  const dir=mk(), bin=path.join(dir,'bin'), source=path.join(dir,'source');
+  fs.mkdirSync(bin); fs.mkdirSync(source);
+  fs.writeFileSync(path.join(source,'index.html'),'<h1>test</h1>');
+  const {execFileSync}=require('node:child_process');
+  execFileSync('git',['init',source]);
+  execFileSync('git',['-C',source,'config','user.name','Test']);
+  execFileSync('git',['-C',source,'config','user.email','test@example.test']);
+  execFileSync('git',['-C',source,'add','.']);
+  execFileSync('git',['-C',source,'commit','-m','initial']);
+  const sha=execFileSync('git',['-C',source,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+  const fakeGit = '#!/bin/sh\\nif [ "$1" = "clone" ]; then exec /usr/bin/git clone --quiet "$SKRYNIA_TEST_SOURCE_REPO" "$4"; fi\\nexec /usr/bin/git "$@"\\n';
+  const fakeDocker = '#!/bin/sh\\nset -eu\\nrepo=""\\nwhile [ "$#" -gt 0 ]; do case "$1" in -v) repo="${2%%:*}"; shift 2;; *) shift;; esac; done\\n[ -n "$repo" ]\\nmkdir -p "$repo/build"\\ncp "$repo/index.html" "$repo/build/index.html"\\n';
+  fs.writeFileSync(path.join(bin,'git'),fakeGit,{mode:0o755});
+  fs.writeFileSync(path.join(bin,'docker'),fakeDocker,{mode:0o755});
+  const oldPath=process.env.PATH, oldRepo=process.env.SKRYNIA_TEST_SOURCE_REPO;
+  process.env.PATH=bin+':'+oldPath;
+  process.env.SKRYNIA_TEST_SOURCE_REPO=source;
+  let server;
+  try {
+    const running=await open(path.join(dir,'data')); server=running.server;
+    const route='/deploy?'+new URLSearchParams({repo:'git@github.com:test/mock.git',
+      commit:sha,subdir:'.',namespace:'demo',token:'admin-token',
+      quota:'12000',maxObjects:'40'}).toString();
+    let r=await request(running.port,'GET',route);
+    assert.equal(r.status,200,'deployment should bootstrap root');
+    assert.equal(r.json.rootGrant.created,true);
+    assert.equal(r.json.rootGrant.maxBytes,12000);
+    assert.match(r.json.rootGrant.userToken,/^[a-f0-9]{64}$/);
+    const initial=r.json.rootGrant;
+    r=await request(running.port,'POST','/store/demo/first','ok',grant(initial.userToken));
+    assert.equal(r.status,201,'newly-issued root token must be functional');
+    r=await request(running.port,'GET',route);
+    assert.equal(r.status,200);
+    assert.equal(r.json.rootGrant.created,false);
+    assert.equal(r.json.rootGrant.id,initial.id);
+    assert.equal(r.json.rootGrant.userToken,undefined,'deployment must not re-expose token');
+    assert.equal((await request(running.port,'GET','/store/demo/first')).status,200);
+    console.log('deployment bootstrapping: all assertions passed');
+  } finally {
+    if(server) await close(server);
+    process.env.PATH=oldPath;
+    if(oldRepo===undefined)delete process.env.SKRYNIA_TEST_SOURCE_REPO;
+    else process.env.SKRYNIA_TEST_SOURCE_REPO=oldRepo;
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+}
+
+test().then(testDeployment).catch(e=>{console.error(e);process.exitCode=1;});
