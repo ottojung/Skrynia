@@ -224,9 +224,7 @@ function createGrants(shared) {
     for (const obj of objectEntries(ns)) {
       if (!owned.has(obj.grantId)) continue;
       fs.unlinkSync(shared.nsObjPath(ns, obj.key));
-      // Retain an ETag tombstone so delete/recreate cannot reuse an old ETag.
-      const m = shared.readObjectMeta(ns, obj.key);
-      shared.writeObjectMeta(ns, obj.key, {version: m.version});
+      fs.unlinkSync(shared.nsMetaPath(ns, obj.key));
     }
   }
   function runDeletion(ns, id, action, ids) {
