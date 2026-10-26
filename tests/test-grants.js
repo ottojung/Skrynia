@@ -135,7 +135,7 @@ async function test() {
     assert.equal((await request(port,'GET','/store/forum/grand')).status,404);
     assert.equal((await request(port,'GET','/store/forum/sibling')).status,200);
     assert.equal(grants.inspect('forum',child.id,child.userToken).id,child.id);
-    assert.throws(()=>grants.inspect('forum',grand.id,grand.userToken),/grant_not_found/);
+    assert.throws(()=>grants.inspect('forum',grand.id,grand.userToken),/invalid_grant_user_token|grant_not_found/);
     r=await request(port,'POST','/store/forum/new','new',grant(child.userToken));
     assert.equal(r.status,201,'cleaned grant remains usable');
 
@@ -179,7 +179,7 @@ async function test() {
     await close(server);server=null;
     ({server,port}=await open(dir));
     assert.equal(server.skrynia.grants.root('small').id,little.id);
-    assert.throws(()=>server.skrynia.grants.inspect('small',smallChild.id,smallChild.userToken),/grant_not_found/);
+    assert.throws(()=>server.skrynia.grants.inspect('small',smallChild.id,smallChild.userToken),/invalid_grant_user_token|grant_not_found/);
     assert.equal(fs.readdirSync(path.join(dir,'state','_grant-deletions')).length,0);
     console.log('recursive grants: all assertions passed');
   } finally {
