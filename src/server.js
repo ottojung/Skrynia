@@ -562,11 +562,14 @@ function createServer(opts) {
         return out;
       }));
     }
-    const grantMatch = p === null ? null : p.match(/^\/grants\/([a-f0-9]{32})(?:\/(confirmation|space))?$/);
+    const grantMatch = p === null ? null : p.match(/^\/grants\/([a-f0-9]{32})(?:\/(confirmation|users|space))?$/);
     if (grantMatch) {
       const id = grantMatch[1], action = grantMatch[2], ns = url.searchParams.get('namespace');
       if (req.method === 'GET' && !action) {
         return grantResult(res, () => grants.inspect(ns, id, bearer(req)));
+      }
+      if (req.method === 'POST' && action === 'users') {
+        return grantResult(res, () => grants.createUser(ns, id, bearer(req)));
       }
       if (req.method === 'POST' && action === 'confirmation') {
         return readPushJson(req, res, body =>
