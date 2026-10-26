@@ -113,6 +113,7 @@ async function test() {
       g.nextCheckAt=Date.now()-1;
       fs.writeFileSync(p,JSON.stringify(g));
     }
+    await new Promise(resolve=>setTimeout(resolve,10));
     due('forum',root.id);
     const beforeRoot=JSON.parse(fs.readFileSync(path.join(dir,'state','forum','grants',root.id+'.json')));
     const beforeGrand=JSON.parse(fs.readFileSync(path.join(dir,'state','forum','grants',grand.id+'.json')));
@@ -142,6 +143,7 @@ async function test() {
     r=await request(port,'POST','/grants/'+root.id+'/confirmation?namespace=forum',
       {need:false},user(root.userToken));
     assert.equal(r.status,200);
+    await new Promise(resolve=>setTimeout(resolve,10));
     due('forum',root.id);
     grants.sweep(Date.now());
     assert.equal((await request(port,'GET','/store/forum/sibling')).status,404);
