@@ -89,8 +89,15 @@ async function test() {
     r=await request(port,'POST','/grants/'+grand.id+'/confirmation?namespace=forum',
       {need:true},user(grand.userToken));
     assert.equal(r.status,200);
-    const boundary=Date.now()+grants.DAY+500;
-    grants.sweep(boundary);
+    function due(ns,id) {
+      const p=path.join(dir,'state',ns,'grants',id+'.json');
+      const g=JSON.parse(fs.readFileSync(p,'utf8'));
+      g.windowStart=Date.now()-grants.DAY-1000;
+      g.nextCheckAt=Date.now()-1;
+      fs.writeFileSync(p,JSON.stringify(g));
+    }
+    due('forum',root.id);
+    grants.sweep(Date.now());
     assert.equal(grants.root('forum').id,root.id);
     assert.equal((await request(port,'GET','/store/forum/grand')).status,200);
 
@@ -110,7 +117,8 @@ async function test() {
     r=await request(port,'POST','/grants/'+root.id+'/confirmation?namespace=forum',
       {need:false},user(root.userToken));
     assert.equal(r.status,200);
-    grants.sweep(Date.now()+grants.DAY+500);
+    due('forum',root.id);
+    grants.sweep(Date.now());
     assert.equal((await request(port,'GET','/store/forum/sibling')).status,404);
     assert.equal(grants.root('forum').id,root.id);
     r=await request(port,'POST','/store/forum/reborn','yes',grant(root.userToken));
