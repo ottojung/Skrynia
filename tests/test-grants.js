@@ -93,6 +93,16 @@ async function test() {
     r=await request(port,'PUT','/store/forum/post','invalid',
       {'X-Skrynia-Capability':writeCap,'If-Match':etag});
     assert.equal(r.status,412,'CAS semantics retained');
+    // Deleted keys release metadata, but a recreate must never reuse its ETag.
+    const last=await request(port,'GET','/store/forum/post');
+    r=await request(port,'DELETE','/store/forum/post',null,
+      {'X-Skrynia-Capability':writeCap});
+    assert.equal(r.status,200);
+    r=await request(port,'POST','/store/forum/post','again',grant(child.userToken));
+    assert.equal(r.status,201);
+    const recreated=await request(port,'GET','/store/forum/post');
+    assert.notEqual(recreated.etag,last.etag,'ETag ABA protection after deletion');
+
 
     r=await request(port,'POST','/store/forum/grand','child data',grant(grand.userToken));
     assert.equal(r.status,201);
@@ -235,4 +245,17 @@ async function testDeployment() {
   }
 }
 
-test().then(testDeployment).catch(e=>{console.error(e);process.exitCode=1;});
+function testRejectLegacy() {
+  const dir=mk();
+  try {
+    fs.mkdirSync(path.join(dir,'state','legacy'),{recursive:true});
+    fs.writeFileSync(path.join(dir,'state','legacy','quota.json'),
+      JSON.stringify({quotaBytes:1000,maxObjects:100}));
+    assert.throws(() => createServer({dataDir:dir,
+      skryniaUrl:'http://127.0.0.1:17880/platform',pushManual:true}),
+      /unsupported old namespace schema|old quota schema/,
+      'old data must fail explicitly; no migrations');
+    console.log('incompatible on-disk schemas: correctly rejected');
+  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
+}
+test().then(testDeployment).then(testRejectLegacy).catch(e=>{console.error(e);process.exitCode=1;});
