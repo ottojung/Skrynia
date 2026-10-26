@@ -51,7 +51,7 @@ async function test() {
     let r=await request(port,'POST','/store/forum/noauth','x');
     assert.equal(r.status,401,'anonymous create forbidden');
     r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:20000,maxObjects:10});
-    assert.equal(r.status,403,'anonymous subgrant forbidden');
+    assert.equal(r.status,401,'anonymous subgrant forbidden');
 
     r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:12000,maxObjects:5},user(root.issuerToken));
     assert.equal(r.status,403,'issuer is not a user');
