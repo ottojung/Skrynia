@@ -29,6 +29,12 @@ inputs:
     default: '1800'
 
 outputs:
+  root-grant-id:
+    description: Root grant ID (first deployment only).
+  root-user-token:
+    description: Root grant user token (first deployment only; secret).
+  root-issuer-token:
+    description: Root grant issuer token (first deployment only; secret).
   release:
     description: The activated release identifier.
   path:
