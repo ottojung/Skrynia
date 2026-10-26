@@ -64,15 +64,28 @@ function createGrants(shared) {
   function root(ns) { return all(ns).find(g => g.parent === null) || null; }
   function validateTree(grants) {
     const map = new Map(grants.map(g => [g.id, g]));
+    if (map.size !== grants.length) throw new Error('duplicate grant ID');
+    const children = new Map(grants.map(g => [g.id, []]));
+    const roots = [];
     for (const g of grants) {
-      const visited = new Set([g.id]);
-      let cur = g;
-      while (cur.parent) {
-        if (!map.has(cur.parent) || visited.has(cur.parent)) throw new Error('corrupt grant ancestry');
-        visited.add(cur.parent);
-        cur = map.get(cur.parent);
+      if (g.parent === null) roots.push(g);
+      else {
+        if (!map.has(g.parent)) throw new Error('corrupt grant ancestry');
+        children.get(g.parent).push(g);
       }
     }
+    if (grants.length && roots.length !== 1) throw new Error('invalid grant roots');
+    const order = roots.slice(), depth = new Map(roots.map(g => [g.id, 0]));
+    for (let i=0; i<order.length; i++) {
+      const g = order[i];
+      for (const child of children.get(g.id)) {
+        depth.set(child.id, depth.get(g.id) + 1);
+        order.push(child);
+      }
+    }
+    if (order.length !== grants.length) throw new Error('cyclic grant ancestry');
+    map.order = order;
+    map.depth = depth;
     return map;
   }
   function isDescendant(map, child, ancestor) {
@@ -117,35 +130,45 @@ function createGrants(shared) {
       data: JSON.parse(fs.readFileSync(path.join(p, x), 'utf8')),
     }));
   }
-  function usage(ns, grantId) {
-    const grants = all(ns), map = validateTree(grants);
-    let bytes = 0, objects = 0;
-    for (const g of grants) if (isDescendant(map, g.id, grantId)) {
-      bytes += GRANT_COST + (g.userHashes.length - 1) * EXTRA_USER_COST;
+  function aggregateUsage(ns, map) {
+    const totals = new Map();
+    for (const g of map.values()) {
+      totals.set(g.id, {bytes: GRANT_COST + (g.userHashes.length - 1) * EXTRA_USER_COST, objects: 0});
     }
     for (const o of objectEntries(ns)) {
-      if (!map.has(o.grantId)) throw new Error('orphaned object: ' + ns + '/' + o.key);
-      if (isDescendant(map, o.grantId, grantId)) {
-        bytes += o.bytes + OBJECT_COST;
-        objects++;
-      }
+      const u = totals.get(o.grantId);
+      if (!u) throw new Error('orphaned object: ' + ns + '/' + o.key);
+      u.bytes += o.bytes + OBJECT_COST;
+      u.objects++;
     }
     for (const sub of subscriptionEntries(ns)) {
       if (!sub.data.grantId) throw new Error('unsupported old push subscription schema');
-      if (!map.has(sub.data.grantId)) throw new Error('orphaned push subscription');
-      if (isDescendant(map, sub.data.grantId, grantId)) {
-        bytes += PUSH_SUB_COST;
-        objects++;
-      }
+      const u = totals.get(sub.data.grantId);
+      if (!u) throw new Error('orphaned push subscription');
+      u.bytes += PUSH_SUB_COST;
+      u.objects++;
     }
-    return { bytes, objects };
+    // One bottom-up pass accounts for every child and descendant, once.
+    for (const g of [...map.order].reverse()) {
+      if (!g.parent) continue;
+      const own = totals.get(g.id), parent = totals.get(g.parent);
+      parent.bytes += own.bytes;
+      parent.objects += own.objects;
+    }
+    return totals;
+  }
+  function usage(ns, grantId) {
+    const map = validateTree(all(ns));
+    if (!map.has(grantId)) throw fault(404, 'grant_not_found');
+    return aggregateUsage(ns, map).get(grantId);
   }
   function assertCapacity(ns, grantId, extraBytes, extraObjects) {
     const map = validateTree(all(ns));
     let g = map.get(grantId);
     if (!g) throw fault(404, 'grant_not_found');
+    const totals = aggregateUsage(ns, map);
     while (g) {
-      const u = usage(ns, g.id);
+      const u = totals.get(g.id);
       if (u.bytes + extraBytes > g.maxBytes || u.objects + extraObjects > g.maxObjects) {
         throw fault(507, 'grant_quota_exceeded');
       }
@@ -268,16 +291,21 @@ function createGrants(shared) {
       let grants = all(ns);
       if (!grants.length) continue;
       const map = validateTree(grants);
-      const due = grants.filter(g => g.nextCheckAt <= now).sort((a,b) => {
-        const depth = x => { let n=0; while(x.parent){n++;x=map.get(x.parent);} return n; };
-        return depth(a)-depth(b);
-      });
+      const due = grants.filter(g => g.nextCheckAt <= now)
+        .sort((a,b) => map.depth.get(a.id)-map.depth.get(b.id));
+      const mostRecentKeep = new Map(grants.map(g => [g.id, g.keepAt]));
+      for (const g of [...map.order].reverse()) {
+        if (!g.parent) continue;
+        const v=mostRecentKeep.get(g.id), old=mostRecentKeep.get(g.parent);
+        if (v !== null && (old === null || v > old)) mostRecentKeep.set(g.parent,v);
+      }
       for (const g of due) {
         if (!fs.existsSync(recordPath(ns, g.id))) continue;
         // All descendants can protect an ancestor. Positive confirmations do
         // not propagate sideways or downward. Negative confirmations are local.
-        const keep = grants.some(h => isDescendant(map, h.id, g.id) &&
-          h.keepAt !== null && h.keepAt >= g.windowStart && h.keepAt < g.nextCheckAt);
+        const newestKeep=mostRecentKeep.get(g.id);
+        const keep = newestKeep !== null &&
+          newestKeep >= g.windowStart && newestKeep < g.nextCheckAt;
         const release = g.releaseAt !== null && g.releaseAt >= g.windowStart && g.releaseAt < g.nextCheckAt;
         if (release && !keep) {
           removeSubtree(ns, g.id, 'clean');
