@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const { normalizeBasePath } = require('./base-path.js');
 const { createManagement, ManagementError } = require('./management.js');
 const { createPush } = require('./push.js');
+const { createGrants } = require('./grants.js');
 const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
 
 const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
@@ -24,8 +25,7 @@ const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'deve
 // their stored mode is never accepted at creation and never rewritten, but it
 // grants no privilege either, so they behave as public-write for every purpose.
 const CREATE_MODES = ['capability-write', 'public-write'];
-const LEGACY_IMMUTABLE = 'immutable';
-const READABLE_MODES = CREATE_MODES.concat([LEGACY_IMMUTABLE]);
+const READABLE_MODES = CREATE_MODES;
 
 const {
   existsSync,
@@ -62,7 +62,8 @@ function createServer(opts) {
 
   const buildInfo = opts.buildInfo || loadBuildInfo(opts.buildInfoDir);
   const shared = createShared(opts.dataDir);
-  shared.migrateLegacyStorage();
+  const grants = createGrants(shared);
+  grants.recover();
   const { RELEASES_DIR, STATE_DIR } = shared;
 
   const CLIENT_PATH = path.join(__dirname, 'client.js');
@@ -90,12 +91,14 @@ function createServer(opts) {
     pushManual: opts.pushManual,
     pushSendTimeoutMs: opts.pushSendTimeoutMs,
     maxKeyLength: MAX_KEY_LENGTH,
+    onSubscriptionCreate: (ns, secret) => grants.accountSubscription(ns, secret),
     maxSubsPerNamespace: opts.pushMaxSubsPerNamespace,
     maxOutboxItems: opts.pushMaxOutboxItems,
   });
 
   const management = createManagement({
     dataDir: shared.dataDir,
+    grants,
     appBasePath: APP_BASE_PATH,
     appDir: APP_DIR,
     builderImage: opts.builderImage,
@@ -116,7 +119,7 @@ function createServer(opts) {
     return key;
   }
 
-  function nsExists(ns) { return existsSync(shared.nsQuotaPath(ns)); }
+  function nsExists(ns) { return Boolean(grants.root(ns)); }
 
   function requireNs(ns, res) {
     if (!nsExists(ns)) {
@@ -201,21 +204,18 @@ function createServer(opts) {
   function handleCreate(ns, key, body, req, res) {
     if (!requireNsCreate(ns, res)) return;
     const mode = req.headers['x-skrynia-mode'] || 'capability-write';
-    if (mode === LEGACY_IMMUTABLE) return json(res, 400, {error:'mode_removed', detail:'immutable objects can no longer be created; use public-write or capability-write'});
     if (!CREATE_MODES.includes(mode)) return json(res, 400, {error:'invalid_mode'});
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 
     shared.ensureStoreNamespace(ns);
     const op = shared.nsObjPath(ns, key);
     if (existsSync(op)) return json(res, 409, {error:'already_exists'});
-    const q = shared.recalcQuota(ns);
-    if (q.count >= q.maxObjects) return json(res, 507, {error:'namespace_full',detail:'max_objects'});
-    if (q.bytes + body.length > q.quotaBytes) return json(res, 507, {error:'namespace_full',detail:'quota_bytes'});
+    const grantId = grants.accountCreate(ns, req.headers['x-skrynia-grant'], body.length);
 
     const previousMeta = shared.readObjectMeta(ns, key) || {};
     const version = nextObjectVersion(previousMeta, op);
     const response = { ok: true, mode };
-    const meta = { mode, version };
+    const meta = { mode, version, grantId };
     if (mode === 'capability-write') {
       const capability = generateCapability();
       meta.capHash = sha256hex(capability);
@@ -258,9 +258,8 @@ function createServer(opts) {
     if (ifMatch !== undefined && ifMatch !== staticFileEtag(op)) return json(res, 412, {error:'etag_mismatch'});
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
 
-    const q = shared.recalcQuota(ns);
-    const newBytes = q.bytes - statSync(op).size + body.length;
-    if (newBytes > q.quotaBytes) return json(res, 507, {error:'namespace_full',detail:'quota_bytes'});
+    if (!meta.grantId) throw new Error('unsupported old object schema');
+    grants.accountReplace(ns, meta.grantId, statSync(op).size, body.length);
     try {
       push.enqueue(ns, key, 'replace');
     } catch (e) {
@@ -291,6 +290,8 @@ function createServer(opts) {
       if (!capability) return json(res, 403, {error:'capability_required'});
       if (!meta.capHash || !timingSafeEqualHex(sha256hex(capability), meta.capHash)) return json(res, 403, {error:'invalid_capability'});
     }
+    if (!meta.grantId) throw new Error('unsupported old object schema');
+    grants.sweep();
     try {
       push.enqueue(ns, key, 'delete');
     } catch (e) {
@@ -390,8 +391,6 @@ function createServer(opts) {
     '/rollback': params => management.rollback(params),
     '/releases': params => management.releases(params),
     '/inspect': params => management.inspect(params),
-    '/ns/create': params => management.namespaceCreate(params),
-    '/ns/remove': params => management.namespaceRemove(params),
     '/ns/inspect': params => management.namespaceInspect(params),
     '/ns/list': () => management.namespaceList(),
     '/push/rules/set': params => management.pushRuleSet(params),
@@ -438,13 +437,14 @@ function createServer(opts) {
     if (!push.validEndpoint(endpoint)) return json(res, 400, {error:'invalid_subscription', detail:'endpoint must be an https:// URL'});
     if (!push.validKeys(keys)) return json(res, 400, {error:'invalid_subscription', detail:'keys.p256dh and keys.auth are required'});
     try {
-      const sub = push.createSub(ns, channel, endpoint, keys, pushCapability(req));
+      const sub = push.createSub(ns, channel, endpoint, keys, pushCapability(req), req.headers['x-skrynia-grant']);
       return json(res, 201, { ok: true, id: sub.id, capability: sub.capability, deduped: sub.deduped });
     } catch (e) {
       if (e.code === 'capability_required') return json(res, 403, {error:'capability_required'});
       if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
       if (e.code === 'channel_full') return json(res, 507, {error:'channel_full'});
       if (e.code === 'namespace_full') return json(res, 507, {error:'namespace_full', detail:'subscription quota'});
+      if (e.status) return json(res, e.status, {error:e.code});
       throw e;
     }
   }
@@ -490,6 +490,20 @@ function createServer(opts) {
       if (e.code === 'not_found') return json(res, 404, {error:'not_found'});
       if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
       throw e;
+    }
+  }
+
+  function bearer(req) {
+    const m = /^Bearer ([a-f0-9]{64})$/.exec(req.headers.authorization || '');
+    return m ? m[1] : null;
+  }
+
+  function grantResult(res, fn) {
+    try { return json(res, 200, fn()); }
+    catch (e) {
+      if (e.status) return json(res, e.status, {error: e.code});
+      console.error('skrynia grant error:', e && e.stack ? e.stack : e);
+      return json(res, 500, {error:'internal_error'});
     }
   }
 
@@ -542,6 +556,29 @@ function createServer(opts) {
       return;
     }
 
+    if (p === '/grants' && req.method === 'POST') {
+      return readPushJson(req, res, body => grantResult(res, () => {
+        const out = grants.createChild(body.namespace, bearer(req), body.maxBytes, body.maxObjects);
+        return out;
+      }));
+    }
+    const grantMatch = p === null ? null : p.match(/^\/grants\/([a-f0-9]{32})(?:\/(confirmation|space))?$/);
+    if (grantMatch) {
+      const id = grantMatch[1], action = grantMatch[2], ns = url.searchParams.get('namespace');
+      if (req.method === 'GET' && !action) {
+        return grantResult(res, () => grants.inspect(ns, id, bearer(req)));
+      }
+      if (req.method === 'POST' && action === 'confirmation') {
+        return readPushJson(req, res, body =>
+          grantResult(res, () => grants.confirmation(ns, id, bearer(req), body.need)));
+      }
+      if (req.method === 'DELETE' && (!action || action === 'space')) {
+        return grantResult(res, () => grants.issuerAction(ns, id, bearer(req),
+          action === 'space' ? 'clean' : 'revoke'));
+      }
+      return json(res, 405, {error: 'method_not_allowed'});
+    }
+
     const managementHandler = p === null ? undefined : managementRoutes[p];
     if (managementHandler) {
       if (req.method !== 'GET') { res.writeHead(405); res.end('Method not allowed'); return; }
@@ -575,11 +612,21 @@ function createServer(opts) {
         if (!requireNs(ns, res)) return;
         return handleGet(ns, key, res);
       }
-      if (req.method === 'DELETE') return handleDelete(ns, key, req, res);
+      if (req.method === 'DELETE') {
+        try { return handleDelete(ns, key, req, res); }
+        catch (e) { if (e.status) return json(res, e.status, {error:e.code});
+          console.error('skrynia store error:', e); return json(res, 500, {error:'internal_error'}); }
+      }
       if (req.method === 'PUT' || req.method === 'POST') {
         return readBody(req, res, body => {
-          if (req.method === 'POST') handleCreate(ns, key, body, req, res);
-          else handlePut(ns, key, body, req, res);
+          try {
+            if (req.method === 'POST') handleCreate(ns, key, body, req, res);
+            else handlePut(ns, key, body, req, res);
+          } catch (e) {
+            if (e.status) return json(res, e.status, {error:e.code});
+            console.error('skrynia store error:', e && e.stack ? e.stack : e);
+            json(res, 500, {error:'internal_error'});
+          }
         });
       }
       res.writeHead(405);
@@ -605,10 +652,14 @@ function createServer(opts) {
   shared.ensureStoreRoots();
   ensureDir(STATE_DIR);
   push.start();
+  const grantsTimer = setInterval(() => {
+    try { grants.sweep(); } catch (e) { console.error('grant cleanup error:', e); }
+  }, 60000);
+  grantsTimer.unref();
 
   const server = http.createServer(route);
-  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), buildInfo, push };
-  server.on('close', () => push.close());
+  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), buildInfo, push, grants };
+  server.on('close', () => { clearInterval(grantsTimer); push.close(); });
   return server;
 }
 
