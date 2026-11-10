@@ -321,30 +321,17 @@ function createGrants(shared) {
     assertCapacity(ns, parent.id, GRANT_COST, 0);
     return makeRecord(ns, parent.id, maxBytes, maxObjects, loc, ops);
   }
-  function userLabel(label) {
-    if (label === undefined) return '';
-    if (typeof label !== 'string' || label.length > 80 ||
-        /[\x00-\x1f\x7f]/.test(label)) throw fault(400, 'invalid_user_label');
-    return label;
-  }
-  function createUser(ns, id, secret, label) {
+  function createUser(ns, id, secret) {
     maybeSweep();
     const g = requireIssuer(ns, id, secret);
-    const title = userLabel(label);
     if (g.users.length !== 0) assertCapacity(ns, g.id, EXTRA_USER_COST, 0);
     const userToken = token();
     const userId = crypto.randomBytes(16).toString('hex');
-    g.users.push({id:userId, hash:digest(userToken), label:title, createdAt:Date.now()});
+    g.users.push({id:userId, hash:digest(userToken)});
     const cost = GRANT_COST + Math.max(0, g.users.length - 1) * EXTRA_USER_COST;
     if (Buffer.byteLength(JSON.stringify(g)) > cost) throw fault(507, 'grant_quota_exceeded');
     writeGrant(ns,g);
     return {grantId:id, userId, userToken};
-  }
-  function listUsers(ns, id, issuerSecret) {
-    maybeSweep();
-    const g = requireIssuer(ns, id, issuerSecret);
-    return {grantId:id, users:g.users.map(({id, label, createdAt}) =>
-      ({id, label, createdAt}))};
   }
   function revokeUser(ns, id, issuerSecret, userId) {
     maybeSweep();
@@ -439,13 +426,9 @@ function createGrants(shared) {
     const protectedLocations = [...new Set([...map.values()]
       .filter(h => !isDescendant(map, h.id, id) && !isDescendant(map, id, h.id))
       .map(h => h.locations))];
-    // A delegate-only user may create grants, but cannot obtain destructive
-    // object authority by revoking their children. Release and write are
-    // explicitly destructive operations; the root issuer remains administrative.
-    const canDeleteObjects = g.parent === null ||
-      g.operations.includes('write') || g.operations.includes('release');
-    runDeletion(ns, id, action, ids, canDeleteObjects ? g.locations : '',
-      protectedLocations);
+    // Cleanup is issuer authority, independent of the grant's operations.
+    // It treats every grant identically, including the namespace root.
+    runDeletion(ns, id, action, ids, g.locations, protectedLocations);
   }
   function issuerAction(ns, id, secret, action) {
     maybeSweep();
@@ -568,7 +551,7 @@ function createGrants(shared) {
   }
 
   return {DAY, GRANT_COST, OBJECT_COST, PUSH_SUB_COST, OPERATIONS,
-    root, createRoot, createChild, createUser, listUsers, revokeUser,
+    root, createRoot, createChild, createUser, revokeUser,
     rotateRootIssuer, requireUser, requireWrite, recordObject, dropNamespace,
     subscriptionChanged, reloadGrants,
     accountSubscription, authorizeWrite, confirmation, issuerAction, inspect,

@@ -5,6 +5,9 @@ const fs=require('node:fs');
 const path=require('node:path');
 const os=require('node:os');
 const http=require('node:http');
+const {execFile}=require('node:child_process');
+const {promisify}=require('node:util');
+const runCli=promisify(execFile);
 const {createServer}=require('../src/server.js');
 
 const tmp=()=>fs.mkdtempSync(path.join(os.tmpdir(),'skrynia-hardening-'));
@@ -57,18 +60,39 @@ async function run() {
     const root=g.createRoot('audit',100000,100);
     root.userToken=g.createUser('audit',root.id,root.issuerToken).userToken;
     const second=await expect(port,200,'POST',
-      '/grants/'+root.id+'/users?namespace=audit',{label:'guest'},auth(root.issuerToken));
+      '/grants/'+root.id+'/users?namespace=audit',null,auth(root.issuerToken));
     const guest=second.json;
-    await expect(port,400,'POST',
-      '/grants/'+root.id+'/users?namespace=audit',{label:'\n'},auth(root.issuerToken));
     assert.match(guest.userId,/^[a-f0-9]{32}$/);
     assert.match(guest.userToken,/^[a-f0-9]{64}$/);
-    const users=await expect(port,200,'GET','/grants/'+root.id+'/users?namespace=audit',
+    assert.deepEqual(Object.keys(guest).sort(),['grantId','userId','userToken']);
+    await expect(port,400,'POST',
+      '/grants/'+root.id+'/users?namespace=audit',{label:'guest'},auth(root.issuerToken));
+    await expect(port,405,'GET','/grants/'+root.id+'/users?namespace=audit',
       null,auth(root.issuerToken));
-    assert.equal(users.json.users.length,2);
-    assert.equal(users.json.users.find(u=>u.id===guest.userId).label,'guest');
-    assert(!JSON.stringify(users.json).includes(guest.userToken));
-    assert(!JSON.stringify(users.json).includes('hash'));
+    const records=g.listGrants('audit').grants;
+    assert.equal(records.find(x=>x.id===root.id).userCount,2);
+    const rootRecord=JSON.parse(fs.readFileSync(
+      path.join(dir,'state','audit','grants',root.id+'.json'),'utf8'));
+    assert(rootRecord.users.every(u=>
+      Object.keys(u).sort().join(',')==='hash,id'),
+      'Skrynia stores only opaque user IDs and verifiers');
+
+    // The CLI can issue and revoke a token with no request body or metadata.
+    const cliEnv={...process.env,
+      SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',
+      SKRYNIA_ISSUER_TOKEN:root.issuerToken};
+    const cliPath=path.join(__dirname,'..','scripts','cli.py');
+    const {stdout:issuedOutput}=await runCli('python3',
+      [cliPath,'grant','issue-user','--namespace','audit','--grant-id',root.id],
+      {env:cliEnv});
+    const cliUser=JSON.parse(issuedOutput);
+    assert.match(cliUser.userId,/^[a-f0-9]{32}$/);
+    const {stdout:revokedOutput}=await runCli('python3',
+      [cliPath,'grant','revoke-user','--namespace','audit','--grant-id',root.id,
+       '--user-id',cliUser.userId],{env:cliEnv});
+    assert.equal(JSON.parse(revokedOutput).userId,cliUser.userId);
+    await expect(port,403,'POST','/store/audit/cli_revoked','x',
+      grant(cliUser.userToken));
 
     await expect(port,403,'DELETE',
       '/grants/'+root.id+'/users/'+guest.userId+'?namespace=audit',{},auth(guest.userToken));
@@ -92,20 +116,42 @@ async function run() {
     const D=g.createChild('audit',root.userToken,10000,10,'item',['delegate']);
     D.userToken=g.createUser('audit',D.id,D.issuerToken).userToken;
     const E=g.createChild('audit',D.userToken,4096,1,'item',[]);
-    // Authority to delegate cannot be turned into permission to delete data.
+    // Issuer cleanup is independent of operations. Even an empty-operations
+    // grant can revoke its space; ancestors do not protect matching objects.
     await expect(port,200,'DELETE','/grants/'+E.id+'?namespace=audit',
       null,auth(E.issuerToken));
-    assert.equal((await expect(port,200,'GET','/store/audit/item')).text,'survives');
+    await expect(port,404,'GET','/store/audit/item');
+    await expect(port,201,'POST','/store/audit/item','recreated',grant(root.userToken));
+    // A grant with just 'delegate' has exactly the same cleanup power.
     await expect(port,200,'DELETE','/grants/'+D.id+'/space?namespace=audit',
       null,auth(D.issuerToken));
-    assert.equal((await expect(port,200,'GET','/store/audit/item')).text,'survives');
+    await expect(port,404,'GET','/store/audit/item');
+    assert.equal(g.inspect('audit',D.id,D.userToken).id,D.id,
+      'issuer clean reissues the same grant without changing credentials');
 
-    // Grant revocation with 'release' is intentionally destructive.
+    // Revocation with 'release' behaves identically; the operation is
+    // relevant to voting, not to issuer cleanup.
     await expect(port,201,'POST','/store/audit/temp','throwaway',grant(root.userToken));
     const releasing=g.createChild('audit',root.userToken,4096,1,'temp',['release']);
     await expect(port,200,'DELETE','/grants/'+releasing.id+'?namespace=audit',
       null,auth(releasing.issuerToken));
     await expect(port,404,'GET','/store/audit/temp');
+
+    // A release vote also triggers cleanup without granting ordinary write.
+    await expect(port,201,'POST','/store/audit/voteonly','voted',grant(root.userToken));
+    const voting=g.createChild('audit',root.userToken,4096,1,'voteonly',['release']);
+    const voter=g.createUser('audit',voting.id,voting.issuerToken).userToken;
+    await expect(port,200,'POST','/grants/'+voting.id+'/confirmation?namespace=audit',
+      {need:false},auth(voter));
+    const recordPath=path.join(dir,'state','audit','grants',voting.id+'.json');
+    const record=JSON.parse(fs.readFileSync(recordPath,'utf8'));
+    record.nextCheckAt=Math.max(Date.now()+4,record.releaseAt+4);
+    fs.writeFileSync(recordPath,JSON.stringify(record));
+    g.reloadGrants('audit');
+    await new Promise(resolve=>setTimeout(resolve,12));
+    g.sweep();
+    await expect(port,404,'GET','/store/audit/voteonly');
+    assert.equal(g.inspect('audit',voting.id,voter).id,voting.id);
 
     // Use and mutate the incremental index without rescanning the object dir.
     g.usage('audit',root.id);
@@ -129,7 +175,7 @@ async function run() {
       await expect(port,200,'DELETE','/store/audit/key04',null,
         grant(root.userToken));
       const usage=g.usage('audit',root.id);
-      assert.equal(usage.objects,30);
+      assert.equal(usage.objects,29);
     } finally {fs.readdirSync=originalReaddir;}
     const keys=await expect(port,200,'GET','/ns/keys?namespace=audit&prefix=key&limit=5',
       null,auth('admin'));
@@ -169,7 +215,7 @@ async function run() {
     assert.equal(fs.readdirSync(markerDir).filter(x=>x.endsWith('.json')).length,0);
     assert.equal(server.skrynia.push.listOutbox().length,1);
     assert.equal((await expect(port,200,'GET','/store/audit/event')).text,'updated');
-    assert.equal(server.skrynia.grants.usage('audit',root.id).objects,31);
+    assert.equal(server.skrynia.grants.usage('audit',root.id).objects,30);
 
     // Undeploy must remove pending namespace events and commit intents too.
     server.skrynia.push.enqueue('audit','event','create');

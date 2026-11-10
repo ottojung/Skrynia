@@ -42,15 +42,15 @@ Status: normative. This document defines Skrynia's storage model.
 - An issuer token can generate independent user tokens for exactly its own
   grant through POST /grants/{id}/users. Only issuers may mint these tokens,
   regardless of a grant's delegate operation. A grant may have zero users.
-- Grant issuer tokens also authorize recursive grant revocation or cleaning;
-  user tokens never have issuer authority. A non-root grant's issuer may
-  delete physical object values during that operation only if the grant
-  carries `write` or `release`. The `delegate` operation alone cannot
-  be used to manufacture destructive object authority. The namespace
-  root issuer remains fully administrative.
-- The issuer may enumerate its own grant's user credential IDs, labels and
-  creation timestamps, and revoke one user token by ID without deleting
-  data. The management authority may rotate the root issuer token without
+- Grant issuer tokens authorize cleaning or revocation, independent of
+  the grant's `operations`. This rule is identical for every grant,
+  including the root. User tokens never have issuer authority.
+  `delegate` lets a user create a child grant and receive its issuer
+  token; cleaning that child has the same semantics as cleaning any grant.
+- The issuer may revoke an individual user token by the opaque ID returned
+  when it was issued, without deleting objects. Skrynia stores no labels,
+  creation timestamps or user-token index that clients could maintain.
+  The management authority may rotate the root issuer token without
   affecting root user tokens, descendants, or objects. The previous
   issuer credential becomes invalid immediately.
 - An intentionally public user token with `locations: "some_key"` and

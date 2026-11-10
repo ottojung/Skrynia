@@ -108,9 +108,10 @@ If the root issuer token was lost during an interrupted deployment, use
 `ns rotate-issuer` to issue a new root issuer token. This invalidates the
 old issuer credential, without affecting user tokens, grants or objects.
 
-To list, issue or revoke individual user tokens, set
-`SKRYNIA_ISSUER_TOKEN` and use the CLI `grant list-users`,
-`grant issue-user` or `grant revoke-user` commands.
+To issue or revoke individual user tokens, set
+`SKRYNIA_ISSUER_TOKEN` and use the CLI `grant issue-user` or
+`grant revoke-user` commands. Save the returned opaque `userId`
+and any labels in the client; Skrynia does not list or label tokens.
 
 Undeploy removes the app release and its namespace resources.
 
