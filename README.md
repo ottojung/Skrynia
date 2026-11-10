@@ -110,7 +110,8 @@ POST this to `/push/subscriptions` with `X-Skrynia-Grant`. The response
 contains a subscription ID and a separate capability for updating/removing
 that subscription. Skrynia sends a generic `changed` wake-up; clients fetch
 current values. Delivery is durable and at least once, so duplicates are
-possible. Each subscription consumes the sponsoring grant's quotas.
+possible; pending changes coalesce per subscription. Each subscription
+consumes the sponsoring grant's quotas.
 
 ## Architectural properties
 

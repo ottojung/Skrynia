@@ -26,7 +26,16 @@ async function run() {
     await close(server);server=null;
 
     const delivered=[];
-    started=await open(dir,{pushTransport:async sub=>delivered.push(sub.endpoint)});
+    let pauseDelivery=false,release;
+    let entered;
+    const inFlight=new Promise(resolve=>{entered=resolve;});
+    started=await open(dir,{pushTransport:async sub=>{
+      if(pauseDelivery) {
+        pauseDelivery=false;entered();
+        await new Promise(resolve=>{release=resolve;});
+      }
+      delivered.push(sub.endpoint);
+    }});
     server=started.server;p=started.port;
     assert.equal(server.skrynia.grants.root().id,root.id);
     assert.equal((await expect(p,200,'GET','/push/vapid')).json.publicKey,vapid);
@@ -34,6 +43,21 @@ async function run() {
       {delivered:1});
     assert.deepEqual(delivered,['https://push.example.org/test']);
     assert.equal(server.skrynia.push.outboxCount(),0);
+
+    // A mutation racing with an in-flight Web Push delivery must remain
+    // pending instead of being acknowledged by the older delivery.
+    await expect(p,201,'POST','/store/feed.second','two',grant(token));
+    pauseDelivery=true;
+    const sending=server.skrynia.push.pumpOnce();
+    await inFlight;
+    await expect(p,201,'POST','/store/feed.third','three',grant(token));
+    assert.equal(server.skrynia.push.listOutbox()[0].entry.generation,2);
+    release();
+    assert.deepEqual(await sending,{delivered:1});
+    assert.equal(server.skrynia.push.outboxCount(),1,'newer wake-up must survive');
+    assert.deepEqual(await server.skrynia.push.pumpOnce(),{delivered:1});
+    assert.equal(server.skrynia.push.outboxCount(),0);
+
     await expect(p,200,'DELETE','/grants/'+root.id,null,auth(root.rootIssuerToken));
     assert.equal(server.skrynia.push.allSubs().length,0);
     await close(server);server=null;

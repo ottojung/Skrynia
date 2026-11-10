@@ -77,7 +77,7 @@ function createServer(opts={}) {
     if(e.status) return json(res,e.status,{error:e.code});
     if(e.code==='outbox_full'||e.code==='subscriptions_full')
       return json(res,507,{error:e.code});
-    if(['invalid_subscription','subscription_scope_immutable'].includes(e.code))
+    if(e.code==='invalid_subscription')
       return json(res,400,{error:e.code});
     if(['capability_required','invalid_capability'].includes(e.code))
       return json(res,403,{error:e.code});

@@ -53,11 +53,20 @@ async function run() {
     // object mutation into a rollback. The journal is replayed at restart.
     const original=server.skrynia.push.enqueue;
     server.skrynia.push.enqueue=()=>{throw new Error('injected_outbox_failure');};
-    const write=await expect(p,201,'POST','/store/valid.journal','durable',
-      grant(user.userToken));
+    const originalError=console.error;
+    let expectedLog='';
+    console.error=(...args)=>{expectedLog+=String(args[0]);};
+    let write;
+    try {
+      write=await expect(p,201,'POST','/store/valid.journal','durable',
+        grant(user.userToken));
+    } finally {
+      console.error=originalError;
+      server.skrynia.push.enqueue=original;
+    }
+    assert.match(expectedLog,/committed value, pending push outbox/);
     assert.equal(write.json.notificationPending,true);
     assert.equal((await expect(p,200,'GET','/store/valid.journal')).bytes.toString(),'durable');
-    server.skrynia.push.enqueue=original;
     await close(server);server=null;
     started=await open(dir);server=started.server;p=started.port;
     assert.equal((await expect(p,200,'GET','/store/valid.journal')).bytes.toString(),'durable');

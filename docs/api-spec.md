@@ -137,9 +137,9 @@ Creation of new grants and user credentials consumes ancestor metadata budget.
 The `subscribe` operation is required and the subscription location
 matcher must be a subset of the grant's locations. `events` may be omitted,
 defaulting to all three mutation kinds. The server returns `id`,
-`capability`, and `deduped`. One endpoint can be registered once; an
-existing registration may be refreshed with its subscription capability and
-identical scopes/events.
+`capability`, and `deduped`. The same endpoint can have independent
+registrations for different scopes or events. A registration for the same
+endpoint, scope, and events may be refreshed with its own capability.
 
 `PUT /push/subscriptions/{id}` changes an endpoint or cryptographic keys;
 `DELETE /push/subscriptions/{id}` removes it. These two routes require
@@ -147,10 +147,12 @@ identical scopes/events.
 A grant revocation removes subscriptions funded by its subtree.
 
 Subscriptions are private server records. Matching object mutations enqueue
-durable at-least-once notifications. Push messages carry the constant
+durable at-least-once wake-ups, **coalescing multiple pending changes into
+one notification per subscription**. If an update occurs during delivery,
+its newer notification remains pending. Push messages carry the constant
 `changed` and no object data. Delivery is retryable and duplicate wake-ups
-are possible. A full notification outbox rejects the object mutation
-before committing it, with HTTP 507.
+are possible. A full notification outbox rejects a mutation needing new
+entries before committing it, with HTTP 507.
 
 ## Other endpoints
 

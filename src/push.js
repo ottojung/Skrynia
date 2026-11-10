@@ -99,13 +99,13 @@ function createPush(opts={}) {
       throw fault('invalid_subscription');
     }
     const subs=allSubs();
-    const existing=subs.find(s=>s.endpoint===endpoint);
+    const sameEvents=(a,b)=>
+      JSON.stringify([...a].sort())===JSON.stringify([...b].sort());
+    const existing=subs.find(s=>s.endpoint===endpoint&&
+      s.locations===locations&&sameEvents(s.events,events));
     if(existing) {
       if(!existingCapability) throw fault('capability_required');
       if(!safeMatch(existing.capHash,hash(existingCapability))) throw fault('invalid_capability');
-      if(existing.locations!==locations||JSON.stringify([...existing.events].sort())!==JSON.stringify([...events].sort())) {
-        throw fault('subscription_scope_immutable');
-      }
       const capability=randomSecret();
       existing.capHash=hash(capability);
       existing.keys={p256dh:keys.p256dh,auth:keys.auth};
@@ -129,7 +129,11 @@ function createPush(opts={}) {
     if(!safeMatch(sub.capHash,hash(capability||''))) throw fault('invalid_capability');
     if(patch.endpoint!==undefined) {
       if(!validEndpoint(patch.endpoint)) throw fault('invalid_subscription');
-      if(allSubs().some(s=>s.id!==id&&s.endpoint===patch.endpoint)) throw fault('endpoint_in_use');
+      if(allSubs().some(s=>s.id!==id&&s.endpoint===patch.endpoint&&
+        s.locations===sub.locations&&
+        JSON.stringify([...s.events].sort())===JSON.stringify([...sub.events].sort()))) {
+        throw fault('endpoint_in_use');
+      }
       sub.endpoint=patch.endpoint;
     }
     if(patch.keys!==undefined) {
@@ -161,23 +165,28 @@ function createPush(opts={}) {
   function outboxCount() {
     return fs.existsSync(outboxDir)?fs.readdirSync(outboxDir).filter(x=>x.endsWith('.json')).length:0;
   }
+  // A notification is a wake-up to reread current state. One durable
+  // pending wake-up per subscription is sufficient, even if its endpoint
+  // remains offline while thousands of mutations occur.
+  function notificationPath(subId) {return path.join(outboxDir,subId+'.json');}
   function preflight(key,kind) {
-    const count=matching(key,kind).length;
-    if(outboxCount()+count>maxOutbox) throw fault('outbox_full');
-    return count;
+    const needed=matching(key,kind).filter(s=>!fs.existsSync(notificationPath(s.id))).length;
+    if(outboxCount()+needed>maxOutbox) throw fault('outbox_full');
+    return needed;
   }
   function enqueue(key,kind) {
     const subscribers=matching(key,kind);
-    if(outboxCount()+subscribers.length>maxOutbox) throw fault('outbox_full');
-    const ids=[];
+    const needed=subscribers.filter(s=>!fs.existsSync(notificationPath(s.id))).length;
+    if(outboxCount()+needed>maxOutbox) throw fault('outbox_full');
     for(const sub of subscribers) {
-      const id=randomId();
-      atomicJson(path.join(outboxDir,id+'.json'),
-        {id,subscriptionId:sub.id,key,kind,attempts:0,nextAt:0});
-      ids.push(id);
+      const file=notificationPath(sub.id);
+      const pending=readJson(file);
+      if(pending&&pending.subscriptionId!==sub.id) throw new Error('corrupt push outbox');
+      atomicJson(file,{subscriptionId:sub.id,
+        generation:(pending?.generation||0)+1,attempts:0,nextAt:0});
     }
-    if(ids.length) schedule();
-    return ids;
+    if(subscribers.length) schedule();
+    return subscribers.map(s=>s.id);
   }
   function listOutbox() {
     if(!fs.existsSync(outboxDir)) return [];
@@ -199,26 +208,30 @@ function createPush(opts={}) {
   }
   async function pumpOnce({ignoreBackoff=false}={}) {
     let delivered=0;
-    for(const {file,entry} of listOutbox()) {
+    for(const {file} of listOutbox()) {
       const fresh=readJson(file);
       if(!fresh) continue;
       if(!ignoreBackoff&&fresh.nextAt>Date.now()) continue;
       const sub=findSub(fresh.subscriptionId);
-      if(!sub) {
-        fs.unlinkSync(file);continue;
-      }
+      if(!sub) {fs.unlinkSync(file);continue;}
       try {
         await sendBounded(sub);delivered++;
-        fs.unlinkSync(file);
+        const current=readJson(file);
+        // A store mutation may have enqueued a newer wake-up while the
+        // network send was in flight. Never acknowledge that generation.
+        if(current&&current.generation===fresh.generation) fs.unlinkSync(file);
       } catch(e) {
-        if(isGoneError(e)) {
-          removeSubIfUnchanged(sub);
+        if(isGoneError(e)) removeSubIfUnchanged(sub);
+        const current=readJson(file);
+        if(!current) continue;
+        if(!findSub(fresh.subscriptionId)) {
           fs.unlinkSync(file);
-        } else {
-          fresh.attempts++;
-          fresh.nextAt=Date.now()+backoffMs(fresh.attempts);
-          atomicJson(file,fresh);
+        } else if(current.generation===fresh.generation) {
+          const attempts=isGoneError(e)?0:fresh.attempts+1;
+          atomicJson(file,{...current,attempts,
+            nextAt:isGoneError(e)?0:Date.now()+backoffMs(attempts)});
         }
+        // A newer generation has reset its own backoff; leave it untouched.
       }
     }
     return {delivered};
