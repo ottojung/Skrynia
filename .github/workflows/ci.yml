@@ -65,7 +65,7 @@ jobs:
             --read-only \
             --tmpfs /tmp \
             --tmpfs /var/lib/skrynia \
-            --network host \
+            -p 127.0.0.1:17380:17380 \
             --env SKRYNIA_URL=http://127.0.0.1:17380/platform \
             ghcr.io/ottojung/skrynia:latest
           trap 'docker rm -f skrynia-smoke >/dev/null 2>&1 || true' EXIT

@@ -22,19 +22,25 @@ A child grant's locations must select a subset of its parent's matched keys.
 
 | HTTP method | Path | Semantics |
 | --- | --- | --- |
-| GET | /store/{key} | Public raw bytes and a strong ETag; 404 if absent |
+| GET / HEAD | /store/{key} | Public raw bytes or metadata, strong ETag, conditional / range reads; 404 if absent |
 | GET | /store?locations={matcher} | List matching keys, requires a user token with `list` |
 | POST | /store/{key} | Create if absent; requires `create` and authorized user token; 201 or 409 |
 | PUT | /store/{key} | Replace if present; requires `modify` and authorized user token; 200 or 404 |
 | DELETE | /store/{key} | Delete if present; requires `delete` and authorized user token; 200 or 404 |
 
-Mutations and listings use `X-Skrynia-Grant: <user-token>`. Both PUT and DELETE accept an
+Mutations and listings use `Authorization: Bearer <user-token>`. Both PUT and DELETE accept an
 optional `If-Match: "<etag>"` and return HTTP 412 if the current ETag
 does not match. The strong ETag changes on every successful object mutation,
 including an identical-byte PUT and deletion followed by recreation.
 Objects are files under `SKRYNIA_DATA_DIR/store/{key}`; the server's ETag
 is in nginx's `"hex-mtime-seconds-hex-size"` format. Storage journals and
 temporary files live outside the public store.
+
+GET supports `If-None-Match` (304 without body), and `HEAD` returns
+metadata without the object body. Single-range GET requests (`Range:
+bytes=start-end`), including suffix ranges, return 206 with `Content-Range`,
+or 416 for unsatisfiable ranges. A matching strong `If-Range` ETag authorizes
+a partial response; a stale validator returns the full current object.
 
 The GET response uses the filename extension to select common browser MIME
 types (including `.html`, `.js`, `.mjs`, `.css`, `.json`, `.svg`,
@@ -51,13 +57,19 @@ preserves the existing object. The request/body maximum
 
 `GET /store?locations=alice.*` returns JSON like
 `{"keys":["alice.app.js","alice.index.html"]}`. The requester supplies
-its user token in `X-Skrynia-Grant`; the server checks the `list` operation
+its user token in `Authorization: Bearer`; the server checks the `list` operation
 and requires `locations` to be a non-strict subset of the token's grant
 scope. Exact matches, prefix matchers, `*` (all), and the empty matcher
 (no keys) follow the same grammar as grant locations.
 
 Keys are sorted, and every currently stored object matching the supplied
-matcher is returned, **regardless of which grant created it**. Replacement
+matcher is returned, **regardless of which grant created it**. Optional
+`limit` (integer, 1–1000) and `after` (exclusive key cursor) parameters
+allow bounded listing. A non-final page includes `next` holding the last
+returned key; request the next page with `after=<next>`. Without `limit`,
+the endpoint retains its all-matches response behavior. Pagination does not
+create a snapshot across requests; concurrent insertions before the cursor
+may be missed. Use manifests for consistent histories. Replacement
 and deletion immediately affect the result. A missing, duplicated, or
 invalid matcher yields HTTP 400; a matcher outside the caller's authority
 yields HTTP 403. Listing is not available to anonymous callers. There is
@@ -162,7 +174,7 @@ Creation of new grants and user credentials consumes ancestor metadata budget.
 
 `GET /push/vapid` returns the server's public VAPID key.
 
-`POST /push/subscriptions`, with `X-Skrynia-Grant: <user-token>`:
+`POST /push/subscriptions`, with `Authorization: Bearer <user-token>`:
 
 ```json
 {
@@ -191,7 +203,10 @@ one notification per subscription**. If an update occurs during delivery,
 its newer notification remains pending. Push messages carry the constant
 `changed` and no object data. Delivery is retryable and duplicate wake-ups
 are possible. A full notification outbox rejects a mutation needing new
-entries before committing it, with HTTP 507.
+entries before committing it, with HTTP 507. Deliveries have configurable
+timeouts and bounded concurrency (default eight simultaneous sends).
+Endpoints must use HTTPS; outbound DNS answers are validated and pinned
+to publicly routable addresses.
 
 ## Other endpoints
 

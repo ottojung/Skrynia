@@ -55,7 +55,7 @@ Examples include `index.html`, `alice.app.js`, `alice.settings.json`.
 
 ```sh
 curl -fsS -X POST "$SKRYNIA_URL/store/alice.index.html" \
-  -H "X-Skrynia-Grant: $ROOT_USER_TOKEN" \
+  -H "Authorization: Bearer $ROOT_USER_TOKEN" \
   --data-binary '<h1>Hello</h1>'
 
 # Anybody can read it. The response includes an ETag.
@@ -64,7 +64,7 @@ curl -i "$SKRYNIA_URL/store/alice.index.html"
 
 `POST` creates only if absent and requires `create`; `PUT` replaces an
 existing object and requires `modify`; `DELETE` requires `delete`.
-`PUT` and `DELETE` support `If-Match` for compare-and-swap.
+`PUT` and `DELETE` support `If-Match` for compare-and-swap.\nGET supports conditional `If-None-Match`, HEAD and byte ranges; `list`\nsupports optional `limit` / `after` pagination.
 Grants can delegate these permissions independently—for example, `create`
 without `modify` or `delete` lets a contributor add new keys but not
 rewrite or remove existing entries.
@@ -73,7 +73,7 @@ A grant with `list` can enumerate all objects in any matching subrange:
 
 ```sh
 curl -fsS "$SKRYNIA_URL/store?locations=alice.*" \
-  -H "X-Skrynia-Grant: $ROOT_USER_TOKEN"
+  -H "Authorization: Bearer $ROOT_USER_TOKEN"
 ```
 
 Results are sorted keys, regardless of who created them. A listing needs
@@ -124,7 +124,7 @@ location scope contained in its own grant:
 }
 ```
 
-POST this to `/push/subscriptions` with `X-Skrynia-Grant`. The response
+POST this to `/push/subscriptions` with `Authorization: Bearer`. The response
 contains a subscription ID and a separate capability for updating/removing
 that subscription. Skrynia sends a generic `changed` wake-up; clients fetch
 current values. Delivery is durable and at least once, so duplicates are
