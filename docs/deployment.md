@@ -50,13 +50,19 @@ It creates a root grant for the namespace if necessary, with:
 - maxBytes = quota parameter (or configured default)
 - maxObjects = maxObjects parameter (or configured default)
 
-Its one-time rootGrant response contains user and issuer tokens. Preserve
-them in your secrets store. Subsequent deployments return only its ID and
-do not expose credentials again. Root authority remains unchanged between
-deployments.
+Its one-time rootGrant response contains the root grant ID and its
+**issuer token**, but no user token. Preserve the issuer credential in a
+secrets store. Subsequent deployments return only the ID.
 
-The GitHub deploy action exports the one-time root tokens as secret masked
-root-user-token and root-issuer-token outputs.
+To obtain a root user token, call POST /grants/{id}/users?namespace=myapp
+with \`Authorization: Bearer <root-issuer-token>\`. You can issue as many
+distinct user tokens as the grant's resource allowance permits. Only the
+issuer can do this; the \`delegate\` operation controls creation of child
+grants, not user-token issuance.
+
+The GitHub deploy action masks and exports root-grant-id and
+root-issuer-token outputs. Use the issuer token to mint user credentials
+separately.
 
 ## Issuing authority to the application
 

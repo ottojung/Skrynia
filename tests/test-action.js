@@ -202,6 +202,57 @@ async function test_successful_deploy() {
 }
 
 
+async function test_issuer_only_first_deploy() {
+  const issuer='a'.repeat(64);
+  const id='b'.repeat(32);
+  const srv=await startServer(function(_req,res) {
+    res.writeHead(200,{'Content-Type':'application/json'});
+    res.end(JSON.stringify({
+      ok:true,release:'issued',
+      rootGrant:{created:true,id,issuerToken:issuer}
+    }));
+  });
+  try {
+    const r=await run({
+      INPUT_NAMESPACE:'example',
+      INPUT_TOKEN:TOKEN,
+      'INPUT_SKRYNIA-URL':'http://127.0.0.1:'+srv.port+'/platform',
+      INPUT_REPO:'git@github.com:example/app.git',
+      INPUT_COMMIT:'aabbccddeeff0011223344556677889900112233',
+    });
+    assert(r.exit===0,'root first deploy action succeeds: '+r.stderr);
+    assert(r.outputs['root-grant-id']===id,'grant id exposed');
+    assert(r.outputs['root-issuer-token']===issuer,'issuer secret output');
+    assert(!Object.hasOwn(r.outputs,'root-user-token'),'no user token output');
+    assert(r.stdout.includes('::add-mask::'+issuer),'issuer secret masked');
+    assert(!r.stderr.includes(issuer),'issuer not exposed in errors');
+    pass++; console.log('  issuer_only_first_deploy ... ok');
+  } finally {await stopServer(srv.server);}
+}
+
+async function test_missing_root_issuer() {
+  const srv=await startServer(function(_req,res) {
+    res.writeHead(200,{'Content-Type':'application/json'});
+    res.end(JSON.stringify({
+      ok:true,release:'missing-issuer',
+      rootGrant:{created:true,id:'b'.repeat(32)}
+    }));
+  });
+  try {
+    const r=await run({
+      INPUT_NAMESPACE:'example',
+      INPUT_TOKEN:TOKEN,
+      'INPUT_SKRYNIA-URL':'http://127.0.0.1:'+srv.port+'/platform',
+      INPUT_REPO:'git@github.com:example/app.git',
+      INPUT_COMMIT:'aabbccddeeff0011223344556677889900112233',
+    });
+    assert(r.exit!==0,'missing issuer must reject deployment');
+    assert(r.stderr.includes('valid root issuer token'),'clear issuer error');
+    assert(!Object.hasOwn(r.outputs,'root-user-token'),'never outputs user tokens');
+    pass++; console.log('  missing_root_issuer ... ok');
+  } finally {await stopServer(srv.server);}
+}
+
 async function test_root_url_deploy() {
   var srv = await startServer(function (req, res) {
     var url = new URL(req.url, 'http://localhost');
@@ -359,6 +410,8 @@ fs.mkdirSync(TMP, { recursive: true });
     test_explicit_timeout,
     test_invalid_timeout,
     test_successful_deploy,
+    test_issuer_only_first_deploy,
+    test_missing_root_issuer,
     test_root_url_deploy,
     test_default_repo_from_github_repository,
     test_http_error,

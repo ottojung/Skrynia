@@ -167,12 +167,13 @@ async function deploy() {
   }
 
   if (data.rootGrant && data.rootGrant.created) {
-    const {userToken, issuerToken} = data.rootGrant;
-    // GitHub Actions masking must precede any outputs/logging.
-    console.log('::add-mask::' + userToken);
+    const {issuerToken} = data.rootGrant;
+    if (typeof issuerToken !== 'string' || !/^[a-f0-9]{64}$/.test(issuerToken)) {
+      fail('Deployment response did not include a valid root issuer token');
+    }
+    // Mask the issuer credential before exporting the one-time output.
     console.log('::add-mask::' + issuerToken);
     setOutput('root-grant-id', data.rootGrant.id);
-    setOutput('root-user-token', userToken);
     setOutput('root-issuer-token', issuerToken);
   }
 

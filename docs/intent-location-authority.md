@@ -29,14 +29,20 @@ Status: normative. This document defines Skrynia's storage model.
 - A namespace root defaults to all operations.
 - A child with no `operations` field inherits its parent's operations. An
   explicit child set must be a subset of its parent's. A user token can create
-  subgrants and issue peer user tokens only when its grant has `delegate`.
+  subgrants only when its grant has `delegate`.
 - `write` authorizes create, replace, and delete of matching object keys,
   and is always checked for all three mutations.
 - `keep` permits `need:true` retention confirmation; `release` permits
   `need:false`. `subscribe` permits browser PushSubscription creation.
 - Object reads are public and have no required operation; nginx may serve
   objects directly. No object-specific write authority exists.
-- Grant issuer tokens separately authorize unconditional recursive revocation
+- Grant creation, including issuance of a namespace root, generates an
+  issuer token but no user tokens. The issuer token is the only credential
+  returned by grant creation.
+- An issuer token can generate independent user tokens for exactly its own
+  grant through POST /grants/{id}/users. Only issuers may mint these tokens,
+  regardless of a grant's delegate operation. A grant may have zero users.
+- Grant issuer tokens also authorize unconditional recursive revocation
   or cleaning; user tokens never have issuer authority.
 - An intentionally public user token with `locations: "some_key"` and
   `operations: ["write"]` provides public write authority only for that key.

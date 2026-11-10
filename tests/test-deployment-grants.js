@@ -74,13 +74,18 @@ async function verify() {
     assert.equal(initial.locations,'demo*');
     assert.deepEqual(initial.operations,['write','delegate']);
     assert.equal(initial.maxBytes,16000);
-    assert.match(initial.userToken,/^[a-f0-9]{64}$/);
+    assert.equal(initial.userToken,undefined);
     assert.match(initial.issuerToken,/^[a-f0-9]{64}$/);
+    r=await get(port,'/grants/'+initial.id+'/users?namespace=demo','POST',null,
+      {Authorization:'Bearer '+initial.issuerToken});
+    assert.equal(r.status,200,'issuer can mint first user token: '+r.raw);
+    const rootUserToken=r.json.userToken;
+    assert.match(rootUserToken,/^[a-f0-9]{64}$/);
     r=await get(port,'/store/demo/demo1','POST','first',
-      {'X-Skrynia-Grant':initial.userToken});
+      {'X-Skrynia-Grant':rootUserToken});
     assert.equal(r.status,201);
     r=await get(port,'/store/demo/outside1','POST','blocked',
-      {'X-Skrynia-Grant':initial.userToken});
+      {'X-Skrynia-Grant':rootUserToken});
     assert.equal(r.status,403);
     r=await get(port,'/store/demo/demo1');
     assert.equal(r.status,200);

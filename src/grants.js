@@ -98,7 +98,7 @@ function createGrants(shared) {
           !Array.isArray(g.operations) ||
           g.operations.some(op => !OPERATIONS.includes(op)) ||
           !boundedInteger(g.maxBytes) || !boundedInteger(g.maxObjects) ||
-          !Array.isArray(g.userHashes) || g.userHashes.length === 0) {
+          !Array.isArray(g.userHashes)) {
         throw new Error('invalid grant record');
       }
       if (g.parent === null) roots.push(g);
@@ -185,7 +185,7 @@ function createGrants(shared) {
     }
     for (const h of map.values()) {
       if (!isDescendant(map, h.id, g.id)) continue;
-      bytes += GRANT_COST + (h.userHashes.length - 1) * EXTRA_USER_COST;
+      bytes += GRANT_COST + Math.max(0, h.userHashes.length - 1) * EXTRA_USER_COST;
     }
     for (const sub of subscriptions) {
       if (!sub.data.grantId || !map.has(sub.data.grantId)) {
@@ -245,16 +245,16 @@ function createGrants(shared) {
   }
 
   function makeRecord(ns, parent, maxBytes, maxObjects, locations, operations) {
-    const issuerToken = token(), userToken = token(), now = Date.now();
+    const issuerToken = token(), now = Date.now();
     const id = crypto.randomBytes(16).toString('hex');
     const record = {id, namespace:ns, parent, maxBytes, maxObjects, locations,
-      operations, issuerHash:digest(issuerToken), userHashes:[digest(userToken)],
+      operations, issuerHash:digest(issuerToken), userHashes:[],
       windowStart:now, nextCheckAt:now + DAY, keepAt:null, releaseAt:null};
     if (Buffer.byteLength(JSON.stringify(record)) > GRANT_COST) {
       throw new Error('grant record exceeds charged bytes');
     }
     atomicJson(recordPath(ns, id), record);
-    return {id, issuerToken, userToken, maxBytes, maxObjects, locations,
+    return {id, issuerToken, maxBytes, maxObjects, locations,
       operations, nextCheckAt:record.nextCheckAt};
   }
   function limits(maxBytes, maxObjects) {
@@ -287,12 +287,13 @@ function createGrants(shared) {
   }
   function createUser(ns, id, secret) {
     sweep();
-    const g = requireUser(ns, secret, id);
-    requireOperation(g, 'delegate');
-    assertCapacity(ns, g.id, EXTRA_USER_COST, 0);
+    const g = requireIssuer(ns, id, secret);
+    // A grant is issued with no users. The base grant cost reserves room for
+    // its first user token; subsequent users consume additional allowance.
+    if (g.userHashes.length !== 0) assertCapacity(ns, g.id, EXTRA_USER_COST, 0);
     const userToken = token();
     g.userHashes.push(digest(userToken));
-    const cost = GRANT_COST + (g.userHashes.length - 1) * EXTRA_USER_COST;
+    const cost = GRANT_COST + Math.max(0, g.userHashes.length - 1) * EXTRA_USER_COST;
     if (Buffer.byteLength(JSON.stringify(g)) > cost) throw new Error('grant metadata exceeds charged bytes');
     atomicJson(recordPath(ns, id), g);
     return {grantId:id, userToken};
