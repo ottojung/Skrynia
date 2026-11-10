@@ -71,22 +71,47 @@ async function testHttp() {
     assert.equal(root.locations,'*');
     assert.deepEqual(root.operations,['write','delegate','keep','release','subscribe']);
     assert.equal(engine.createRoot('forum',120000,100).created,false);
+    assert.equal(root.userToken,undefined,'creation must return issuer token only');
+    assert.equal(engine.usage('forum',root.id).bytes,2048,'unassigned grant has base cost');
 
     await demand(port,401,'POST','/store/forum/report1','x');
     await demand(port,401,'POST','/grants',{namespace:'forum',maxBytes:3500,maxObjects:5});
+    await demand(port,403,'POST','/grants/'+root.id+'/users?namespace=forum');
+    const firstUser = await demand(port,200,'POST',
+      '/grants/'+root.id+'/users?namespace=forum',null,user(root.issuerToken));
+    root.userToken=firstUser.json.userToken;
+    assert.match(root.userToken,/^[a-f0-9]{64}$/);
+    assert.equal(engine.inspect('forum',root.id,root.userToken).userCount,1);
+    assert.equal(engine.usage('forum',root.id).bytes,2048,'first user included in grant metadata');
+    const tiny=engine.createRoot('tiny',2048,1);
+    await demand(port,200,'POST','/grants/'+tiny.id+'/users?namespace=tiny',
+      null,user(tiny.issuerToken));
+    await demand(port,507,'POST','/grants/'+tiny.id+'/users?namespace=tiny',
+      null,user(tiny.issuerToken));
+    await demand(port,403,'POST','/grants/'+root.id+'/users?namespace=forum',
+      null,user(root.userToken));
+    await demand(port,403,'POST','/grants/'+root.id+'/users?namespace=forum',
+      null,user('f'.repeat(64)));
     await demand(port,400,'POST','/store/forum/invalid-name','x',grant(root.userToken));
     await demand(port,400,'POST','/store/forum/a%2Ab','x',grant(root.userToken));
     await demand(port,400,'POST','/store/forum/a%3Ab','x',grant(root.userToken));
     await demand(port,400,'POST','/store/forum/a%5Cb','x',grant(root.userToken));
 
-    const newGrant = (p,token,params)=>demand(p,200,'POST','/grants',
-      {namespace:'forum',maxBytes:params.maxBytes,maxObjects:params.maxObjects,
-       ...(params.locations===undefined?{}:{locations:params.locations}),
-       ...(params.operations===undefined?{}:{operations:params.operations})},user(token));
+    const newGrant = async (p,token,params)=>{
+      const issued=await demand(p,200,'POST','/grants',
+        {namespace:'forum',maxBytes:params.maxBytes,maxObjects:params.maxObjects,
+         ...(params.locations===undefined?{}:{locations:params.locations}),
+         ...(params.operations===undefined?{}:{operations:params.operations})},user(token));
+      assert.equal(issued.json.userToken,undefined,'child issuance returns no user token');
+      assert.match(issued.json.issuerToken,/^[a-f0-9]{64}$/);
+      const minted=await demand(p,200,'POST','/grants/'+issued.json.id+'/users?namespace=forum',
+        null,user(issued.json.issuerToken));
+      return {json:{...issued.json,userToken:minted.json.userToken}};
+    };
     const A=(await newGrant(port,root.userToken,
       {maxBytes:3560,maxObjects:5,locations:'report*',operations:['write','delegate']})).json;
     const B=(await newGrant(port,root.userToken,
-      {maxBytes:4560,maxObjects:5,locations:'report*',operations:['write']})).json;
+      {maxBytes:4688,maxObjects:5,locations:'report*',operations:['write']})).json;
 
     assert.equal(A.locations,'report*');
     assert.deepEqual(A.operations,['write','delegate']);
@@ -102,6 +127,15 @@ async function testHttp() {
     await demand(port,400,'POST','/grants',
       {namespace:'forum',maxBytes:2048,maxObjects:1,operations:['write','write']},user(root.userToken));
     await demand(port,403,'POST','/grants/'+B.id+'/users?namespace=forum',null,user(B.userToken));
+    await demand(port,403,'POST','/grants/'+A.id+'/users?namespace=forum',null,user(A.userToken));
+    await demand(port,403,'POST','/grants/'+B.id+'/users?namespace=forum',null,user(root.issuerToken));
+    // The issuer may mint users even if the grant has no 'delegate' operation.
+    const secondBUser=await demand(port,200,'POST',
+      '/grants/'+B.id+'/users?namespace=forum',null,user(B.issuerToken));
+    assert.notEqual(secondBUser.json.userToken,B.userToken);
+    assert.equal(engine.inspect('forum',B.id,B.userToken).userCount,2);
+    // Revoke the extra credential's capacity charge by restricting future test
+    // budgets to the first user only: use the main B token after verifying issuance.
     await demand(port,403,'POST','/grants/'+B.id+'/confirmation?namespace=forum',
       {need:true},user(B.userToken));
 
@@ -111,7 +145,7 @@ async function testHttp() {
     assert.equal(g.body.length,2000);
     assert(!fs.existsSync(path.join(dir,'store-meta')),'object metadata is unnecessary');
     assert.equal(engine.usage('forum',A.id).bytes,2048+512+2000);
-    assert.equal(engine.usage('forum',B.id).bytes,2048+512+2000);
+    assert.equal(engine.usage('forum',B.id).bytes,2048+512+2000+128);
     await demand(port,507,'PUT','/store/forum/report1','a'.repeat(1500),
       {...grant(A.userToken),'If-Match':g.etag});
     assert.equal((await demand(port,200,'GET','/store/forum/report1')).body.length,2000);
@@ -210,7 +244,10 @@ async function testRecovery() {
     ({server,port}=await open(dir));
     const g=server.skrynia.grants;
     const root=g.createRoot('recovery',20000,20);
+    root.userToken=g.createUser('recovery',root.id,root.issuerToken).userToken;
     const child=g.createChild('recovery',root.userToken,9000,10,'logs*',['write','keep']);
+    assert.equal(child.userToken,undefined);
+    child.userToken=g.createUser('recovery',child.id,child.issuerToken).userToken;
     await demand(port,201,'POST','/store/recovery/logs1','data',grant(child.userToken));
     const marker=path.join(dir,'state','_grant-deletions','recovery-'+child.id+'.json');
     fs.mkdirSync(path.dirname(marker),{recursive:true});

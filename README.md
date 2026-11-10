@@ -44,14 +44,23 @@ python3 scripts/cli.py deploy \
 
 Set `APP_COMMIT` to the full commit SHA from the app repository (for example, `git rev-parse HEAD` there). The app is published at `/apps/hello/` by default. Later deployments replace the active release without discarding its storage; earlier releases remain available for rollback.
 
-**On the first deployment**, Skrynia also issues the namespace's **root grant**, returning its ID and two secrets:
+**On the first deployment**, Skrynia issues the namespace's **root grant**,
+returning its ID and **issuer token only**. Store that credential securely;
+subsequent deployments do not reveal it. The
+[GitHub deployment action](action/deploy/action.yml) exports the one-time
+issuer token as a masked output.
 
-| Credential | What it allows |
-| --- | --- |
-| **User token** | Use the grant's permitted operations, including writing and delegating |
-| **Issuer token** | Clean or revoke the grant and its descendants |
+An issuer token can **mint user tokens**, **clean** the grant, or **revoke** it.
+User tokens exercise the grant's permitted operations; they cannot issue
+other user tokens. To mint the first root user token:
 
-Save these secrets securely when they first appear; they are not returned on subsequent deployments. The [GitHub deployment action](action/deploy/action.yml) can deploy a commit and exposes the one-time root credentials as masked outputs.
+```sh
+curl -sS -X POST "$SKRYNIA_URL/grants/$ROOT_GRANT_ID/users?namespace=hello" \
+  -H "Authorization: Bearer $ROOT_ISSUER_TOKEN"
+```
+
+The response contains a `userToken`. Save it as `ROOT_USER_TOKEN` for
+delegation and writing values.
 
 ## Give an app permission to write
 
@@ -70,7 +79,15 @@ curl -sS -X POST "$SKRYNIA_URL/grants" \
   }'
 ```
 
-The response contains the new grant's `userToken` and `issuerToken`. Using that **user token**:
+Grant creation returns the new grant's ID and **issuer token**, but no
+user token. Issue one separately:
+
+```sh
+curl -sS -X POST "$SKRYNIA_URL/grants/$NOTES_GRANT_ID/users?namespace=hello" \
+  -H "Authorization: Bearer $NOTES_ISSUER_TOKEN"
+```
+
+Save the returned `userToken` as `NOTES_USER_TOKEN`. Using that user token:
 
 ```sh
 # Create a value.

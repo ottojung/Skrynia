@@ -127,12 +127,15 @@
     var query = '?namespace=' + encodeURIComponent(ns);
     return {
       inspect: function() { return grantRequest('GET', base + query, userToken); },
-      createUser: function() { return grantRequest('POST', base + '/users' + query, userToken); },
       confirm: function(need) {
         return grantRequest('POST', base + '/confirmation' + query, userToken,
           {need:need});
       }
     };
+  };
+  SkryniaClient.prototype.issueUser = function(ns, id, issuerToken) {
+    return grantRequest('POST', '/grants/' + encodeURIComponent(id) +
+      '/users?namespace=' + encodeURIComponent(ns), issuerToken);
   };
   SkryniaClient.prototype.cleanGrant = function(ns, id, issuerToken) {
     return grantRequest('DELETE', '/grants/' + encodeURIComponent(id) +

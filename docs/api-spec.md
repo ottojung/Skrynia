@@ -22,12 +22,14 @@ after building and validating the static application. Parameters:
 - builder: optional builder image override
 
 The first successful deployment returns rootGrant.id, rootGrant.issuerToken,
-rootGrant.userToken, rootGrant.locations, rootGrant.operations, the budget
-limits and nextCheckAt. These credentials are returned once. Re-deployment
-retains its root grant and does not reissue or reveal the credentials.
+rootGrant.locations, rootGrant.operations, the budget limits and nextCheckAt.
+The issuer token is returned once. No user tokens are created during
+deployment. Re-deployment retains the root grant without revealing its
+issuer credential again.
 
-The GitHub deployment action securely masks one-time credentials and exports
-root-grant-id, root-user-token and root-issuer-token outputs.
+The GitHub deployment action masks the issuer token and exports
+root-grant-id and root-issuer-token outputs. The issuer may then create
+user tokens using POST /grants/{id}/users.
 
 ## Keys
 
@@ -56,15 +58,16 @@ No escaping, separators, alternative patterns, or arbitrary expressions exist.
 ## Grants
 
 A grant has an immutable namespace, ID, parent ID (null for root),
-locations, operations, maxBytes, maxObjects, issuer-token verifier and at
-least one user-token verifier. Grant state also contains voting timestamps.
+locations, operations, maxBytes, maxObjects, issuer-token verifier and
+zero or more user-token verifiers. A new grant has no users. Grant state
+also contains voting timestamps.
 
 Valid operations:
 
 | Operation | Authority |
 |---|---|
 | write | Create, replace, or delete objects at permitted locations |
-| delegate | Create subgrants and issue additional user tokens |
+| delegate | Create subgrants through this grant's user tokens |
 | keep | Submit need:true |
 | release | Submit need:false |
 | subscribe | Create a browser push subscription |
@@ -92,15 +95,27 @@ Content-Type: application/json
 }
 ~~~
 
-Returns an ID, issuerToken, userToken, locations, operations, resource maxima,
-and nextCheckAt. maxBytes/maxObjects must be positive safe integers.
-Neither limit reserves capacity in the parent. Grant metadata itself consumes
-the parent's available byte budget.
+Returns an ID, **issuerToken**, locations, operations, resource maxima
+and nextCheckAt. No user token is generated or returned. The issuer token
+must be retained securely; it authorizes issuance of user tokens and
+unconditional cleaning/revocation.
+
+maxBytes/maxObjects must be positive safe integers. Neither limit reserves
+capacity in the parent. Grant metadata itself consumes the parent's budget.
 
 ### POST /grants/{id}/users?namespace=forum
 
-Requires a user token for exactly that grant and the delegate operation.
-Issues one new peer user token under the same grant, charging metadata cost.
+~~~http
+POST /grants/<grant-id>/users?namespace=forum
+Authorization: Bearer <grant-issuer-token>
+~~~
+
+Requires the **issuer token of that exact grant**. Returns
+`{"grantId":"...","userToken":"..."}`. Every call issues a distinct user
+token with the operations specified by the grant, even if the grant lacks
+`delegate`. A user token cannot issue other user tokens. The first token
+fits within the grant's base metadata charge; subsequent tokens consume
+additional metadata allowance.
 
 ### GET /grants/{id}?namespace=forum
 
