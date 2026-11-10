@@ -157,6 +157,10 @@ includes objects created by other grants. Applications can use a grant
 scoped to `events.*` to discover event entries without maintaining a
 second shared index.
 
+Listings return at most 1000 keys per request by default. Follow the
+returned `next` cursor until no continuation is present. Multiple pages
+do not provide a consistent snapshot while keys are changing.
+
 One event can be one object named `events.<unique-id>`; its bytes hold
 the event or a pointer to a payload. Each contributor creates an entry
 with `POST` (`create` authority; create-if-absent), so independent contributions need not

@@ -52,6 +52,16 @@ and `X-Content-Type-Options: nosniff`.
 Object writes commit atomically per key. A failed conditional mutation
 preserves the existing object. The request/body maximum
 (`SKRYNIA_MAX_OBJECT_SIZE`, default 10 MiB) is independent of grant quota.
+The server also bounds aggregate in-progress buffered uploads
+(`SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES`, default 40 MiB) and HTTP connections
+(`SKRYNIA_MAX_CONNECTIONS`, default 512). Uploads exceeding the process
+buffer limit receive HTTP 503. Public reads stream from a pinned file
+descriptor rather than copying the entire object into memory.
+
+**nginx ETag compatibility is mandatory:** the original whole-second mtime
+sequence and the standard nginx `"hex-mtime-seconds-hex-size"` ETag format
+are unchanged. High write rates can move stored mtimes ahead of wall time;
+clients must treat ETags as opaque validators.
 
 ### Scoped key listing
 
@@ -66,8 +76,9 @@ Keys are sorted, and every currently stored object matching the supplied
 matcher is returned, **regardless of which grant created it**. Optional
 `limit` (integer, 1–1000) and `after` (exclusive key cursor) parameters
 allow bounded listing. A non-final page includes `next` holding the last
-returned key; request the next page with `after=<next>`. Without `limit`,
-the endpoint retains its all-matches response behavior. Pagination does not
+returned key; request the next page with `after=<next>`. Without a `limit`,
+the server returns at most 1000 keys per page; clients must follow `next`
+to enumerate larger ranges. Pagination does not
 create a snapshot across requests; concurrent insertions before the cursor
 may be missed. Use manifests for consistent histories. Replacement
 and deletion immediately affect the result. A missing, duplicated, or

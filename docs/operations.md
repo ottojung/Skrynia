@@ -13,6 +13,8 @@ The HTTP API does not contain special administrative endpoints.
 | SKRYNIA_DATA_DIR | /var/lib/skrynia | Persistent object and private authority state |
 | SKRYNIA_MAX_KEY_LENGTH | 256 | Max length of each object identifier |
 | SKRYNIA_MAX_OBJECT_SIZE | 10485760 | Max bytes per uploaded value |
+| SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES | 41943040 | Aggregate buffered upload chunks per process |
+| SKRYNIA_MAX_CONNECTIONS | 512 | Maximum accepted HTTP connections |
 | SKRYNIA_PUSH_SUBJECT | SKRYNIA_URL | Web Push VAPID contact |
 | SKRYNIA_PUSH_SEND_TIMEOUT_MS | 10000 | Delivery timeout in milliseconds |
 | SKRYNIA_PUSH_CONCURRENCY | 8 | Maximum concurrent Web Push deliveries |
@@ -89,9 +91,16 @@ depth. `SKRYNIA_PUSH_SEND_TIMEOUT_MS` sets the delivery timeout, and
 Only serve `store/` through a public static web server, never `state/`.
 File names have no separators and never begin with a dot.
 nginx may directly serve `GET /store/{key}` from the public directory,
-using standard MIME types and nginx's normal mtime-size ETags. Configure
-the cache policy consistently with the Skrynia HTTP implementation,
-particularly for mutable keys.
+using standard MIME types and nginx's whole-second mtime-size ETags.
+**The ETag scheme must remain nginx-compatible:** Skrynia uses the exact
+`"hex-mtime-seconds-hex-size"` format and a monotonic whole-second mtime
+per mutation to prevent ABA. Rapid writes can move file mtimes ahead of
+wall time. Configure the cache policy consistently, especially for
+mutable keys.
+
+The standalone server streams reads from already-open file descriptors,
+bounds in-progress upload memory and connections, and defaults to 1000 keys
+per listing page. Use `next` / `after` to retrieve further pages.
 
 Skrynia is not tied to nginx; its own HTTP server implements public reads.
 Static HTML and JavaScript served to browsers from mutually untrusted
