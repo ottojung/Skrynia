@@ -50,10 +50,17 @@ function createServer(opts={}) {
   const base=normalizeBasePath(publicUrl.pathname||'/');
   const maxKeyLength=Number(process.env.SKRYNIA_MAX_KEY_LENGTH||256);
   const maxObjectSize=Number(process.env.SKRYNIA_MAX_OBJECT_SIZE||10485760);
+  const maxBufferedBytes=Number(opts.maxBufferedUploadBytes??
+    process.env.SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES??41943040);
+  const maxConnections=Number(opts.maxConnections??
+    process.env.SKRYNIA_MAX_CONNECTIONS??512);
   if(!Number.isSafeInteger(maxKeyLength)||maxKeyLength<1||
-    !Number.isSafeInteger(maxObjectSize)||maxObjectSize<1) {
+    !Number.isSafeInteger(maxObjectSize)||maxObjectSize<1||
+    !Number.isSafeInteger(maxBufferedBytes)||maxBufferedBytes<1||
+    !Number.isSafeInteger(maxConnections)||maxConnections<1) {
     throw new Error('invalid storage limits');
   }
+  let bufferedBytes=0;
   const push=createPush({dataDir:shared.dataDir,skryniaUrl:external,
     pushTransport:opts.pushTransport,pushPollMs:opts.pushPollMs,
     pushSubject:opts.pushSubject,pushManual:opts.pushManual,
@@ -91,9 +98,11 @@ function createServer(opts={}) {
   function validKey(key) {
     return key.length<=maxKeyLength&&grants.validKey(key);
   }
-  function etag(file) {
-    const st=fs.statSync(file);
+  function etagFromStat(st) {
     return '"'+Math.floor(st.mtimeMs/1000).toString(16)+'-'+st.size.toString(16)+'"';
+  }
+  function etag(file) {
+    return etagFromStat(fs.statSync(file));
   }
   function setVersion(file,version) {
     const time=new Date(version*1000);
@@ -118,8 +127,15 @@ function createServer(opts={}) {
   }
   function get(key,req,res) {
     const file=shared.objPath(key);
-    if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
-    const stat=fs.statSync(file),tag=etag(file);
+    // Pin the inode before evaluating validators so a concurrent
+    // replacement cannot change the bytes halfway through the response.
+    let fd;
+    try {fd=fs.openSync(file,'r');}
+    catch(e) {
+      if(e.code==='ENOENT') return json(res,404,{error:'not_found'});
+      throw e;
+    }
+    const stat=fs.fstatSync(fd),tag=etagFromStat(stat);
     const headers={
       'Content-Type':mimeType(key),
       'ETag':tag,
@@ -129,6 +145,7 @@ function createServer(opts={}) {
     };
     const validators=(req.headers['if-none-match']||'').split(',').map(x=>x.trim());
     if(validators.some(x=>x==='*'||x===tag||x==='W/'+tag)) {
+      fs.closeSync(fd);
       res.writeHead(304,headers);
       return res.end();
     }
@@ -154,26 +171,21 @@ function createServer(opts={}) {
       } else status=416;
     }
     if(status===416) {
+      fs.closeSync(fd);
       res.writeHead(416,{...headers,'Content-Range':'bytes */'+stat.size});
       return res.end();
     }
     if(status===206) headers['Content-Range']=`bytes ${start}-${end}/${stat.size}`;
     headers['Content-Length']=status===206?end-start+1:stat.size;
     res.writeHead(status,headers);
-    if(req.method==='HEAD'||headers['Content-Length']===0) return res.end();
-    const fd=fs.openSync(file,'r');
-    try {
-      const bytes=Buffer.alloc(headers['Content-Length']);
-      let read=0;
-      while(read<bytes.length) {
-        const n=fs.readSync(fd,bytes,read,bytes.length-read,start+read);
-        if(n===0) throw new Error('short object read');
-        read+=n;
-      }
-      return res.end(bytes);
-    } finally {
+    if(req.method==='HEAD'||headers['Content-Length']===0) {
       fs.closeSync(fd);
+      return res.end();
     }
+    // Stream from the already-open descriptor: memory is O(stream buffer),
+    // even for a slow reader or a large public object.
+    fs.createReadStream(null,{fd,autoClose:true,start,end})
+      .on('error',e=>res.destroy(e)).pipe(res);
   }
   function create(key,body,req,res) {
     const file=shared.objPath(key);
@@ -217,16 +229,50 @@ function createServer(opts={}) {
     return json(res,200,{ok:true,...outcome});
   }
   function body(req,res,limit,callback) {
-    let count=0,finished=false;
+    // The cap covers actual resident request chunks across connections.
+    // Failed, interrupted and completed uploads release their reservation.
+    const length=req.headers['content-length'];
+    if(length!==undefined&&Number(length)>limit) {
+      res.setHeader('Connection','close');
+      return json(res,413,{error:'request_too_large'});
+    }
+    if(length!==undefined&&Number(length)>maxBufferedBytes) {
+      res.setHeader('Connection','close');
+      return json(res,503,{error:'upload_memory_full'});
+    }
+    let count=0,held=0,finished=false;
     const chunks=[];
+    function release() {
+      bufferedBytes-=held;
+      held=0;
+    }
+    function stop(status,reason) {
+      if(finished) return;
+      finished=true;
+      release();
+      res.setHeader('Connection','close');
+      json(res,status,{error:reason});
+    }
     req.on('data',chunk=>{
       if(finished) return;
+      if(count+chunk.length>limit)
+        return stop(413,'request_too_large');
+      if(bufferedBytes+chunk.length>maxBufferedBytes)
+        return stop(503,'upload_memory_full');
       count+=chunk.length;
-      if(count>limit) {finished=true;json(res,413,{error:'request_too_large'});return;}
+      held+=chunk.length;
+      bufferedBytes+=chunk.length;
       chunks.push(chunk);
     });
-    req.on('end',()=>{if(!finished) callback(Buffer.concat(chunks));});
-    req.on('error',()=>{if(!finished) {finished=true;json(res,400,{error:'request_interrupted'});}});
+    req.on('end',()=>{
+      if(finished) return;
+      finished=true;
+      const bytes=Buffer.concat(chunks);
+      release();
+      callback(bytes);
+    });
+    req.on('error',()=>stop(400,'request_interrupted'));
+    req.on('close',release);
   }
   function jsonBody(req,res,callback) {
     return body(req,res,8192,raw=>{
@@ -337,7 +383,7 @@ function createServer(opts={}) {
         [...params.keys()].some(k=>params.getAll(k).length!==1)) {
         return json(res,400,{error:'invalid_locations'});
       }
-      const limit=params.has('limit')?Number(params.get('limit')):null;
+      const limit=params.has('limit')?Number(params.get('limit')):1000;
       const after=params.has('after')?params.get('after'):null;
       try {return json(res,200,grants.listObjects(bearer(req),patterns[0],
         {limit,after}));}
@@ -378,8 +424,12 @@ function createServer(opts={}) {
   },60000);
   recoveryTimer.unref();
   const server=http.createServer(route);
+  server.maxConnections=maxConnections;
+  server.requestTimeout=60000;
+  server.headersTimeout=15000;
   server.skrynia={HTTP_BASE_PATH:base,SKRYNIA_URL:external,DATA_DIR:shared.dataDir,
-    grants,push,storeJournal:journal,buildInfo};
+    grants,push,storeJournal:journal,buildInfo,
+    bufferedUploadBytes:()=>bufferedBytes};
   server.on('close',()=>{clearInterval(recoveryTimer);push.close();});
   return server;
 }
