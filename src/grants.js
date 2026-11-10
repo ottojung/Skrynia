@@ -9,11 +9,11 @@ const {createResourceIndex}=require('./resource-index.js');
 
 const GRANT_COST=2048,OBJECT_COST=512,PUSH_SUB_COST=4096,EXTRA_USER_COST=128;
 const ID_RE=/^[a-f0-9]{32}$/;
-const KEY_RE=/^[A-Za-z0-9_.]+$/;
-const LOCATION_RE=/^[A-Za-z0-9_.]*\*?$/;
-const OPERATIONS=Object.freeze(['write','delegate','subscribe']);
+const KEY_RE=/^[A-Za-z0-9_][A-Za-z0-9_.]*$/;
+const LOCATION_RE=/^(?:[A-Za-z0-9_][A-Za-z0-9_.]*\*?|\*)?$/;
+const OPERATIONS=Object.freeze(['write','append','delegate','subscribe']);
 
-function validKey(key) {return typeof key==='string'&&KEY_RE.test(key)&&key!=='.'&&key!=='..';}
+function validKey(key) {return typeof key==='string'&&KEY_RE.test(key);}
 function validLocations(loc) {return typeof loc==='string'&&LOCATION_RE.test(loc);}
 function matches(loc,key) {
   return validLocations(loc)&&validKey(key)&&
@@ -40,6 +40,12 @@ function normalizeOperations(value) {
   if(!Array.isArray(value)||value.some(x=>!OPERATIONS.includes(x))||
     new Set(value).size!==value.length) throw fault(400,'invalid_operations');
   return OPERATIONS.filter(x=>value.includes(x));
+}
+// 'write' includes append authority, so delegation may attenuate write
+// into append even when the parent need not spell out both permissions.
+function operationsSubset(child,parent) {
+  return child.every(op=>parent.includes(op)||
+    (op==='append'&&parent.includes('write')));
 }
 function validFiniteLimit(v) {return Number.isSafeInteger(v)&&v>0;}
 function within(usage,max) {return max===null||usage<=max;}
@@ -112,7 +118,7 @@ function createGrants(shared) {
         }
         const parent=map.get(g.parent);
         if(!parent||!subset(g.locations,parent.locations)||
-          !g.operations.every(op=>parent.operations.includes(op))) {
+          !operationsSubset(g.operations,parent.operations)) {
           throw new Error('invalid grant ancestry');
         }
       }
@@ -200,25 +206,41 @@ function createGrants(shared) {
   function requireOperation(g,op) {
     if(!g.operations.includes(op)) throw fault(403,'grant_operation_forbidden');
   }
-  function requireWrite(secret,key) {
+  // Atomic mutation authorization. Append-only updates must retain every
+  // previous byte, including binary data and the empty prefix. The caller
+  // passes the current object bytes for replacements while the event loop
+  // holds the single-writer serialization boundary.
+  function authorizeMutation(secret,key,kind,nextBody,previousBody) {
     const g=requireUser(secret);
-    requireOperation(g,'write');
     if(!matches(g.locations,key)) throw fault(403,'location_not_authorized');
-    return g;
-  }
-  function authorizeWrite(secret,key,newBytes) {
-    const g=requireWrite(secret,key);
-    if(newBytes!==null) {
-      if(!Number.isSafeInteger(newBytes)||newBytes<0) throw fault(400,'invalid_object_size');
-      const map=validateTree(),subs=subscriptionEntries();
-      const old=index.value(key);
-      const delta=newBytes-(old===null?0:old)+(old===null?OBJECT_COST:0);
-      for(const ancestor of ancestors(map,g.id)) {
-        const u=usageWith(ancestor,map,subs);
-        if(!within(u.bytes+delta,ancestor.maxBytes)||
-          !within(u.objects+(old===null?1:0),ancestor.maxObjects)) {
-          throw fault(507,'grant_quota_exceeded');
-        }
+    if(!['create','replace','delete'].includes(kind)) throw fault(400,'invalid_mutation');
+    const canWrite=g.operations.includes('write');
+    const canAppend=g.operations.includes('append');
+    if(kind==='delete') {
+      if(!canWrite) throw fault(403,'grant_operation_forbidden');
+      return g.id;
+    }
+    if(!canWrite&&!canAppend) throw fault(403,'grant_operation_forbidden');
+    if(!Buffer.isBuffer(nextBody)) throw fault(400,'invalid_object_body');
+    if(kind==='replace'&&!canWrite) {
+      // A normal writer need not read the old body. An append-only writer
+      // must check the actual current bytes inside the same mutation turn.
+      const previous=typeof previousBody==='function'?previousBody():previousBody;
+      if(!Buffer.isBuffer(previous)) throw fault(400,'invalid_previous_body');
+      if(nextBody.length<previous.length||
+         !nextBody.subarray(0,previous.length).equals(previous)) {
+        throw fault(409,'append_prefix_mismatch');
+      }
+    }
+    const newBytes=nextBody.length;
+    const map=validateTree(),subs=subscriptionEntries();
+    const old=index.value(key);
+    const delta=newBytes-(old===null?0:old)+(old===null?OBJECT_COST:0);
+    for(const ancestor of ancestors(map,g.id)) {
+      const u=usageWith(ancestor,map,subs);
+      if(!within(u.bytes+delta,ancestor.maxBytes)||
+        !within(u.objects+(old===null?1:0),ancestor.maxObjects)) {
+        throw fault(507,'grant_quota_exceeded');
       }
     }
     return g.id;
@@ -248,7 +270,7 @@ function createGrants(shared) {
     const ops=operations===undefined?parent.operations:normalizeOperations(operations);
     if(!validLocations(loc)) throw fault(400,'invalid_locations');
     if(!subset(loc,parent.locations)) throw fault(403,'locations_outside_parent');
-    if(!ops.every(op=>parent.operations.includes(op))) throw fault(403,'operations_outside_parent');
+    if(!operationsSubset(ops,parent.operations)) throw fault(403,'operations_outside_parent');
     assertCapacity(parent.id,GRANT_COST,0);
     const issuerToken=token();
     const record={id:randomId(),parent:parent.id,locations:loc,operations:[...ops],
@@ -339,7 +361,7 @@ function createGrants(shared) {
   }
   return {GRANT_COST,OBJECT_COST,PUSH_SUB_COST,OPERATIONS,validKey,
     validLocations,matches,subset,root,ensureRoot,createChild,createUser,
-    revokeUser,revokeGrant,recover,recoverRevocations,requireUser,requireWrite,
-    authorizeWrite,recordObject,accountSubscription,subscriptionChanged,usage,inspect};
+    revokeUser,revokeGrant,recover,recoverRevocations,requireUser,
+    authorizeMutation,recordObject,accountSubscription,subscriptionChanged,usage,inspect};
 }
 module.exports={createGrants,KEY_RE,LOCATION_RE,OPERATIONS,validKey,validLocations,matches,subset};

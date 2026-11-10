@@ -8,12 +8,14 @@ Use HTTPS outside local development. No API request relies on cookies.
 
 An object key must be a nonempty ASCII string, at most
 `SKRYNIA_MAX_KEY_LENGTH` characters (default 256), matching
-`[A-Za-z0-9_.]+`, and must not be exactly `.` or `..`.
+`[A-Za-z0-9_][A-Za-z0-9_.]*`. Keys cannot begin with a dot;
+consecutive dots are unrestricted after the first character.
 Case matters; `/`, spaces and `*` are not valid object-key characters.
 
 A `locations` matcher is an exact key (`alice.index.html`),
 a prefix followed by `*` (`alice.*`), `*` for all keys, or
-`""` for no keys. Matchers have grammar `^[A-Za-z0-9_.]*\\*?$`.
+`""` for no keys. Matchers use the same non-dot initial character as keys, with an optional
+trailing `*`; `*` and `""` are also valid matchers.
 A child grant's locations must select a subset of its parent's matched keys.
 
 ## Object endpoints
@@ -52,9 +54,26 @@ All grants form one rooted tree. Each grant has:
 - `maxBytes` and `maxObjects` (positive safe integers for child grants)
 - an issuer credential and zero or more independently revocable user credentials
 
-Operations: `write`, `delegate`, and `subscribe`. A single `write`
-operation authorizes creation, replacement and deletion at matched locations.
-Reading requires no operation or credential.
+Operations: `write`, `append`, `delegate`, and `subscribe`.
+
+- `write` permits creation, arbitrary replacement and deletion.
+- `append` permits creation and replacement only when the proposed new
+  bytes start with the complete existing value, compared byte-for-byte.
+  Binary payloads and zero-length suffixes are supported. It never
+  permits deletion.
+- If both `write` and `append` are held, `write` permits arbitrary edits.
+- `delegate` permits child grants; `subscribe` permits Web Push subscriptions.
+- Reads are public and do not require a grant.
+
+No separate append endpoint exists: both authorities use `POST /store/{key}`
+and `PUT /store/{key}`. If an append-only `PUT` would overwrite or truncate
+any existing bytes, the server returns HTTP 409 `append_prefix_mismatch`
+without changing the object. When `If-Match` is present, a stale ETag
+returns HTTP 412 instead. A client seeking to append an event reads the
+current bytes (and preferably its ETag), concatenates a suffix, and tries
+`PUT`, retrying from the latest value on a conflict. Append-only grants
+cannot enforce monotonicity against a *different* token with `write`
+authority for the same key.
 
 On each server start, after completing recovery, if the tree has no root,
 Skrynia creates one with `locations:"*"`, all operations and
@@ -84,7 +103,10 @@ Content-Type: application/json
 The response contains the new grant's ID and one-time issuer token; it
 does **not** generate a user token. `delegate` must be present in the
 parent's operations. A child may narrow locations and operations, never widen
-them. Child limits do not reserve capacity in ancestors.
+them. `append` is strictly narrower than `write`: a parent with
+`write` and `delegate` can delegate `append` even if its operations
+do not explicitly contain `append`; an `append`-only parent cannot
+delegate `write`. Child limits do not reserve capacity in ancestors.
 
 Issuing a user token returns `grantId`, `userId`, and `userToken`.
 Credentials are independent: user tokens cannot issue more user tokens,
