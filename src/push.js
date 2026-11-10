@@ -5,12 +5,14 @@
 const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
-const {ensureDir,syncDir}=require('./shared.js');
+const {ensureDir,syncDir,atomicJson}=require('./shared.js');
 const {matches,validLocations}=require('./grants.js');
+const {validEndpoint,safeAgent}=require('./push-endpoint.js');
 
 const KINDS=Object.freeze(['create','replace','delete']);
 const MAX_SUBSCRIPTIONS=2000,MAX_OUTBOX_ITEMS=10000;
 const DEFAULT_SEND_TIMEOUT_MS=10000;
+const DEFAULT_CONCURRENCY=8;
 function randomId() {return crypto.randomBytes(16).toString('hex');}
 function randomSecret() {return crypto.randomBytes(32).toString('hex');}
 function hash(x) {return crypto.createHash('sha256').update(x).digest('hex');}
@@ -20,29 +22,9 @@ function safeMatch(a,b) {
     crypto.timingSafeEqual(Buffer.from(a,'hex'),Buffer.from(b,'hex'));
 }
 function fault(code) {const e=new Error(code);e.code=code;return e;}
-function atomicJson(file,record) {
-  ensureDir(path.dirname(file),0o700);
-  const tmp=file+'.'+randomId()+'.tmp';
-  try {
-    const fd=fs.openSync(tmp,'wx',0o600);
-    try {fs.writeSync(fd,JSON.stringify(record));fs.fsyncSync(fd);}
-    finally {fs.closeSync(fd);}
-    fs.renameSync(tmp,file);syncDir(path.dirname(file));
-  } finally {
-    try {fs.unlinkSync(tmp);}catch(e){if(e.code!=='ENOENT')throw e;}
-  }
-}
 function readJson(file) {
   try {return JSON.parse(fs.readFileSync(file,'utf8'));}
   catch(e){if(e.code==='ENOENT')return null;throw e;}
-}
-function validEndpoint(endpoint) {
-  if(typeof endpoint!=='string'||!endpoint||endpoint.length>2048) return false;
-  try {
-    const url=new URL(endpoint);
-    return url.protocol==='https:'||
-      (url.protocol==='http:'&&['localhost','127.0.0.1','[::1]','::1'].includes(url.hostname));
-  }catch{return false;}
 }
 function validKeys(keys) {
   return keys&&typeof keys==='object'&&
@@ -62,22 +44,31 @@ function createPush(opts={}) {
   const subject=opts.pushSubject||process.env.SKRYNIA_PUSH_SUBJECT||opts.skryniaUrl||'https://skrynia.local/';
   const maxSubs=opts.maxSubscriptions??MAX_SUBSCRIPTIONS;
   const maxOutbox=opts.maxOutboxItems??MAX_OUTBOX_ITEMS;
-  const timeoutMs=opts.pushSendTimeoutMs??DEFAULT_SEND_TIMEOUT_MS;
+  const concurrency=opts.pushConcurrency??Number(process.env.SKRYNIA_PUSH_CONCURRENCY||DEFAULT_CONCURRENCY);
+  const timeoutMs=opts.pushSendTimeoutMs??Number(process.env.SKRYNIA_PUSH_SEND_TIMEOUT_MS||DEFAULT_SEND_TIMEOUT_MS);
   const manual=Boolean(opts.pushManual);
   const pollMs=opts.pushPollMs??1000;
   const transport=opts.pushTransport||null;
+  const agent=safeAgent();
   const webPush=()=>opts.webPushLib||require('web-push');
   const authorize=opts.onSubscriptionCreate||(()=>{throw new Error('grant authorization required');});
   const onMutation=opts.onSubscriptionMutation||(()=>{});
   if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1) throw new Error('invalid push timeout');
   if(!Number.isSafeInteger(maxSubs)||maxSubs<1) throw new Error('invalid subscription limit');
   if(!Number.isSafeInteger(maxOutbox)||maxOutbox<1) throw new Error('invalid outbox limit');
-  let timer=null,pumping=false;
+  if(!Number.isSafeInteger(concurrency)||concurrency<1||concurrency>100)
+    throw new Error('invalid push concurrency');
+  let timer=null,pumping=false,cachedSubs=null;
+  const inFlight=new Set();
   function subPath(id) {return path.join(subdir,id+'.json');}
+  function invalidateSubscriptions() {cachedSubs=null;}
   function allSubs() {
-    if(!fs.existsSync(subdir)) return [];
-    return fs.readdirSync(subdir).filter(n=>/^[a-f0-9]{32}\.json$/.test(n))
-      .map(n=>readJson(path.join(subdir,n))).filter(Boolean);
+    if(cachedSubs) return cachedSubs;
+    const values=fs.existsSync(subdir)?
+      fs.readdirSync(subdir).filter(n=>/^[a-f0-9]{32}\.json$/.test(n))
+        .map(n=>readJson(path.join(subdir,n))).filter(Boolean):[];
+    cachedSubs=values;
+    return values;
   }
   function findSub(id) {
     if(!/^[a-f0-9]{32}$/.test(id||'')) return null;
@@ -110,6 +101,7 @@ function createPush(opts={}) {
       existing.capHash=hash(capability);
       existing.keys={p256dh:keys.p256dh,auth:keys.auth};
       atomicJson(subPath(existing.id),existing);
+      invalidateSubscriptions();
       return {id:existing.id,capability,deduped:true};
     }
     if(subs.length>=maxSubs) throw fault('subscriptions_full');
@@ -120,6 +112,7 @@ function createPush(opts={}) {
       endpoint,keys:{p256dh:keys.p256dh,auth:keys.auth},
       capHash:hash(capability)};
     atomicJson(subPath(id),record);
+    invalidateSubscriptions();
     onMutation();
     return {id,capability,deduped:false};
   }
@@ -141,10 +134,11 @@ function createPush(opts={}) {
       sub.keys={p256dh:patch.keys.p256dh,auth:patch.keys.auth};
     }
     atomicJson(subPath(id),sub);
+    invalidateSubscriptions();
     return {ok:true};
   }
   function deleteRecord(id) {
-    fs.unlinkSync(subPath(id));syncDir(subdir);onMutation();
+    fs.unlinkSync(subPath(id));syncDir(subdir);invalidateSubscriptions();onMutation();
   }
   function removeSub(id,capability) {
     const sub=findSub(id);
@@ -197,7 +191,7 @@ function createPush(opts={}) {
   async function sendBounded(sub) {
     const send=transport||((s)=>webPush().sendNotification(
       {endpoint:s.endpoint,keys:s.keys},'changed',
-      {timeout:timeoutMs,vapidDetails:{subject,publicKey:getVapidKeys().publicKey,privateKey:getVapidKeys().privateKey}}));
+      {timeout:timeoutMs,agent,vapidDetails:{subject,publicKey:getVapidKeys().publicKey,privateKey:getVapidKeys().privateKey}}));
     let timeout;
     try {
       return await Promise.race([
@@ -206,34 +200,46 @@ function createPush(opts={}) {
       ]);
     } finally {clearTimeout(timeout);}
   }
-  async function pumpOnce({ignoreBackoff=false}={}) {
-    let delivered=0;
-    for(const {file} of listOutbox()) {
+  async function pumpOne(file,ignoreBackoff) {
+    if(inFlight.has(file)) return false;
+    inFlight.add(file);
+    try {
       const fresh=readJson(file);
-      if(!fresh) continue;
-      if(!ignoreBackoff&&fresh.nextAt>Date.now()) continue;
+      if(!fresh||!ignoreBackoff&&fresh.nextAt>Date.now()) return false;
       const sub=findSub(fresh.subscriptionId);
-      if(!sub) {fs.unlinkSync(file);continue;}
+      if(!sub) {fs.unlinkSync(file);return false;}
       try {
-        await sendBounded(sub);delivered++;
+        await sendBounded(sub);
         const current=readJson(file);
-        // A store mutation may have enqueued a newer wake-up while the
-        // network send was in flight. Never acknowledge that generation.
+        // Never acknowledge a newer mutation that happened during the send.
         if(current&&current.generation===fresh.generation) fs.unlinkSync(file);
+        return true;
       } catch(e) {
         if(isGoneError(e)) removeSubIfUnchanged(sub);
         const current=readJson(file);
-        if(!current) continue;
-        if(!findSub(fresh.subscriptionId)) {
-          fs.unlinkSync(file);
-        } else if(current.generation===fresh.generation) {
+        if(!current) return false;
+        if(!findSub(fresh.subscriptionId)) fs.unlinkSync(file);
+        else if(current.generation===fresh.generation) {
           const attempts=isGoneError(e)?0:fresh.attempts+1;
           atomicJson(file,{...current,attempts,
             nextAt:isGoneError(e)?0:Date.now()+backoffMs(attempts)});
         }
-        // A newer generation has reset its own backoff; leave it untouched.
+        return false;
+      }
+    } finally {
+      inFlight.delete(file);
+    }
+  }
+  async function pumpOnce({ignoreBackoff=false}={}) {
+    const files=listOutbox().map(x=>x.file);
+    let next=0,delivered=0;
+    async function worker() {
+      while(next<files.length) {
+        const file=files[next++];
+        if(await pumpOne(file,ignoreBackoff)) delivered++;
       }
     }
+    await Promise.all(Array.from({length:Math.min(concurrency,files.length)},worker));
     return {delivered};
   }
   async function pumpTick() {
@@ -252,7 +258,7 @@ function createPush(opts={}) {
   }
   function close() {if(timer) clearInterval(timer);timer=null;}
   return {KINDS,validEndpoint,validKeys,validEvents,getPublicKey:()=>getVapidKeys().publicKey,
-    getVapidKeys,allSubs,findSub,createSub,updateSub,removeSub,preflight,enqueue,
+    getVapidKeys,allSubs,invalidateSubscriptions,findSub,createSub,updateSub,removeSub,preflight,enqueue,
     listOutbox,outboxCount,pumpOnce,start,close,outboxDir};
 }
 module.exports={createPush,KINDS,MAX_SUBSCRIPTIONS,MAX_OUTBOX_ITEMS};

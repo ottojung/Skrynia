@@ -4,19 +4,7 @@
 const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
-const {ensureDir,syncDir}=require('./shared.js');
-function durableJson(file,value) {
-  ensureDir(path.dirname(file),0o700);
-  const tmp=file+'.'+crypto.randomBytes(6).toString('hex');
-  try {
-    const fd=fs.openSync(tmp,'wx',0o600);
-    try {fs.writeSync(fd,JSON.stringify(value));fs.fsyncSync(fd);}
-    finally {fs.closeSync(fd);}
-    fs.renameSync(tmp,file);syncDir(path.dirname(file));
-  } finally {
-    try {fs.unlinkSync(tmp);}catch(e){if(e.code!=='ENOENT')throw e;}
-  }
-}
+const {ensureDir,syncDir,atomicJson}=require('./shared.js');
 function createStoreJournal(shared,push,grants) {
   const dir=path.join(shared.STATE_DIR,'store-transactions');
   ensureDir(dir,0o700);
@@ -35,7 +23,7 @@ function createStoreJournal(shared,push,grants) {
     push.preflight(key,kind);
     const record={key,kind,version};
     const file=path.join(dir,crypto.randomBytes(16).toString('hex')+'.json');
-    durableJson(file,record);
+    atomicJson(file,record);
     let committed=false;
     try {
       change();committed=true;syncDir(shared.STORE_DIR);
@@ -45,7 +33,7 @@ function createStoreJournal(shared,push,grants) {
     }
     try {
       record.committed=true;
-      durableJson(file,record);
+      atomicJson(file,record);
       finish(file,record);
     } catch(e) {
       console.error('Skrynia: committed value, pending push outbox:',e);

@@ -36,7 +36,7 @@
     });
   }
   function bearer(token) {return {'Authorization':'Bearer '+token};}
-  function userHeader(token) {return token?{'X-Skrynia-Grant':token}:{};}
+  function userHeader(token) {return token?bearer(token):{};}
   function Store(token) {this.token=token;}
   Store.prototype.url=function(key) {return '/store/'+encodeURIComponent(key);};
   Store.prototype.get=async function(key) {
@@ -67,8 +67,11 @@
   }
   const Skrynia={
     store:userToken=>new Store(userToken),
-    listObjects:async (locations,grantUserToken)=>{
-      const r=await request('GET','/store?locations='+encodeURIComponent(locations),
+    listObjects:async (locations,grantUserToken,{limit,after}={})=>{
+      const params=new URLSearchParams({locations});
+      if(limit!==undefined)params.set('limit',String(limit));
+      if(after!==undefined)params.set('after',after);
+      const r=await request('GET','/store?'+params.toString(),
         null,userHeader(grantUserToken));
       return r.json();
     },

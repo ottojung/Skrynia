@@ -59,8 +59,10 @@ function createServer(opts={}) {
     pushSubject:opts.pushSubject,pushManual:opts.pushManual,
     pushSendTimeoutMs:opts.pushSendTimeoutMs,
     maxSubscriptions:opts.pushMaxSubscriptions,maxOutboxItems:opts.pushMaxOutboxItems,
+    pushConcurrency:opts.pushConcurrency,
     onSubscriptionCreate:(secret,locations)=>grants.accountSubscription(secret,locations),
     onSubscriptionMutation:()=>grants.subscriptionChanged()});
+  grants.setOnSubscriptionsRevoked(()=>push.invalidateSubscriptions());
   const journal=createStoreJournal(shared,push,grants);
   grants.recover();
   shared.ensureStoreRoots();
@@ -114,19 +116,69 @@ function createServer(opts={}) {
   function removeTemp(file) {
     try{fs.unlinkSync(file);}catch(e){if(e.code!=='ENOENT')throw e;}
   }
-  function get(key,res) {
+  function get(key,req,res) {
     const file=shared.objPath(key);
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
-    const data=fs.readFileSync(file);
-    res.writeHead(200,{'Content-Type':mimeType(key),'Content-Length':data.length,
-      'ETag':etag(file),'Cache-Control':'no-cache',
-      'X-Content-Type-Options':'nosniff'});
-    res.end(data);
+    const stat=fs.statSync(file),tag=etag(file);
+    const headers={
+      'Content-Type':mimeType(key),
+      'ETag':tag,
+      'Cache-Control':'no-cache',
+      'Accept-Ranges':'bytes',
+      'X-Content-Type-Options':'nosniff'
+    };
+    const validators=(req.headers['if-none-match']||'').split(',').map(x=>x.trim());
+    if(validators.some(x=>x==='*'||x===tag||x==='W/'+tag)) {
+      res.writeHead(304,headers);
+      return res.end();
+    }
+    let start=0,end=stat.size-1,status=200;
+    const range=req.headers.range;
+    // If-Range must match the strong, current representation tag.
+    if(range&&(!req.headers['if-range']||req.headers['if-range']===tag)) {
+      const match=/^bytes=(\d*)-(\d*)$/.exec(range);
+      if(match&&(match[1]||match[2])&&stat.size>0) {
+        if(!match[1]) {
+          const suffix=Number(match[2]);
+          if(Number.isSafeInteger(suffix)&&suffix>0) {
+            start=Math.max(0,stat.size-suffix);
+          } else status=416;
+        } else {
+          start=Number(match[1]);
+          end=match[2]?Number(match[2]):end;
+          if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||
+            end<start||start>=stat.size) status=416;
+          end=Math.min(end,stat.size-1);
+        }
+        if(status!==416) status=206;
+      } else status=416;
+    }
+    if(status===416) {
+      res.writeHead(416,{...headers,'Content-Range':'bytes */'+stat.size});
+      return res.end();
+    }
+    if(status===206) headers['Content-Range']=`bytes ${start}-${end}/${stat.size}`;
+    headers['Content-Length']=status===206?end-start+1:stat.size;
+    res.writeHead(status,headers);
+    if(req.method==='HEAD'||headers['Content-Length']===0) return res.end();
+    const fd=fs.openSync(file,'r');
+    try {
+      const bytes=Buffer.alloc(headers['Content-Length']);
+      let read=0;
+      while(read<bytes.length) {
+        const n=fs.readSync(fd,bytes,read,bytes.length-read,start+read);
+        if(n===0) throw new Error('short object read');
+        read+=n;
+      }
+      return res.end(bytes);
+    } finally {
+      fs.closeSync(fd);
+    }
   }
   function create(key,body,req,res) {
     const file=shared.objPath(key);
     if(fs.existsSync(file)) return json(res,409,{error:'already_exists'});
-    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'create',body.length);
+    grants.authorizeMutation(bearer(req),key,'create',body.length);
     const version=shared.nextVersion(),tmp=tempObject(body,version);
     try {
       const outcome=journal.commit(key,'create',version,()=>{
@@ -143,7 +195,7 @@ function createServer(opts={}) {
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
     if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
       return json(res,412,{error:'etag_mismatch'});
-    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'replace',body.length);
+    grants.authorizeMutation(bearer(req),key,'replace',body.length);
     const version=shared.nextVersion(),tmp=tempObject(body,version);
     try {
       const outcome=journal.commit(key,'replace',version,()=>{
@@ -155,7 +207,7 @@ function createServer(opts={}) {
   function deleteObject(key,req,res) {
     const file=shared.objPath(key);
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
-    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'delete');
+    grants.authorizeMutation(bearer(req),key,'delete');
     if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
       return json(res,412,{error:'etag_mismatch'});
     const version=shared.nextVersion();
@@ -205,7 +257,7 @@ function createServer(opts={}) {
     res.setHeader('Access-Control-Expose-Headers','ETag');
     if(req.method==='OPTIONS') {
       res.writeHead(204,{'Access-Control-Allow-Methods':'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Skrynia-Grant, X-Skrynia-Capability, If-Match',
+        'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Skrynia-Capability, If-Match',
         'Access-Control-Max-Age':'3600'});
       return res.end();
     }
@@ -227,7 +279,7 @@ function createServer(opts={}) {
         try {
           const result=push.createSub(value.locations,
             value.events??['create','replace','delete'],
-            value.endpoint,value.keys,capability(req),req.headers['x-skrynia-grant']);
+            value.endpoint,value.keys,capability(req),bearer(req));
           json(res,201,{ok:true,...result});
         }catch(e){error(res,e);}
       });
@@ -278,10 +330,17 @@ function createServer(opts={}) {
       catch(e){return error(res,e);}
     }
     if(p==='/store'&&req.method==='GET') {
-      const patterns=url.searchParams.getAll('locations');
-      if(patterns.length!==1||url.searchParams.size!==1)
+      const params=url.searchParams;
+      const patterns=params.getAll('locations');
+      if(patterns.length!==1||
+        [...params.keys()].some(k=>!['locations','limit','after'].includes(k))||
+        [...params.keys()].some(k=>params.getAll(k).length!==1)) {
         return json(res,400,{error:'invalid_locations'});
-      try {return json(res,200,grants.listObjects(req.headers['x-skrynia-grant'],patterns[0]));}
+      }
+      const limit=params.has('limit')?Number(params.get('limit')):null;
+      const after=params.has('after')?params.get('after'):null;
+      try {return json(res,200,grants.listObjects(bearer(req),patterns[0],
+        {limit,after}));}
       catch(e){return error(res,e);}
     }
     if(p==='/store') return json(res,405,{error:'method_not_allowed'});
@@ -291,18 +350,24 @@ function createServer(opts={}) {
       try {key=decodeURIComponent(keyMatch[1]);}
       catch{return json(res,400,{error:'invalid_percent_encoding'});}
       if(!validKey(key)) return json(res,400,{error:'invalid_key'});
-      if(req.method==='GET') return get(key,res);
+      if(req.method==='GET'||req.method==='HEAD') return get(key,req,res);
       if(req.method==='DELETE') {
         try{return deleteObject(key,req,res);}
         catch(e){return error(res,e);}
       }
-      if(req.method==='POST'||req.method==='PUT') return body(req,res,maxObjectSize,
-        bytes=>{
+      if(req.method==='POST'||req.method==='PUT') {
+        // Reject anonymous and unauthorized uploads before buffering bytes.
+        try {
+          grants.requireMutation(bearer(req),key,
+            req.method==='POST'?'create':'replace');
+        } catch(e) {return error(res,e);}
+        return body(req,res,maxObjectSize,bytes=>{
           try {
             if(req.method==='POST') return create(key,bytes,req,res);
             return replace(key,bytes,req,res);
           } catch(e){return error(res,e);}
         });
+      }
       return json(res,405,{error:'method_not_allowed'});
     }
     return json(res,404,{error:'not_found'});
@@ -320,6 +385,7 @@ function createServer(opts={}) {
 }
 if(require.main===module) {
   const port=Number(process.env.SKRYNIA_PORT||17380);
-  createServer().listen(port,'127.0.0.1',()=>console.log('Skrynia listening on 127.0.0.1:'+port));
+  const host=process.env.SKRYNIA_HOST||'127.0.0.1';
+  createServer().listen(port,host,()=>console.log('Skrynia listening on '+host+':'+port));
 }
 module.exports={createServer};
