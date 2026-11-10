@@ -222,10 +222,26 @@ but a new confirmation window and no descendants.
 
 Requires the grant's issuer token. Revokes the grant without reissuance.
 
-Both operations recursively remove descendants and their user/issuer tokens,
-all objects whose keys match the target grant's locations, and push
-subscriptions sponsored by the revoked subtree. Sibling grants survive,
-even if their location scopes overlap with deleted keys. The deletion is
+Both operations remove the grant's descendants and their credentials, and
+push subscriptions sponsored by the revoked subtree. An object is deleted
+only if (1) its key matches the target grant's locations and (2) **no
+surviving independent grant** covers its key. Independent means neither
+ancestor nor descendant of the target grant.
+
+An ancestor does not protect its descendant's keys from that descendant's
+cleanup. Descendants and the grant reissued during cleaning do not count as
+independent protectors either. A sibling or another independent branch
+protects matching keys even if it has no users, no `write` operation,
+and no remaining quota. In particular, revoking or cleaning the root
+deletes all objects in its scope.
+
+This protection applies to cleanup/revocation, not to ordinary
+`DELETE /store/{namespace}/{key}`, which remains authorized through `write`.
+A surviving grant can still measure its preserved keys as occupied usage,
+so cleanup need not restore an empty budget.
+
+An independent-protection snapshot is persisted before any deletion, so
+interrupted cleanup resumes with its original decisions. The deletion is
 atomic at the HTTP interface; interrupted deletion is recovered before a
 server can accept new requests.
 
