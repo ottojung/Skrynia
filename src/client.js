@@ -1,141 +1,91 @@
-/**
- * Skrynia browser client: public reads and grant-authorized mutations.
- * A grant can be deliberately published with only "write" authority at
- * a fixed location; no object-specific write credentials exist.
- */
+/** Browser helper for the global Skrynia object store. */
 (function(root) {
   'use strict';
-
   function detectRoot() {
-    if (typeof document !== 'undefined' &&
-        document.currentScript && document.currentScript.src) {
-      try {
-        var u = new URL(document.currentScript.src, root.location && root.location.href);
-        var suffix = '/client/skrynia.js';
-        if (u.pathname.slice(-suffix.length) === suffix) {
-          u.pathname = u.pathname.slice(0, -suffix.length) || '/';
-          u.search = '';
-          u.hash = '';
-          return u.href.replace(/\/+$/, '');
-        }
-      } catch (_) {}
+    if(typeof document!=='undefined'&&document.currentScript&&document.currentScript.src) {
+      const url=new URL(document.currentScript.src,root.location&&root.location.href);
+      const suffix='/client/skrynia.js';
+      if(url.pathname.endsWith(suffix)) {
+        url.pathname=url.pathname.slice(0,-suffix.length)||'/';
+        url.search='';url.hash='';
+        return url.href.replace(/\/+$/,'');
+      }
     }
     return '';
   }
-  var API_ROOT = detectRoot();
-
-  function RawBytes(xhr) { this._xhr = xhr; }
-  RawBytes.prototype.text = function() {
-    var b = this._xhr.response;
-    return b && b.byteLength ?
-      new TextDecoder('utf-8').decode(new Uint8Array(b)) : '';
-  };
-  RawBytes.prototype.json = function() {
-    var text = this.text();
-    return text ? JSON.parse(text) : null;
-  };
-  RawBytes.prototype.bytes = function() {
-    return new Uint8Array(this._xhr.response);
-  };
-  RawBytes.prototype.status = function() { return this._xhr.status; };
-  RawBytes.prototype.header = function(name) {
-    return this._xhr.getResponseHeader(name);
-  };
-
-  function request(method, url, body, headers) {
-    return new Promise(function(resolve, reject) {
-      var xhr = new XMLHttpRequest();
-      xhr.open(method, url, true);
-      xhr.responseType = 'arraybuffer';
-      if (headers) for (var k in headers) if (Object.prototype.hasOwnProperty.call(headers, k)) {
-        xhr.setRequestHeader(k, headers[k]);
-      }
-      xhr.onload = function() { resolve(new RawBytes(xhr)); };
-      xhr.onerror = function() { reject(new Error('network error')); };
-      xhr.send(body == null ? undefined : body);
+  const API_ROOT=detectRoot();
+  function request(method,path,body,headers={}) {
+    return new Promise((resolve,reject)=>{
+      const xhr=new XMLHttpRequest();
+      xhr.open(method,API_ROOT+path,true);
+      xhr.responseType='arraybuffer';
+      for(const [name,value] of Object.entries(headers)) xhr.setRequestHeader(name,value);
+      xhr.onload=()=>{
+        const data=new Uint8Array(xhr.response||new ArrayBuffer(0));
+        const text=()=>new TextDecoder().decode(data);
+        const json=()=>JSON.parse(text());
+        if(xhr.status<200||xhr.status>=300) {
+          const e=new Error(method+' '+path+': HTTP '+xhr.status);
+          e.status=xhr.status;
+          reject(e);return;
+        }
+        resolve({bytes:data,text,json,etag:xhr.getResponseHeader('ETag'),status:xhr.status});
+      };
+      xhr.onerror=()=>reject(new Error('network error'));
+      xhr.send(body==null?null:body);
     });
   }
-  function grantHeader(token) {
-    return token ? {'X-Skrynia-Grant':token} : {};
+  function bearer(token) {return {'Authorization':'Bearer '+token};}
+  function userHeader(token) {return token?{'X-Skrynia-Grant':token}:{};}
+  function Store(token) {this.token=token;}
+  Store.prototype.url=function(key) {return '/store/'+encodeURIComponent(key);};
+  Store.prototype.get=async function(key) {
+    try {const result=await request('GET',this.url(key));return {
+      bytes:result.bytes,text:result.text,json:result.json,
+      meta:{etag:result.etag}
+    };} catch(e){if(e.status===404)return null;throw e;}
+  };
+  Store.prototype.create=async function(key,value,options) {
+    const r=await request('POST',this.url(key),value,
+      userHeader(options?.grantUserToken||this.token));return r.json();
+  };
+  Store.prototype.put=async function(key,value,options) {
+    const h=userHeader(options?.grantUserToken||this.token);
+    if(options?.etag)h['If-Match']=options.etag;
+    const r=await request('PUT',this.url(key),value,h);return r.json();
+  };
+  Store.prototype.delete=async function(key,options) {
+    const h=userHeader(options?.grantUserToken||this.token);
+    if(options?.etag)h['If-Match']=options.etag;
+    const r=await request('DELETE',this.url(key),null,h);return r.json();
+  };
+  async function grantRequest(method,path,token,data) {
+    const h={...bearer(token)};
+    if(data!==undefined) h['Content-Type']='application/json';
+    const r=await request(method,path,
+      data===undefined?null:JSON.stringify(data),h);return r.json();
   }
-  function GrantError(method, response) {
-    return new Error(method + ' failed: HTTP ' + response.status());
-  }
-
-  function Store(ns, userToken) {
-    this.ns = ns;
-    this.userToken = userToken;
-  }
-  Store.prototype._url = function(key) {
-    return API_ROOT + '/store/' +
-      encodeURIComponent(this.ns) + '/' + encodeURIComponent(key);
+  const Skrynia={
+    store:userToken=>new Store(userToken),
+    createGrant:(parentUserToken,options)=>
+      grantRequest('POST','/grants',parentUserToken,options),
+    inspectGrant:(id,userToken)=>
+      grantRequest('GET','/grants/'+encodeURIComponent(id),userToken),
+    issueUser:(id,issuerToken)=>
+      grantRequest('POST','/grants/'+encodeURIComponent(id)+'/users',issuerToken),
+    revokeUser:(id,userId,issuerToken)=>
+      grantRequest('DELETE','/grants/'+encodeURIComponent(id)+'/users/'+encodeURIComponent(userId),issuerToken),
+    revokeGrant:(id,issuerToken)=>
+      grantRequest('DELETE','/grants/'+encodeURIComponent(id),issuerToken),
+    subscribe:async (grantUserToken,locations,events,subscription,capability)=>{
+      const headers=userHeader(grantUserToken);
+      if(capability)headers['X-Skrynia-Capability']=capability;
+      headers['Content-Type']='application/json';
+      const r=await request('POST','/push/subscriptions',
+        JSON.stringify({locations,events,endpoint:subscription.endpoint,
+          keys:subscription.toJSON().keys}),headers);
+      return r.json();
+    },
   };
-  Store.prototype.get = function(key) {
-    return request('GET', this._url(key)).then(function(raw) {
-      if (raw.status() === 404) return null;
-      if (raw.status() !== 200) throw GrantError('get', raw);
-      return {bytes:raw, meta:{etag:raw.header('etag')}};
-    });
-  };
-  Store.prototype.create = function(key, bytes, opts) {
-    var token = opts && opts.grantUserToken || this.userToken;
-    return request('POST', this._url(key), bytes, grantHeader(token))
-      .then(function(raw) {
-        if (raw.status() !== 201) throw GrantError('create', raw);
-        return raw.json();
-      });
-  };
-  Store.prototype.put = function(key, bytes, opts) {
-    var token = opts && opts.grantUserToken || this.userToken;
-    var headers = grantHeader(token);
-    if (opts && opts.etag) headers['If-Match'] = opts.etag;
-    return request('PUT', this._url(key), bytes, headers).then(function(raw) {
-      if (raw.status() !== 200) throw GrantError('put', raw);
-      return raw.json();
-    });
-  };
-  Store.prototype.delete = function(key, opts) {
-    var token = opts && opts.grantUserToken || this.userToken;
-    var headers = grantHeader(token);
-    if (opts && opts.etag) headers['If-Match'] = opts.etag;
-    return request('DELETE', this._url(key), null, headers).then(function(raw) {
-      if (raw.status() !== 200) throw GrantError('delete', raw);
-      return raw.json();
-    });
-  };
-
-  function grantRequest(method, url, token, body) {
-    return request(method, API_ROOT + url,
-      body === undefined ? null : JSON.stringify(body),
-      {'Authorization':'Bearer ' + token, 'Content-Type':'application/json'})
-      .then(function(raw) {
-        if (raw.status() !== 200) throw GrantError('grant', raw);
-        return raw.json();
-      });
-  }
-
-  function SkryniaClient() {}
-  SkryniaClient.prototype.store = function(ns, userToken) {
-    return new Store(ns, userToken);
-  };
-  SkryniaClient.prototype.createGrant = function(ns, parentUserToken, options) {
-    return grantRequest('POST', '/grants', parentUserToken,
-      Object.assign({namespace:ns}, options));
-  };
-  SkryniaClient.prototype.grant = function(ns, id, userToken) {
-    var base = '/grants/' + encodeURIComponent(id);
-    var query = '?namespace=' + encodeURIComponent(ns);
-    return {
-      inspect: function() { return grantRequest('GET', base + query, userToken); }
-    };
-  };
-  SkryniaClient.prototype.issueUser = function(ns, id, issuerToken) {
-    return grantRequest('POST', '/grants/' + encodeURIComponent(id) +
-      '/users?namespace=' + encodeURIComponent(ns), issuerToken);
-  };
-  SkryniaClient.prototype.revokeGrant = function(ns, id, issuerToken) {
-    return grantRequest('DELETE', '/grants/' + encodeURIComponent(id) +
-      '?namespace=' + encodeURIComponent(ns), issuerToken);
-  };
-  root.Skrynia = new SkryniaClient();
-})(typeof window !== 'undefined' ? window : this);
+  root.Skrynia=Skrynia;
+})(typeof window!=='undefined'?window:this);

@@ -1,7 +1,7 @@
 $id-5943420546985984
-title: Filesystem backed storage
-date: 2026/09/28
+title: Filesystem object storage
+date: 2026/11/10
 source: @ottojung
 kind: requirement
 
-Storage is actual inspectable files on disk naturally corresponding to keys. A committed object's public bytes live exactly at `STORE_DIR/{namespace}/{key}`, with no data suffix and no internal sidecars in that public tree. Mutation metadata and temporary files live in separate private directories that must not be web-served. The key policy must prevent traversal and aliasing.
+Public objects are exact files under STORE_DIR/{key}. Private grants, subscriptions, journal and staging remain outside the public tree. Names use ASCII letters, digits, underscores, dots, excluding the exact names `.` and `..`. Slashes are forbidden.

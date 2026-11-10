@@ -14,22 +14,22 @@ databases and application servers.
 
 | Primitive | Actual Skrynia interface | What it enables |
 | --- | --- | --- |
-| Public byte values | `GET /store/{namespace}/{key}`, optionally served by nginx | Shared data, independent readers, static app distribution |
-| Create-if-absent | `POST /store/{namespace}/{key}` (201 or 409) | Initialization, unique records, races for one key |
+| Public byte values | `GET /store/{key}`, optionally served by nginx | Shared data, independent readers, static app distribution |
+| Create-if-absent | `POST /store/{key}` (201 or 409) | Initialization, unique records, races for one key |
 | Atomic single-key replacement | `PUT` of an existing key | Versioned state, publication pointers |
 | Compare-and-swap (CAS) | `GET` ETag, then `PUT` with `If-Match` (200 or 412) | Optimistic concurrency, one-key linearization points |
 | Conditional deletion | `DELETE` with optional `If-Match` | Reclamation coordinated with a key version |
 | Scoped, delegable grants | Key/prefix matcher, subset of `write` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
-| Notifications | Web Push subscriptions and rules | Wake interested clients without running application code on Skrynia |
+| Notifications | Grant-scoped Web Push subscriptions | Wake interested clients without running application code on Skrynia |
 
-The key alphabet is `[A-Za-z0-9_]+`; a location matcher is one exact key,
+The key alphabet is `[A-Za-z0-9_.]+` excluding the exact keys `.` and `..`; a location matcher is one exact key,
 a prefix ending in `*`, all keys (`*`), or the empty set. There is **no**
 atomic operation across multiple physical keys, general query evaluator,
 application-specific server code, or private read operation.
 
 **ETag detail.** Conditional writes compare against the current representation
 ETag, not against the current payload bytes. In the current implementation,
-successful object mutations use a monotonic per-namespace filesystem timestamp
+successful object mutations use a monotonic global filesystem timestamp
 sequence; ETags include that timestamp and object size. Replacing a value with
 identical bytes still produces a new ETag. Clients must preserve the exact ETag
 returned by `GET`, not calculate one from contents. `POST` rejects existing keys;
@@ -172,9 +172,8 @@ wait-free, fair, or independent of Skrynia's availability.
 index, or persistent search tree in immutable objects with one published root.
 Readers evaluate queries on the selected version in their own process.
 Updates to records **and their indexes** can commit together as one *logical*
-transaction. No SQL implementation or ordinary-user key-list endpoint is
-required; an index supplies discovery. The management API does have an
-administrative key-list endpoint, but ordinary readers need not depend on it.
+transaction. No SQL implementation or key-list endpoint is required; a client-managed
+index supplies discovery.
 
 Theoretical context: CAS is a *universal synchronization primitive* in the
 classical shared-memory model (Maurice Herlihy, 1991,

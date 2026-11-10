@@ -1,11 +1,9 @@
 name: CI
-
 on:
   push:
     branches: [main, 'release/**']
   pull_request:
     branches: [main, 'release/**']
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,57 +15,15 @@ jobs:
       - run: npm ci
       - run: make test
 
-  builder:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build builder image
-        run: docker build -t skrynia-builder:ci builder/
-      - name: Verify builder runs make
-        run: |
-          mkdir -p /tmp/test-app
-          printf 'build:\n\tmkdir -p build && echo ok > build/index.html\n' > /tmp/test-app/Makefile
-          docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp -v /tmp/test-app:/workspace -w /workspace skrynia-builder:ci make build
-          test -f /tmp/test-app/build/index.html
-      - name: Verify builder rootfs is writable
-        run: |
-          docker run --rm --user "$(id -u):$(id -g)" skrynia-builder:ci sh -c 'touch /var/tmp/rootfs-writable && rm /var/tmp/rootfs-writable'
-      - name: Verify builder installs npm dependencies as numeric user
-        run: |
-          mkdir -p /tmp/skrynia-npm-smoke
-          cat > /tmp/skrynia-npm-smoke/package.json <<'EOF'
-          {
-            "name": "skrynia-npm-smoke",
-            "private": true,
-            "dependencies": {
-              "is-number": "7.0.0"
-            }
-          }
-          EOF
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            --env HOME=/tmp \
-            -v /tmp/skrynia-npm-smoke:/workspace \
-            -w /workspace \
-            skrynia-builder:ci \
-            sh -c 'npm install --no-audit --no-fund && node -e "if (!require(\"is-number\")(7)) process.exit(1)"'
-
-      - name: Verify builder runs npm and builds birthday-list
-        run: |
-          docker run --rm --user "$(id -u):$(id -g)" --env HOME=/tmp -v "$PWD":/repo -w /repo/example/birthday-list skrynia-builder:ci sh -c 'npm --version && npm run build'
-          test -f example/birthday-list/build/index.html
-
   docker:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - name: Login to GHCR
         if: github.ref == 'refs/heads/main'
         uses: docker/login-action@v3
@@ -75,22 +31,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Derive version from git describe
+      - name: Derive build version
         id: gitver
         shell: bash
         run: |
-          VERSION="$(git describe | sed 's/^v//')"
+          VERSION="$(git describe --always | sed 's/^v//')"
           COMMIT="$(git rev-parse HEAD)"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
-          echo "Using version: $VERSION"
-          echo "Using commit: $COMMIT"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push skrynia image
+      - uses: docker/setup-buildx-action@v3
+      - name: Build and push Skrynia
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -105,27 +55,10 @@ jobs:
             SKRYNIA_COMMIT=${{ steps.gitver.outputs.commit }}
           cache-from: type=gha,scope=docker-skrynia
           cache-to: type=gha,mode=max,scope=docker-skrynia
-
-      - name: Build and push skrynia-builder image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: builder/Dockerfile
-          load: ${{ github.ref != 'refs/heads/main' }}
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: |
-            ghcr.io/ottojung/skrynia-builder:${{ steps.gitver.outputs.version }}
-            ghcr.io/ottojung/skrynia-builder:latest
-          cache-from: type=gha,scope=docker-skrynia-builder
-          cache-to: type=gha,mode=max,scope=docker-skrynia-builder
-
-      - name: Pull images for smoke test (main only)
+      - name: Pull image for smoke test
         if: github.ref == 'refs/heads/main'
-        run: |
-          docker pull ghcr.io/ottojung/skrynia:latest
-          docker pull ghcr.io/ottojung/skrynia-builder:latest
-
-      - name: Smoke test skrynia HTTP image
+        run: docker pull ghcr.io/ottojung/skrynia:latest
+      - name: Smoke test HTTP and root bootstrap
         run: |
           docker rm -f skrynia-smoke >/dev/null 2>&1 || true
           docker run -d --name skrynia-smoke \
@@ -133,7 +66,6 @@ jobs:
             --tmpfs /tmp \
             --tmpfs /var/lib/skrynia \
             --network host \
-            --env SKRYNIA_TOKEN=smoke-token \
             --env SKRYNIA_URL=http://127.0.0.1:17380/platform \
             ghcr.io/ottojung/skrynia:latest
           trap 'docker rm -f skrynia-smoke >/dev/null 2>&1 || true' EXIT
@@ -141,13 +73,10 @@ jobs:
             curl -fsS http://127.0.0.1:17380/platform/health && break
             sleep 0.2
           done
-          VERSION_JSON="$(curl -fsS http://127.0.0.1:17380/platform/version)"
-          printf '%s\n' "$VERSION_JSON" | grep -F "\"version\":\"${{ steps.gitver.outputs.version }}\""
-          printf '%s\n' "$VERSION_JSON" | grep -F "\"commit\":\"${{ steps.gitver.outputs.commit }}\""
-          curl -fsS -H 'Authorization: Bearer smoke-token' \
-            'http://127.0.0.1:17380/platform/ns/list' | grep '"namespaces"'
-
-      - name: Smoke test skrynia-builder image
-        run: |
-          docker run --rm ghcr.io/ottojung/skrynia-builder:latest make --version
-          docker run --rm ghcr.io/ottojung/skrynia-builder:latest npm --version
+          curl -fsS http://127.0.0.1:17380/platform/version | grep -F '"commit":"${{ steps.gitver.outputs.commit }}"'
+          docker exec skrynia-smoke node /app/scripts/root-credentials.js >/dev/null
+          docker exec skrynia-smoke node -e '
+            const fs=require("fs"),p="/var/lib/skrynia/state/grants";
+            const x=fs.readdirSync(p).map(n=>JSON.parse(fs.readFileSync(p+"/"+n)));
+            if(x.length!==1||x[0].parent!==null||x[0].maxBytes!==null)process.exit(1);
+          '

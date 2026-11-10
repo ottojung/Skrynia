@@ -1,7 +1,7 @@
 $id-9183047265512048
-title: No nginx runtime dependency
-date: 2026/09/28
+title: Standalone HTTP reads
+date: 2026/11/10
 source: @ottojung
 kind: requirement
 
-Skrynia must not require nginx to be installed or present. Its own HTTP server must remain capable of serving the complete Skrynia API, including store GETs, without nginx.
+The Node.js server serves public object GET requests. nginx or another configured static server may serve public object files independently.

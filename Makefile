@@ -1,13 +1,4 @@
-
-BUILDER_IMAGE = skrynia-builder:0.1.0
-
-builder: builder/Dockerfile
-	docker build -t $(BUILDER_IMAGE) builder/
-
 test:
-	node tests/test-grants.js
-	node tests/test-hardening.js
-	node tests/test-deployment-grants.js
-	node tests/test-action.js
+	npm test
 
-.PHONY: builder test
+.PHONY: test

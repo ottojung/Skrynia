@@ -1,7 +1,7 @@
 $id-6214634120670208
-title: Minimal dependencies
-date: 2026/09/10
+title: Small storage core
+date: 2026/11/10
 source: @ottojung
-kind: constraint
+kind: requirement
 
-Keep dependencies extremely small. Prefer standard-library facilities and simple filesystem/systemd/nginx integration if that matches existing submodules. Avoid introducing a general web framework/database/container orchestrator unless existing conventions make it clearly simpler.
+Prefer Node.js standard libraries and minimal dependencies. Skrynia implements generic storage, delegated grants and Web Push, not application-defined code or release mechanisms.

@@ -1,605 +1,258 @@
 'use strict';
 
-// Durable generic Web Push facility driven by store mutations.
-//
-// Layout under the shared data dir (same process, same data dir):
-//   STATE_DIR/_push/vapid.json            installation-owned VAPID keypair (0600)
-//   STATE_DIR/_push/outbox/{oid}.json     durable at-least-once delivery outbox
-//   STATE_DIR/{ns}/push-rules.json        mutation -> channel rules for ns
-//   STATE_DIR/{ns}/push-subs/{id}.json    private subscription records for ns
-//
-// Push payload is exactly the channel name; never namespace/key/value data.
+// Grant-authorized, location-scoped browser notifications.
+// Every subscription names its own object scope and events.
+const fs=require('fs');
+const path=require('path');
+const crypto=require('crypto');
+const {ensureDir,syncDir}=require('./shared.js');
+const {matches,validLocations}=require('./grants.js');
 
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { ensureDir, validNs } = require('./shared.js');
-
-const CHANNEL_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-const KINDS = ['create', 'replace', 'delete'];
-const MAX_CHANNELS_PER_RULE = 8;
-const MAX_SUBS_PER_CHANNEL = 500;
-const MAX_SUBS_PER_NAMESPACE = 2000;
-const MAX_OUTBOX_ITEMS = 10000;
-const DEFAULT_SEND_TIMEOUT_MS = 10000;
-const SUB_ID_BYTES = 16;
-const CAP_BYTES = 32;
-
-function validChannel(name) {
-  return typeof name === 'string' && CHANNEL_RE.test(name);
+const KINDS=Object.freeze(['create','replace','delete']);
+const MAX_SUBSCRIPTIONS=2000,MAX_OUTBOX_ITEMS=10000;
+const DEFAULT_SEND_TIMEOUT_MS=10000;
+function randomId() {return crypto.randomBytes(16).toString('hex');}
+function randomSecret() {return crypto.randomBytes(32).toString('hex');}
+function hash(x) {return crypto.createHash('sha256').update(x).digest('hex');}
+function safeMatch(a,b) {
+  return typeof a==='string'&&typeof b==='string'&&
+    /^[a-f0-9]{64}$/.test(a)&&/^[a-f0-9]{64}$/.test(b)&&
+    crypto.timingSafeEqual(Buffer.from(a,'hex'),Buffer.from(b,'hex'));
 }
-
-function parseList(raw) {
-  if (raw == null || raw === '') return [];
-  return String(raw).split(',').map(s => s.trim()).filter(s => s.length > 0);
-}
-
-function randomHex(n) { return crypto.randomBytes(n).toString('hex'); }
-function sha256hex(data) { return crypto.createHash('sha256').update(data).digest('hex'); }
-
-function timingSafeEqualHex(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-  const bufA = Buffer.from(a, 'hex');
-  const bufB = Buffer.from(b, 'hex');
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
-// Durable atomic write for all private push state: temp file is created
-// with mode 0600 (no 0644 window), fsynced before rename so the entry
-// survives OS-level crashes, then the containing directory is fsynced so
-// the rename itself is durable.
-function atomicWrite(filePath, data) {
-  ensureDir(path.dirname(filePath));
-  const tmp = filePath + '.tmp.' + process.pid;
-  const fd = fs.openSync(tmp, 'w', 0o600);
+function fault(code) {const e=new Error(code);e.code=code;return e;}
+function atomicJson(file,record) {
+  ensureDir(path.dirname(file),0o700);
+  const tmp=file+'.'+randomId()+'.tmp';
   try {
-    fs.writeFileSync(fd, data);
-    fs.fsyncSync(fd);
+    const fd=fs.openSync(tmp,'wx',0o600);
+    try {fs.writeSync(fd,JSON.stringify(record));fs.fsyncSync(fd);}
+    finally {fs.closeSync(fd);}
+    fs.renameSync(tmp,file);syncDir(path.dirname(file));
   } finally {
-    fs.closeSync(fd);
-  }
-  fs.renameSync(tmp, filePath);
-  fsyncDir(path.dirname(filePath));
-}
-
-function fsyncDir(dir) {
-  // The target is Linux: real open/I/O/permission errors propagate. Only
-  // explicitly known unsupported directory-fsync cases are tolerated.
-  const fd = fs.openSync(dir, 'r');
-  try {
-    fs.fsyncSync(fd);
-  } catch (e) {
-    if (e.code !== 'EINVAL' && e.code !== 'ENOSYS') throw e;
-  } finally {
-    try { fs.closeSync(fd); } catch {}
+    try {fs.unlinkSync(tmp);}catch(e){if(e.code!=='ENOENT')throw e;}
   }
 }
-
-function backoffMs(attempts) {
-  const ms = 1000 * Math.pow(2, Math.max(0, attempts - 1));
-  return Math.min(ms, 30000);
+function readJson(file) {
+  try {return JSON.parse(fs.readFileSync(file,'utf8'));}
+  catch(e){if(e.code==='ENOENT')return null;throw e;}
 }
-
-function createPush(opts) {
-  opts = opts || {};
-  const dataDir = opts.dataDir || process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
-  const authorizeNewSubscription = opts.onSubscriptionCreate || (() => { throw new Error('grant accounting required'); });
-  const onSubscriptionMutation = opts.onSubscriptionMutation || (() => {});
-  const stateDir = path.join(dataDir, 'state');
-  const pushDir = path.join(stateDir, '_push');
-  const outboxDir = path.join(pushDir, 'outbox');
-  const vapidPath = path.join(pushDir, 'vapid.json');
-  const subject = opts.pushSubject || process.env.SKRYNIA_PUSH_SUBJECT || opts.skryniaUrl || process.env.SKRYNIA_URL || 'https://skrynia.local/';
-  const getWebPush = () => opts.webPushLib || require('web-push');
-
-  let transport = opts.pushTransport || null;
-  let pumping = false;
-  let timer = null;
-  const pollMs = opts.pushPollMs != null ? Number(opts.pushPollMs) : 1000;
-  // Manual mode (tests only): no automatic pumps; tests drive pumpOnce().
-  const manual = Boolean(opts.pushManual);
-  const maxSubsPerNamespace = opts.maxSubsPerNamespace != null ? Number(opts.maxSubsPerNamespace) : MAX_SUBS_PER_NAMESPACE;
-  const maxOutboxItems = opts.maxOutboxItems != null ? Number(opts.maxOutboxItems) : MAX_OUTBOX_ITEMS;
-  const maxKeyLength = opts.maxKeyLength != null ? Number(opts.maxKeyLength) : 256;
-  const sendTimeoutMs = opts.pushSendTimeoutMs != null
-    ? Number(opts.pushSendTimeoutMs)
-    : Number(process.env.SKRYNIA_PUSH_SEND_TIMEOUT_MS || DEFAULT_SEND_TIMEOUT_MS);
-  if (!Number.isFinite(sendTimeoutMs) || sendTimeoutMs <= 0) throw new Error('push send timeout must be a positive number');
-
-  // --- paths ---
-
-  function rulesPath(ns) { return path.join(stateDir, ns, 'push-rules.json'); }
-  function subsDir(ns) { return path.join(stateDir, ns, 'push-subs'); }
-  function subPath(ns, id) { return path.join(subsDir(ns), id + '.json'); }
-
-  // --- VAPID (installation-owned, stable across restarts) ---
-
+function validEndpoint(endpoint) {
+  if(typeof endpoint!=='string'||!endpoint||endpoint.length>2048) return false;
+  try {
+    const url=new URL(endpoint);
+    return url.protocol==='https:'||
+      (url.protocol==='http:'&&['localhost','127.0.0.1','[::1]','::1'].includes(url.hostname));
+  }catch{return false;}
+}
+function validKeys(keys) {
+  return keys&&typeof keys==='object'&&
+    ['p256dh','auth'].every(k=>typeof keys[k]==='string'&&keys[k].length>0&&keys[k].length<=256);
+}
+function validEvents(events) {
+  return Array.isArray(events)&&events.length>0&&
+    new Set(events).size===events.length&&events.every(x=>KINDS.includes(x));
+}
+function backoffMs(attempts) {return Math.min(30000,1000*Math.pow(2,Math.max(0,attempts-1)));}
+function createPush(opts={}) {
+  const stateDir=path.join(opts.dataDir||process.env.SKRYNIA_DATA_DIR||'/var/lib/skrynia','state');
+  const pushDir=path.join(stateDir,'push');
+  const subdir=path.join(stateDir,'push-subs');
+  const outboxDir=path.join(pushDir,'outbox');
+  const vapidPath=path.join(pushDir,'vapid.json');
+  const subject=opts.pushSubject||process.env.SKRYNIA_PUSH_SUBJECT||opts.skryniaUrl||'https://skrynia.local/';
+  const maxSubs=opts.maxSubscriptions??MAX_SUBSCRIPTIONS;
+  const maxOutbox=opts.maxOutboxItems??MAX_OUTBOX_ITEMS;
+  const timeoutMs=opts.pushSendTimeoutMs??DEFAULT_SEND_TIMEOUT_MS;
+  const manual=Boolean(opts.pushManual);
+  const pollMs=opts.pushPollMs??1000;
+  const transport=opts.pushTransport||null;
+  const webPush=()=>opts.webPushLib||require('web-push');
+  const authorize=opts.onSubscriptionCreate||(()=>{throw new Error('grant authorization required');});
+  const onMutation=opts.onSubscriptionMutation||(()=>{});
+  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1) throw new Error('invalid push timeout');
+  if(!Number.isSafeInteger(maxSubs)||maxSubs<1) throw new Error('invalid subscription limit');
+  if(!Number.isSafeInteger(maxOutbox)||maxOutbox<1) throw new Error('invalid outbox limit');
+  let timer=null,pumping=false;
+  function subPath(id) {return path.join(subdir,id+'.json');}
+  function allSubs() {
+    if(!fs.existsSync(subdir)) return [];
+    return fs.readdirSync(subdir).filter(n=>/^[a-f0-9]{32}\.json$/.test(n))
+      .map(n=>readJson(path.join(subdir,n))).filter(Boolean);
+  }
+  function findSub(id) {
+    if(!/^[a-f0-9]{32}$/.test(id||'')) return null;
+    const sub=readJson(subPath(id));return sub&&sub.id===id?sub:null;
+  }
   function getVapidKeys() {
-    try {
-      const raw = JSON.parse(fs.readFileSync(vapidPath, 'utf8'));
-      if (raw && typeof raw.publicKey === 'string' && typeof raw.privateKey === 'string' && raw.publicKey && raw.privateKey) {
-        return raw;
-      }
-    } catch (e) {
-      if (e.code !== 'ENOENT') throw e;
+    const existing=readJson(vapidPath);
+    if(existing) {
+      if(typeof existing.publicKey!=='string'||typeof existing.privateKey!=='string'||
+        !existing.publicKey||!existing.privateKey) throw new Error('invalid VAPID state');
+      return existing;
     }
-    ensureDir(pushDir);
-    // The pinned web-push library is mandatory for VAPID generation: if it
-    // is unavailable, startup fails loudly rather than minting keys with
-    // hand-rolled cryptography.
-    const webpush = getWebPush();
-    const keys = webpush.generateVAPIDKeys();
-    atomicWrite(vapidPath, JSON.stringify(keys, null, 2));
+    const keys=webPush().generateVAPIDKeys();
+    atomicJson(vapidPath,keys);
     return keys;
   }
-
-  function getPublicKey() { return getVapidKeys().publicKey; }
-
-  // --- rules (managed through the existing management authority) ---
-
-  function loadRules(ns) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(rulesPath(ns), 'utf8'));
-      if (raw && Array.isArray(raw.rules)) return raw.rules;
-      return [];
-    } catch (e) {
-      if (e.code === 'ENOENT') return [];
-      throw e;
+  function createSub(locations,events,endpoint,keys,existingCapability,grantToken) {
+    if(!validLocations(locations)||!validEvents(events)||!validEndpoint(endpoint)||!validKeys(keys)) {
+      throw fault('invalid_subscription');
     }
-  }
-
-  function saveRules(ns, rules) {
-    ensureDir(path.dirname(rulesPath(ns)));
-    atomicWrite(rulesPath(ns), JSON.stringify({ rules }, null, 2));
-  }
-
-  function validateRuleParts(key, kinds, channels) {
-    if (typeof key !== 'string' || key.length === 0 || key.length > maxKeyLength) return 'key must be a non-empty string up to ' + maxKeyLength + ' chars';
-    if (key.includes('\0') || key.includes('/') || key === '.' || key === '..' || key.includes('..')) return 'key must be an exact plain object key';
-    for (const k of kinds) {
-      if (!KINDS.includes(k)) return 'kind must be one of ' + KINDS.join(',');
+    const subs=allSubs();
+    const sameEvents=(a,b)=>
+      JSON.stringify([...a].sort())===JSON.stringify([...b].sort());
+    const existing=subs.find(s=>s.endpoint===endpoint&&
+      s.locations===locations&&sameEvents(s.events,events));
+    if(existing) {
+      if(!existingCapability) throw fault('capability_required');
+      if(!safeMatch(existing.capHash,hash(existingCapability))) throw fault('invalid_capability');
+      const capability=randomSecret();
+      existing.capHash=hash(capability);
+      existing.keys={p256dh:keys.p256dh,auth:keys.auth};
+      atomicJson(subPath(existing.id),existing);
+      return {id:existing.id,capability,deduped:true};
     }
-    if (!kinds.length) return 'at least one kind is required';
-    if (!channels.length) return 'at least one channel is required';
-    if (channels.length > MAX_CHANNELS_PER_RULE) return 'at most ' + MAX_CHANNELS_PER_RULE + ' channels per rule';
-    const seen = new Set();
-    for (const c of channels) {
-      if (!validChannel(c)) return 'invalid channel name: ' + c;
-      if (seen.has(c)) return 'duplicate channel: ' + c;
-      seen.add(c);
-    }
-    return null;
+    if(subs.length>=maxSubs) throw fault('subscriptions_full');
+    // Validation and resource charging are performed against the same grant.
+    const grantId=authorize(grantToken,locations);
+    const id=randomId(),capability=randomSecret();
+    const record={id,grantId,locations,events:[...events],
+      endpoint,keys:{p256dh:keys.p256dh,auth:keys.auth},
+      capHash:hash(capability)};
+    atomicJson(subPath(id),record);
+    onMutation();
+    return {id,capability,deduped:false};
   }
-
-  function setRule(ns, key, kinds, channels) {
-    const rules = loadRules(ns);
-    const idx = rules.findIndex(r => r.key === key);
-    const entry = { key, kinds: [...kinds].sort(), channels: [...channels] };
-    if (idx >= 0) rules[idx] = entry;
-    else rules.push(entry);
-    rules.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
-    saveRules(ns, rules);
-    return entry;
-  }
-
-  function getRule(ns, key) {
-    return loadRules(ns).find(r => r.key === key) || null;
-  }
-
-  function removeRule(ns, key) {
-    const rules = loadRules(ns);
-    const next = rules.filter(r => r.key !== key);
-    if (next.length === rules.length) return false;
-    saveRules(ns, next);
-    return true;
-  }
-
-  function matchChannels(ns, key, kind) {
-    const rule = getRule(ns, key);
-    if (!rule || !rule.kinds.includes(kind)) return [];
-    return [...rule.channels];
-  }
-
-  // --- subscriptions (private records, never enumerated publicly) ---
-
-  function validEndpoint(endpoint) {
-    if (typeof endpoint !== 'string' || endpoint.length === 0 || endpoint.length > 2048) return false;
-    let u;
-    try { u = new URL(endpoint); } catch { return false; }
-    if (u.protocol === 'https:') return true;
-    if (u.protocol === 'http:') {
-      const h = u.hostname;
-      return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
-    }
-    return false;
-  }
-
-  function validKeys(keys) {
-    if (!keys || typeof keys !== 'object') return false;
-    const { p256dh, auth } = keys;
-    if (typeof p256dh !== 'string' || typeof auth !== 'string') return false;
-    if (!p256dh || !auth || p256dh.length > 256 || auth.length > 256) return false;
-    return true;
-  }
-
-  function readPrivateJson(file) {
-    try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
-    catch (e) {
-      if (e && e.code === 'ENOENT') return null;
-      throw e;
-    }
-  }
-
-  function allSubs(ns) {
-    const dir = subsDir(ns);
-    let files = [];
-    try { files = fs.readdirSync(dir).filter(f => f.endsWith('.json')); }
-    catch (e) { if (e.code !== 'ENOENT') throw e; return []; }
-    const out = [];
-    for (const f of files) {
-      const sub = readPrivateJson(path.join(dir, f));
-      if (sub && sub.id && sub.endpoint) out.push(sub);
-    }
-    return out;
-  }
-
-  function channelCount(ns, channel) {
-    return allSubs(ns).filter(s => s.channel === channel).length;
-  }
-
-  function findSub(ns, id) {
-    if (!/^[0-9a-f]{32}$/.test(id || '')) return null;
-    const sub = readPrivateJson(subPath(ns, id));
-    return sub && sub.id === id ? sub : null;
-  }
-
-  // Searches every namespace dir for the id. Ids are unguessable 128-bit
-  // hex; this avoids leaking namespace existence via per-ns endpoints.
-  function findSubAnywhere(id) {
-    if (!/^[0-9a-f]{32}$/.test(id || '')) return null;
-    let dirs = [];
-    try { dirs = fs.readdirSync(stateDir, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); }
-    catch { return null; }
-    for (const ns of dirs) {
-      if (!validNs(ns)) continue;
-      const sub = readPrivateJson(path.join(subsDir(ns), id + '.json'));
-      if (sub && sub.id === id) return sub;
-    }
-    return null;
-  }
-
-  function createSub(ns, channel, endpoint, keys, existingCapability, grantToken) {
-    const subs = allSubs(ns);
-    const existing = subs.find(s => s.channel === channel && s.endpoint === endpoint);
-    if (existing) {
-      if (!existingCapability) {
-        const err = new Error('capability_required');
-        err.code = 'capability_required';
-        throw err;
+  function updateSub(id,capability,patch) {
+    const sub=findSub(id);
+    if(!sub) throw fault('not_found');
+    if(!safeMatch(sub.capHash,hash(capability||''))) throw fault('invalid_capability');
+    if(patch.endpoint!==undefined) {
+      if(!validEndpoint(patch.endpoint)) throw fault('invalid_subscription');
+      if(allSubs().some(s=>s.id!==id&&s.endpoint===patch.endpoint&&
+        s.locations===sub.locations&&
+        JSON.stringify([...s.events].sort())===JSON.stringify([...sub.events].sort()))) {
+        throw fault('endpoint_in_use');
       }
-      if (!checkCap(existing, existingCapability)) {
-        const err = new Error('invalid_capability');
-        err.code = 'invalid_capability';
-        throw err;
-      }
-      const capability = randomHex(CAP_BYTES);
-      existing.keys = { p256dh: keys.p256dh, auth: keys.auth };
-      existing.capHash = sha256hex(capability);
-      atomicWrite(subPath(ns, existing.id), JSON.stringify(existing, null, 2));
-      return { id: existing.id, capability, deduped: true };
+      sub.endpoint=patch.endpoint;
     }
-    // Durable per-namespace total cap: arbitrary channel names cannot be
-    // used to grow subscriptions without bound.
-    if (subs.length >= maxSubsPerNamespace) {
-      const err = new Error('namespace_full');
-      err.code = 'namespace_full';
-      throw err;
+    if(patch.keys!==undefined) {
+      if(!validKeys(patch.keys)) throw fault('invalid_subscription');
+      sub.keys={p256dh:patch.keys.p256dh,auth:patch.keys.auth};
     }
-    if (channelCount(ns, channel) >= MAX_SUBS_PER_CHANNEL) {
-      const err = new Error('channel_full');
-      err.code = 'channel_full';
-      throw err;
-    }
-    const grantId = authorizeNewSubscription(ns, grantToken);
-    const id = randomHex(SUB_ID_BYTES);
-    const capability = randomHex(CAP_BYTES);
-    const record = {
-      id,
-      ns,
-      grantId,
-      channel,
-      endpoint,
-      keys: { p256dh: keys.p256dh, auth: keys.auth },
-      capHash: sha256hex(capability),
-      created: new Date().toISOString(),
-    };
-    ensureDir(subsDir(ns));
-    atomicWrite(subPath(ns, id), JSON.stringify(record, null, 2));
-    onSubscriptionMutation(ns);
-    return { id, capability, deduped: false };
+    atomicJson(subPath(id),sub);
+    return {ok:true};
   }
-
-  function checkCap(sub, capability) {
-    if (!sub || typeof capability !== 'string') return false;
-    return timingSafeEqualHex(sha256hex(capability), sub.capHash);
+  function deleteRecord(id) {
+    fs.unlinkSync(subPath(id));syncDir(subdir);onMutation();
   }
-
-  function removeSubRecord(ns, id) {
-    try { fs.unlinkSync(subPath(ns, id)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-    onSubscriptionMutation(ns);
+  function removeSub(id,capability) {
+    const sub=findSub(id);
+    if(!sub) throw fault('not_found');
+    if(!safeMatch(sub.capHash,hash(capability||''))) throw fault('invalid_capability');
+    deleteRecord(id);return {ok:true};
   }
-
-  function removeSubRecordIfUnchanged(ns, snapshot) {
-    const current = findSub(ns, snapshot.id);
-    if (!current) return;
-    if (
-      current.endpoint === snapshot.endpoint &&
-      current.capHash === snapshot.capHash &&
-      current.keys &&
-      snapshot.keys &&
-      current.keys.p256dh === snapshot.keys.p256dh &&
-      current.keys.auth === snapshot.keys.auth
-    ) {
-      removeSubRecord(ns, snapshot.id);
+  function removeSubIfUnchanged(old) {
+    const current=findSub(old.id);
+    if(current&&current.endpoint===old.endpoint&&current.capHash===old.capHash&&
+      current.keys.p256dh===old.keys.p256dh&&current.keys.auth===old.keys.auth) {
+      deleteRecord(old.id);
     }
   }
-
-  function notFoundError() {
-    const err = new Error('not_found');
-    err.code = 'not_found';
-    return err;
+  function matching(key,kind) {
+    return allSubs().filter(s=>s.events.includes(kind)&&matches(s.locations,key));
   }
-
-  function capError() {
-    const err = new Error('invalid_capability');
-    err.code = 'invalid_capability';
-    return err;
-  }
-
-  // Namespace-blind variants for the public update/delete endpoints: the URL
-  // carries no namespace so existence of namespaces is never leaked; ids are
-  // unguessable 128-bit hex and the capability is bearer authority.
-  function updateSubAnywhere(id, capability, patch) {
-    const sub = findSubAnywhere(id);
-    if (!sub) throw notFoundError();
-    if (!checkCap(sub, capability)) throw capError();
-    if (patch.endpoint !== undefined) {
-      const duplicate = allSubs(sub.ns).find(s => s.id !== id && s.channel === sub.channel && s.endpoint === patch.endpoint);
-      if (duplicate) {
-        const err = new Error('endpoint_in_use');
-        err.code = 'endpoint_in_use';
-        throw err;
-      }
-      sub.endpoint = patch.endpoint;
-    }
-    if (patch.keys !== undefined) sub.keys = { p256dh: patch.keys.p256dh, auth: patch.keys.auth };
-    atomicWrite(subPath(sub.ns, id), JSON.stringify(sub, null, 2));
-    return sub;
-  }
-
-  function removeSubAnywhere(id, capability) {
-    const sub = findSubAnywhere(id);
-    if (!sub) throw notFoundError();
-    if (!checkCap(sub, capability)) throw capError();
-    removeSubRecord(sub.ns, id);
-    return true;
-  }
-
-  // --- durable outbox: one entry per (mutation x channel) ---
-
   function outboxCount() {
-    try { return fs.readdirSync(outboxDir).filter(f => f.endsWith('.json')).length; }
-    catch (e) { if (e.code === 'ENOENT') return 0; throw e; }
+    return fs.existsSync(outboxDir)?fs.readdirSync(outboxDir).filter(x=>x.endsWith('.json')).length:0;
   }
-
-  function preflight(ns, key, kind) {
-    const channels = matchChannels(ns, key, kind);
-    if (outboxCount() + channels.length > maxOutboxItems) {
-      const err = new Error('outbox_full');
-      err.code = 'outbox_full';
-      throw err;
-    }
-    return channels;
+  // A notification is a wake-up to reread current state. One durable
+  // pending wake-up per subscription is sufficient, even if its endpoint
+  // remains offline while thousands of mutations occur.
+  function notificationPath(subId) {return path.join(outboxDir,subId+'.json');}
+  function preflight(key,kind) {
+    const needed=matching(key,kind).filter(s=>!fs.existsSync(notificationPath(s.id))).length;
+    if(outboxCount()+needed>maxOutbox) throw fault('outbox_full');
+    return needed;
   }
-
-  function enqueue(ns, key, kind) {
-    const channels = preflight(ns, key, kind);
-    if (!channels.length) return [];
-    ensureDir(outboxDir);
-    // Backpressure before commit: capacity for ALL matching channels is
-    // verified synchronously before any entry is written, so a configured
-    // mutation never commits without complete durable notification state.
-    if (outboxCount() + channels.length > maxOutboxItems) {
-      const err = new Error('outbox_full');
-      err.code = 'outbox_full';
-      throw err;
+  function enqueue(key,kind) {
+    const subscribers=matching(key,kind);
+    const needed=subscribers.filter(s=>!fs.existsSync(notificationPath(s.id))).length;
+    if(outboxCount()+needed>maxOutbox) throw fault('outbox_full');
+    for(const sub of subscribers) {
+      const file=notificationPath(sub.id);
+      const pending=readJson(file);
+      if(pending&&pending.subscriptionId!==sub.id) throw new Error('corrupt push outbox');
+      atomicJson(file,{subscriptionId:sub.id,
+        generation:(pending?.generation||0)+1,attempts:0,nextAt:0});
     }
-    const now = new Date().toISOString();
-    const ids = [];
-    for (const channel of channels) {
-      const oid = Date.now().toString(36) + '-' + randomHex(8);
-      const entry = { id: oid, ns, key, kind, channel, attempts: 0, nextAt: now, created: now };
-      atomicWrite(path.join(outboxDir, oid + '.json'), JSON.stringify(entry, null, 2));
-      ids.push(oid);
-    }
-    schedule();
-    return ids;
+    if(subscribers.length) schedule();
+    return subscribers.map(s=>s.id);
   }
-
-  function dropNamespace(ns) {
-    if(!fs.existsSync(outboxDir)) return;
-    for(const name of fs.readdirSync(outboxDir).filter(x=>x.endsWith('.json'))) {
-      const file=path.join(outboxDir,name);
-      const entry=JSON.parse(fs.readFileSync(file,'utf8'));
-      if(entry.ns===ns) fs.unlinkSync(file);
-    }
-    fsyncDir(outboxDir);
-  }
-
   function listOutbox() {
-    let files = [];
-    try { files = fs.readdirSync(outboxDir).filter(f => f.endsWith('.json')).sort(); }
-    catch (e) { if (e.code !== 'ENOENT') throw e; return []; }
-    const out = [];
-    for (const f of files) {
-      const p = path.join(outboxDir, f);
-      const entry = readPrivateJson(p);
-      if (!entry || !entry.id) throw new Error('invalid durable push outbox entry: ' + f);
-      out.push({ file: p, entry });
-    }
-    return out;
+    if(!fs.existsSync(outboxDir)) return [];
+    return fs.readdirSync(outboxDir).filter(n=>/^[a-f0-9]{32}\.json$/.test(n))
+      .map(n=>({file:path.join(outboxDir,n),entry:readJson(path.join(outboxDir,n))}));
   }
-
-  function defaultTransport() {
-    const webpush = getWebPush();
-    const keys = getVapidKeys();
-    return async (sub, channel) => {
-      await webpush.sendNotification(
-        { endpoint: sub.endpoint, keys: sub.keys },
-        channel,
-        {
-          timeout: sendTimeoutMs,
-          vapidDetails: { subject, publicKey: keys.publicKey, privateKey: keys.privateKey },
-        }
-      );
-    };
-  }
-
-  function isGoneError(err) {
-    const status = err && (err.statusCode || err.status);
-    return status === 404 || status === 410;
-  }
-
-  async function sendBounded(send, sub, channel) {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        const err = new Error('push delivery timed out');
-        err.code = 'push_timeout';
-        reject(err);
-      }, sendTimeoutMs);
-    });
+  function isGoneError(e) {return e&&(e.statusCode===404||e.statusCode===410||e.status===404||e.status===410);}
+  async function sendBounded(sub) {
+    const send=transport||((s)=>webPush().sendNotification(
+      {endpoint:s.endpoint,keys:s.keys},'changed',
+      {timeout:timeoutMs,vapidDetails:{subject,publicKey:getVapidKeys().publicKey,privateKey:getVapidKeys().privateKey}}));
+    let timeout;
     try {
       return await Promise.race([
-        Promise.resolve().then(() => send(sub, channel)),
-        timeout,
+        Promise.resolve().then(()=>send(sub)),
+        new Promise((_,reject)=>{timeout=setTimeout(()=>reject(fault('push_timeout')),timeoutMs);}),
       ]);
-    } finally {
-      clearTimeout(timer);
-    }
+    } finally {clearTimeout(timeout);}
   }
-
-  // At-least-once delivery. Safe to run repeatedly: a successfully
-  // delivered entry is removed, and duplicates are acceptable because the
-  // payload is only a channel-name wake-up (clients reread store state).
-  // Web Push sends are NOT idempotent; the outbox entry is the deduplicating
-  // record, and it is removed only after every subscription send succeeds
-  // (or the subscription proves expired). Transient failures retry
-  // indefinitely with capped exponential backoff; storage is bounded by the
-  // outbox capacity check in enqueue(), never by dropping entries here.
-  async function pumpOnce(opts) {
-    opts = opts || {};
-    const now = Date.now();
-    const items = listOutbox();
-    let delivered = 0;
-    for (const { file, entry } of items) {
-      let fresh;
-      try { fresh = JSON.parse(fs.readFileSync(file, 'utf8')); }
-      catch { continue; }
-      if (!opts.ignoreBackoff && fresh.nextAt && Date.parse(fresh.nextAt) > now) continue;
-      const subs = allSubs(fresh.ns).filter(s => s.channel === fresh.channel);
-      if (!subs.length) {
-        try { fs.unlinkSync(file); } catch {}
-        continue;
-      }
-      const send = transport || defaultTransport();
-      let failed = false;
-      for (const sub of subs) {
-        try {
-          await sendBounded(send, { endpoint: sub.endpoint, keys: sub.keys }, fresh.channel);
-          delivered++;
-        } catch (err) {
-          if (isGoneError(err)) {
-            // Delivery awaited external I/O, so the registration may have
-            // changed while the send was in flight. Never delete a newer
-            // endpoint because an older endpoint returned 404/410.
-            removeSubRecordIfUnchanged(sub.ns, sub);
-          } else {
-            failed = true; // one broken subscription never blocks healthy ones
-          }
+  async function pumpOnce({ignoreBackoff=false}={}) {
+    let delivered=0;
+    for(const {file} of listOutbox()) {
+      const fresh=readJson(file);
+      if(!fresh) continue;
+      if(!ignoreBackoff&&fresh.nextAt>Date.now()) continue;
+      const sub=findSub(fresh.subscriptionId);
+      if(!sub) {fs.unlinkSync(file);continue;}
+      try {
+        await sendBounded(sub);delivered++;
+        const current=readJson(file);
+        // A store mutation may have enqueued a newer wake-up while the
+        // network send was in flight. Never acknowledge that generation.
+        if(current&&current.generation===fresh.generation) fs.unlinkSync(file);
+      } catch(e) {
+        if(isGoneError(e)) removeSubIfUnchanged(sub);
+        const current=readJson(file);
+        if(!current) continue;
+        if(!findSub(fresh.subscriptionId)) {
+          fs.unlinkSync(file);
+        } else if(current.generation===fresh.generation) {
+          const attempts=isGoneError(e)?0:fresh.attempts+1;
+          atomicJson(file,{...current,attempts,
+            nextAt:isGoneError(e)?0:Date.now()+backoffMs(attempts)});
         }
-      }
-      if (!failed) {
-        try { fs.unlinkSync(file); } catch {}
-      } else {
-        // Transient failure: retry indefinitely with capped exponential
-        // backoff. Entries are never dropped here; see enqueue() capacity.
-        fresh.attempts = (fresh.attempts || 0) + 1;
-        fresh.nextAt = new Date(Date.now() + backoffMs(fresh.attempts)).toISOString();
-        try { atomicWrite(file, JSON.stringify(fresh, null, 2)); } catch {}
+        // A newer generation has reset its own backoff; leave it untouched.
       }
     }
-    return { delivered };
+    return {delivered};
   }
-
-  function schedule() {
-    if (manual || timer) return;
-    setImmediate(() => { pumpTick(); });
-  }
-
   async function pumpTick() {
-    if (pumping) return;
-    pumping = true;
-    try { await pumpOnce(); }
-    catch (e) { console.error('skrynia push pump error:', e && e.message ? e.message : e); }
-    finally { pumping = false; }
+    if(pumping) return;
+    pumping=true;
+    try {await pumpOnce();}
+    catch(e){console.error('skrynia push pump error:',e);}
+    finally {pumping=false;}
   }
-
+  function schedule() {if(!manual) setImmediate(pumpTick);}
   function start() {
-    ensureDir(outboxDir);
-    getVapidKeys();
-    if (manual) return;
-    pumpTick(); // startup recovery: redeliver anything durable in the outbox
-    if (pollMs > 0) {
-      timer = setInterval(pumpTick, pollMs);
-      if (timer.unref) timer.unref();
-    }
+    ensureDir(outboxDir,0o700);getVapidKeys();
+    if(manual) return;
+    pumpTick();
+    if(pollMs>0) {timer=setInterval(pumpTick,pollMs);timer.unref();}
   }
-
-  function close() {
-    if (timer) { clearInterval(timer); timer = null; }
-  }
-
-  return {
-    getPublicKey,
-    getVapidKeys,
-    loadRules,
-    setRule,
-    getRule,
-    removeRule,
-    matchChannels,
-    validateRuleParts,
-    parseList,
-    validChannel,
-    validEndpoint,
-    validKeys,
-    createSub,
-    updateSubAnywhere,
-    removeSubAnywhere,
-    findSub,
-    findSubAnywhere,
-    allSubs,
-    preflight,
-    enqueue,
-    listOutbox,
-    dropNamespace,
-    outboxCount,
-    pumpOnce,
-    start,
-    close,
-    outboxDir,
-  };
+  function close() {if(timer) clearInterval(timer);timer=null;}
+  return {KINDS,validEndpoint,validKeys,validEvents,getPublicKey:()=>getVapidKeys().publicKey,
+    getVapidKeys,allSubs,findSub,createSub,updateSub,removeSub,preflight,enqueue,
+    listOutbox,outboxCount,pumpOnce,start,close,outboxDir};
 }
-
-module.exports = { createPush, CHANNEL_RE, KINDS, MAX_SUBS_PER_CHANNEL, MAX_SUBS_PER_NAMESPACE, MAX_OUTBOX_ITEMS };
+module.exports={createPush,KINDS,MAX_SUBSCRIPTIONS,MAX_OUTBOX_ITEMS};
