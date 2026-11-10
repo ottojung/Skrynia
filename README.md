@@ -1,183 +1,141 @@
 # Skrynia
 
-**Static web hosting with persistent storage and delegable permissions.**
+**A durable public object store with delegable, resource-bounded authority.**
 
-Skrynia deploys web apps from Git and gives them a small, durable key–value store. Apps can read and write arbitrary bytes over HTTP without running their own backend. Skrynia doesn't interpret their data or require accounts: **grants** control where clients can write, which operations they can perform, and how much storage they can use.
+Skrynia stores opaque bytes at named keys. Every object is publicly readable.
+Bearer-token grants determine where clients may create, replace, and delete
+objects, delegate authority, and subscribe to changes. A single global root grant
+provides all authority. Applications, websites, indexes, logs, and versioned
+releases are **client-side protocols** built on ordinary stored objects.
 
-- **Deploy from Git.** Build a specific commit with `make build` in Docker, publish it atomically, and roll back to an earlier release.
-- **Store ordinary files.** Binary-safe values live at named keys. Reads are public (and can be served directly by nginx); conditional writes use ETags.
-- **Delegate authority.** Issue restricted grants for individual keys or prefixes, with independent operations and resource budgets.
-- **Revoke authority.** A grant and its descendants can be revoked without affecting stored values.
-- **Notify clients.** Web Push subscriptions and rules connect storage events to browser notifications.
+Skrynia itself runs one Node.js process. It never executes application code.
+It has no application registry or privileged HTTP administration API.
 
-Skrynia runs as a single Node.js service. Application code remains static HTML, JavaScript, and CSS.
+## Start
 
-## Quick start
-
-You need **Node.js 20+**, **Docker**, and **Git**. To deploy an app, the Skrynia host also needs SSH access to its Git repository.
+Requires Node.js 20+.
 
 ```sh
-git clone https://github.com/ottojung/Skrynia.git
-cd Skrynia
 npm ci
-make builder
-
-export SKRYNIA_URL=http://127.0.0.1:17380/platform
-export SKRYNIA_TOKEN=replace-with-a-secret
 export SKRYNIA_DATA_DIR="$HOME/.local/share/skrynia"
+export SKRYNIA_URL="http://127.0.0.1:17380"
 node src/server.js
 ```
 
-Skrynia listens on `127.0.0.1:17380` by default. Put it behind a reverse proxy when exposing it publicly, and use HTTPS for requests carrying tokens. `SKRYNIA_URL` is the API's canonical external URL; it can include a path such as `/platform`.
+On startup Skrynia ensures a root grant exists, creating one if absent.
+The root has `locations: "*"`, all operations, and **unlimited** `maxBytes`
+and `maxObjects` (represented by JSON `null`). It is a normal,
+revocable grant. Revocation preserves object values; the next server start
+issues a fresh root and fresh issuer credential.
 
-### Deploy an app
-
-An app repository needs a `Makefile` whose `build` target writes its static output to `build/`. From another shell with the same `SKRYNIA_URL` and `SKRYNIA_TOKEN`:
+The root's issuer token is stored **only in its private, mode-0600 grant file**
+alongside the root record. Retrieve the root ID and issuer token on the host:
 
 ```sh
-python3 scripts/cli.py deploy \
-  --namespace hello \
-  --repo git@github.com:your-org/hello.git \
-  --commit "$APP_COMMIT" \
-  --subdir .
+node scripts/root-credentials.js
 ```
 
-Set `APP_COMMIT` to the full commit SHA from the app repository (for example, `git rev-parse HEAD` there). The app is published at `/apps/hello/` by default. Later deployments replace the active release without discarding its storage; earlier releases remain available for rollback.
+The command reads `SKRYNIA_DATA_DIR`; treat its output as a secret.
+There is no endpoint that reveals or rotates the root issuer token.
+Do not place this credential in browser JavaScript.
 
-**On the first deployment**, Skrynia issues the namespace's **root grant**,
-returning its ID and **issuer token only**. Store that credential securely;
-subsequent deployments do not reveal it. The
-[GitHub deployment action](action/deploy/action.yml) exports the one-time
-issuer token as a masked output.
-
-An issuer token can **mint user tokens** or **revoke** the grant and its descendants.
-User tokens exercise the grant's permitted operations; they cannot issue
-other user tokens. To mint the first root user token:
+Issue a root user token with the issuer credential:
 
 ```sh
-curl -sS -X POST "$SKRYNIA_URL/grants/$ROOT_GRANT_ID/users?namespace=hello" \
+curl -fsS -X POST "$SKRYNIA_URL/grants/$ROOT_GRANT_ID/users" \
   -H "Authorization: Bearer $ROOT_ISSUER_TOKEN"
 ```
 
-The response contains a `userToken`. Save it as `ROOT_USER_TOKEN` for
-delegation and writing values.
+## Use the store
 
-## Give an app permission to write
-
-Instead of handing a browser the root token, create a narrowly scoped grant. For example, authorize writes only to keys beginning with `notes`:
+Store keys may contain ASCII letters, digits, underscores, and dots,
+except for the exact names `.` and `..`. Slashes are not permitted.
+Examples include `index.html`, `alice.app.js`, `alice.settings.json`.
 
 ```sh
-curl -sS -X POST "$SKRYNIA_URL/grants" \
+curl -fsS -X POST "$SKRYNIA_URL/store/alice.index.html" \
+  -H "X-Skrynia-Grant: $ROOT_USER_TOKEN" \
+  --data-binary '<h1>Hello</h1>'
+
+# Anybody can read it. The response includes an ETag.
+curl -i "$SKRYNIA_URL/store/alice.index.html"
+```
+
+`POST` creates only if absent; `PUT` replaces an existing object.
+`PUT` and `DELETE` support `If-Match` for compare-and-swap.
+
+Skrynia serves standard extensions with their normal HTTP MIME types,
+including HTML, JavaScript, CSS, and JSON. nginx or another configured static
+server may serve the same object files directly from
+`SKRYNIA_DATA_DIR/store/`. Keep everything else in the data directory private.
+If hosting **mutually untrusted HTML applications**, isolate their browser
+origins using separate hostnames; key prefixes aren't browser sandboxes.
+
+### Delegate a subspace
+
+```sh
+curl -fsS -X POST "$SKRYNIA_URL/grants" \
   -H "Authorization: Bearer $ROOT_USER_TOKEN" \
-  -H "Content-Type: application/json" \
-  --data '{
-    "namespace": "hello",
-    "locations": "notes*",
-    "operations": ["write"],
-    "maxBytes": 65536,
-    "maxObjects": 10
-  }'
+  -H 'Content-Type: application/json' \
+  --data '{"locations":"alice.*","operations":["write","delegate","subscribe"],
+           "maxBytes":1048576,"maxObjects":100}'
 ```
 
-Grant creation returns the new grant's ID and **issuer token**, but no
-user token. Issue one separately:
+The response returns a new grant ID and **issuer token**. The issuer uses
+`POST /grants/{id}/users` to issue independent user tokens. User tokens
+perform the granted operations; issuer tokens issue/revoke credentials and
+revoke grant subtrees. Each child may narrow its parent's key scope and
+operations. Its quota is evaluated on writes through its grant or descendants.
+No object belongs to a grant, and revoking a grant never deletes objects.
 
-```sh
-curl -sS -X POST "$SKRYNIA_URL/grants/$NOTES_GRANT_ID/users?namespace=hello" \
-  -H "Authorization: Bearer $NOTES_ISSUER_TOKEN"
+A client can publish a website, index, or immutable manifest within its scope.
+An external deployment tool can implement atomic publication by CAS on a
+single small root object, without server-side deployment logic.
+
+### Web Push
+
+A user token with `subscribe` authority can register interest in any
+location scope contained in its own grant:
+
+```json
+{
+  "locations": "alice.*",
+  "events": ["create", "replace", "delete"],
+  "endpoint": "https://push-service.example/subscription",
+  "keys": {"p256dh": "browser-p256dh", "auth": "browser-auth"}
+}
 ```
 
-Save the returned `userToken` as `NOTES_USER_TOKEN`. Using that user token:
+POST this to `/push/subscriptions` with `X-Skrynia-Grant`. The response
+contains a subscription ID and a separate capability for updating/removing
+that subscription. Skrynia sends a generic `changed` wake-up; clients fetch
+current values. Delivery is durable and at least once, so duplicates are
+possible. Each subscription consumes the sponsoring grant's quotas.
 
-```sh
-# Create a value.
-curl -sS -X POST "$SKRYNIA_URL/store/hello/notes1" \
-  -H "X-Skrynia-Grant: $NOTES_USER_TOKEN" \
-  --data-binary 'Hello'
+## Architectural properties
 
-# Anyone can read it; the response includes an ETag.
-curl -i "$SKRYNIA_URL/store/hello/notes1"
+- **Shared memory:** Public objects are independently retrievable without
+  running application-specific backend code.
+- **CAS:** Single-key conditional writes can serialize client-authored logical
+  multi-object transactions over immutable versions.
+- **Delegation:** Grants constrain operations, location prefixes, and budgets.
+- **Client protocols:** Applications define schemas, indexing, publication,
+  cryptographic validation, and computation outside Skrynia.
+- **One writer process:** Only one Skrynia instance may own a data directory.
+  HTTP API mutations are serialized; static readers can be served separately.
 
-# Replace it, optionally using the ETag to prevent lost updates.
-curl -sS -X PUT "$SKRYNIA_URL/store/hello/notes1" \
-  -H "X-Skrynia-Grant: $NOTES_USER_TOKEN" \
-  -H 'If-Match: "<etag-from-GET>"' \
-  --data-binary 'Updated'
-```
+Skrynia supports CORS for bearer-authenticated browser requests from other
+origins. It does not use cookie authentication.
 
-The same token can delete `notes1`, but it cannot write `settings`, create subgrants, or register push subscriptions. A token with only `write` at one exact key is also a way to offer public writing at that key. **Anyone with that token can replace or delete its contents**, so share it deliberately.
-
-### How grants work
-
-Every grant combines:
-
-| Field | Meaning |
-| --- | --- |
-| `locations` | `"*"` (all keys), `"notes*"` (prefix), `"notes1"` (exact), or `""` (none) |
-| `operations` | Any subset of `write`, `delegate`, `subscribe` |
-| `maxBytes`, `maxObjects` | Limits on mutations performed through the grant and its ancestors |
-
-Keys use only ASCII letters, digits, and underscores (`[A-Za-z0-9_]+`). A child grant can narrow its parent's locations and operations but can never expand them. Reading needs no grant and is always public—do not store private data expecting access control on `GET`.
-
-Grants authorize **actions**, not ownership of values. A write must fit the resulting usage of the writing grant and its ancestors; unrelated grants never veto it. A replacement is logically an atomic delete followed by a creation, so the *entire replacement value* must fit. Objects don't carry creator or grant identities.
-
-### Revocation and data lifetime
-
-Revoking a grant invalidates its issuer and user tokens, revokes its
-descendants, and removes their push subscriptions. **Stored objects remain
-unchanged**, regardless of which grant wrote them or which locations match.
-
-An authorized `DELETE /store/{namespace}/{key}` removes a value. Namespace
-undeployment removes all namespace data. Revoking even the root grant
-leaves existing objects publicly readable; a new root grant can administer
-those objects.
-
-### Recovering credentials and inspecting state
-
-Management requests use `Authorization: Bearer $SKRYNIA_TOKEN`.
-Their mutations use POST/DELETE with JSON bodies, so management secrets
-never need to appear in URLs. Use the CLI to inspect live objects and
-grant budgets:
-
-~~~sh
-python3 scripts/cli.py ns grants --namespace hello
-python3 scripts/cli.py ns keys --namespace hello --prefix notes
-~~~
-
-If the root issuer token is lost, `ns rotate-issuer` creates a new
-one without changing existing users or objects. An issuer can issue
-user tokens and **individually revoke** them using their returned IDs;
-the client maintains any token labels or lists. Revoking a user token
-does not delete its data.
-
-## Integration and operations
-
-The browser helper is served at `/client/skrynia.js`. For example, after loading it:
-
-```js
-(async () => {
-  const store = Skrynia.store('hello', notesUserToken);
-  await store.create('notes2', 'A note');
-  const result = await store.get('notes2');
-  await store.put('notes2', 'Revised', { etag: result.meta.etag });
-})();
-```
-
-Web Push subscriptions can be registered with a grant that has `subscribe`; configurable rules route object changes to notification channels. Skrynia keeps subscription state and delivery work durable.
-
-Persistent state lives in `SKRYNIA_DATA_DIR` (default `/var/lib/skrynia`). Run **one Skrynia server per data directory**. Object files under `store/{namespace}/{key}` can be served directly by nginx; keep grant records and other private state inaccessible.
-
-For details, see the [HTTP API](docs/api-spec.md), [deployment guide](docs/deployment.md), and [normative grant semantics](docs/intent-location-authority.md).
-
-For patterns built **entirely by clients**—multi-object logical transactions using
-CAS, indexes, logs, discussion boards, authenticated data structures, and
-resource-safe protocol design—see [Client-side protocols on Skrynia](docs/client-protocols.md).
+See the [HTTP API](docs/api-spec.md),
+[grant semantics](docs/intent-location-authority.md),
+[client-constructed protocols](docs/client-protocols.md), and
+[operations](docs/operations.md).
 
 ## Development
 
 ```sh
-npm ci
 make test
 ```
 
-Skrynia is Free Software, licensed under **AGPL-3.0-or-later**.
+Skrynia is Free Software under **AGPL-3.0-or-later**.
