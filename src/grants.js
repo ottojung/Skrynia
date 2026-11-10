@@ -4,7 +4,7 @@
 const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
-const {ensureDir,syncDir}=require('./shared.js');
+const {ensureDir,syncDir,atomicJson}=require('./shared.js');
 const {createResourceIndex}=require('./resource-index.js');
 
 const GRANT_COST=2048,OBJECT_COST=512,PUSH_SUB_COST=4096,EXTRA_USER_COST=128;
@@ -49,20 +49,9 @@ function createGrants(shared) {
   const dir=path.join(shared.STATE_DIR,'grants');
   const subdir=path.join(shared.STATE_DIR,'push-subs');
   const pendingDir=path.join(shared.STATE_DIR,'grant-revocations');
-  let grantsCache=null,subscriptionsCache=null;
+  let grantsCache=null,subscriptionsCache=null,onSubscriptionsRevoked=()=>{};
+  let tokenIndex=null,validatedTree=null,metadataUsage=null;
   function recordPath(id) {return path.join(dir,id+'.json');}
-  function atomicJson(file,record) {
-    ensureDir(path.dirname(file),0o700);
-    const tmp=file+'.'+randomId()+'.tmp';
-    try {
-      const fd=fs.openSync(tmp,'wx',0o600);
-      try {fs.writeSync(fd,JSON.stringify(record));fs.fsyncSync(fd);}
-      finally {fs.closeSync(fd);}
-      fs.renameSync(tmp,file);syncDir(path.dirname(file));
-    } finally {
-      try {fs.unlinkSync(tmp);}catch(e){if(e.code!=='ENOENT')throw e;}
-    }
-  }
   function grantMap() {
     if(grantsCache) return grantsCache;
     const result=new Map();
@@ -79,6 +68,9 @@ function createGrants(shared) {
   function writeGrant(g) {
     atomicJson(recordPath(g.id),g);
     grantMap().set(g.id,g);
+    tokenIndex=null;
+    validatedTree=null;
+    metadataUsage=null;
   }
   function find(id) {
     if(!ID_RE.test(id||'')) throw fault(400,'invalid_grant');
@@ -87,6 +79,7 @@ function createGrants(shared) {
     return g;
   }
   function validateTree() {
+    if(validatedTree) return validatedTree;
     const map=new Map(all().map(g=>[g.id,g]));
     const roots=[];
     for(const g of map.values()) {
@@ -126,6 +119,7 @@ function createGrants(shared) {
         x=x.parent===null?null:map.get(x.parent);
       }
     }
+    validatedTree=map;
     return map;
   }
   function isDescendant(map,child,ancestor) {
@@ -152,31 +146,43 @@ function createGrants(shared) {
     }
     subscriptionsCache=list;return list;
   }
-  function subscriptionChanged() {subscriptionsCache=null;}
-  function usageWith(g,map,subs) {
-    const stats=index.stats(g.locations);
-    let bytes=stats.bytes+stats.objects*OBJECT_COST;
-    let objects=stats.objects;
-    for(const h of map.values()) if(isDescendant(map,h.id,g.id)) {
-      bytes+=GRANT_COST+Math.max(0,h.users.length-1)*EXTRA_USER_COST;
-    }
-    for(const sub of subs) {
-      if(!map.has(sub.data.grantId)) throw new Error('orphaned subscription');
-      if(isDescendant(map,sub.data.grantId,g.id)) {
-        bytes+=PUSH_SUB_COST;objects++;
+  function subscriptionChanged() {subscriptionsCache=null;metadataUsage=null;}
+  function aggregatedMetadata() {
+    if(metadataUsage) return metadataUsage;
+    const map=validateTree(),subs=subscriptionEntries();
+    const totals=new Map([...map.keys()].map(id=>
+      [id,{bytes:0,objects:0}]));
+    function charge(id,bytes,objects) {
+      let g=map.get(id);
+      if(!g) throw new Error('orphaned subscription');
+      while(g) {
+        const usage=totals.get(g.id);
+        usage.bytes+=bytes;
+        usage.objects+=objects;
+        g=g.parent===null?null:map.get(g.parent);
       }
     }
-    return {bytes,objects};
+    for(const g of map.values()) {
+      charge(g.id,GRANT_COST+Math.max(0,g.users.length-1)*EXTRA_USER_COST,0);
+    }
+    for(const sub of subs) charge(sub.data.grantId,PUSH_SUB_COST,1);
+    metadataUsage=totals;
+    return totals;
+  }
+  function usageWith(g) {
+    const stats=index.stats(g.locations),meta=aggregatedMetadata().get(g.id);
+    return {bytes:stats.bytes+stats.objects*OBJECT_COST+meta.bytes,
+      objects:stats.objects+meta.objects};
   }
   function usage(id) {
     const map=validateTree(),g=map.get(id);
     if(!g) throw fault(404,'grant_not_found');
-    return usageWith(g,map,subscriptionEntries());
+    return usageWith(g);
   }
   function assertCapacity(id,extraBytes,extraObjects) {
-    const map=validateTree(),subs=subscriptionEntries();
+    const map=validateTree();
     for(const g of ancestors(map,id)) {
-      const u=usageWith(g,map,subs);
+      const u=usageWith(g);
       if(!within(u.bytes+extraBytes,g.maxBytes)||
         !within(u.objects+extraObjects,g.maxObjects)) {
         throw fault(507,'grant_quota_exceeded');
@@ -185,9 +191,18 @@ function createGrants(shared) {
   }
   function requireUser(secret,id) {
     if(typeof secret!=='string') throw fault(401,'grant_user_token_required');
-    const hash=digest(secret);
-    const g=all().find(x=>x.users.some(u=>same(hash,u.hash))&&(!id||x.id===id));
-    if(!g) throw fault(403,'invalid_grant_user_token');
+    if(!tokenIndex) {
+      const known=new Map();
+      for(const g of all()) {
+        for(const u of g.users) {
+          if(known.has(u.hash)) throw new Error('duplicate grant user token');
+          known.set(u.hash,g);
+        }
+      }
+      tokenIndex=known;
+    }
+    const g=tokenIndex.get(digest(secret));
+    if(!g||(id&&g.id!==id)) throw fault(403,'invalid_grant_user_token');
     return g;
   }
   function requireIssuer(id,secret) {
@@ -200,20 +215,24 @@ function createGrants(shared) {
   function requireOperation(g,op) {
     if(!g.operations.includes(op)) throw fault(403,'grant_operation_forbidden');
   }
-  function authorizeMutation(secret,key,kind,newBytes) {
+  function requireMutation(secret,key,kind) {
     const g=requireUser(secret);
     const operation={create:'create',replace:'modify',delete:'delete'}[kind];
     if(!operation) throw fault(400,'invalid_mutation');
     requireOperation(g,operation);
     if(!matches(g.locations,key)) throw fault(403,'location_not_authorized');
+    return g;
+  }
+  function authorizeMutation(secret,key,kind,newBytes) {
+    const g=requireMutation(secret,key,kind);
     if(kind==='delete') return g.id;
     if(!Number.isSafeInteger(newBytes)||newBytes<0)
       throw fault(400,'invalid_object_size');
-    const map=validateTree(),subs=subscriptionEntries();
+    const map=validateTree();
     const old=index.value(key);
     const delta=newBytes-(old===null?0:old)+(old===null?OBJECT_COST:0);
     for(const ancestor of ancestors(map,g.id)) {
-      const u=usageWith(ancestor,map,subs);
+      const u=usageWith(ancestor);
       if(!within(u.bytes+delta,ancestor.maxBytes)||
         !within(u.objects+(old===null?1:0),ancestor.maxObjects)) {
         throw fault(507,'grant_quota_exceeded');
@@ -222,13 +241,15 @@ function createGrants(shared) {
     return g.id;
   }
   // Listings are constrained by the calling grant, not by creator identity.
-  function listObjects(secret,locations) {
+  function listObjects(secret,locations,{after=null,limit=null}={}) {
     const g=requireUser(secret);
     requireOperation(g,'list');
     if(!validLocations(locations)) throw fault(400,'invalid_locations');
     if(!subset(locations,g.locations)) throw fault(403,'locations_outside_grant');
-    return {keys:index.entries().filter(({key})=>matches(locations,key))
-      .map(({key})=>key).sort()};
+    if(after!==null&&!validKey(after)) throw fault(400,'invalid_cursor');
+    if(limit!==null&&(!Number.isSafeInteger(limit)||limit<1||limit>1000))
+      throw fault(400,'invalid_limit');
+    return index.listKeys(locations,{after,limit});
   }
   function recordObject(key,bytes) {index.replace(key,bytes);}
   function ensureRoot() {
@@ -300,6 +321,7 @@ function createGrants(shared) {
     }
     if(fs.existsSync(subdir)) syncDir(subdir);
     subscriptionChanged();
+    onSubscriptionsRevoked();
     // Delete the root last. The root credential lives in its own private
     // grant record, so a crash cannot leave a live root without its credential.
     const records=work.ids.slice().sort((a,b)=>
@@ -309,6 +331,9 @@ function createGrants(shared) {
       catch(e){if(e.code!=='ENOENT')throw e;}
       grantMap().delete(grantId);
     }
+    tokenIndex=null;
+    validatedTree=null;
+    metadataUsage=null;
     if(fs.existsSync(dir)) syncDir(dir);
     fs.unlinkSync(marker);syncDir(pendingDir);
   }
@@ -347,6 +372,7 @@ function createGrants(shared) {
   return {GRANT_COST,OBJECT_COST,PUSH_SUB_COST,OPERATIONS,validKey,
     validLocations,matches,subset,root,ensureRoot,createChild,createUser,
     revokeUser,revokeGrant,recover,recoverRevocations,requireUser,
-    authorizeMutation,listObjects,recordObject,accountSubscription,subscriptionChanged,usage,inspect};
+    requireMutation,authorizeMutation,listObjects,recordObject,accountSubscription,subscriptionChanged,usage,inspect,
+    setOnSubscriptionsRevoked:callback=>{onSubscriptionsRevoked=callback;}};
 }
 module.exports={createGrants,KEY_RE,LOCATION_RE,OPERATIONS,validKey,validLocations,matches,subset};

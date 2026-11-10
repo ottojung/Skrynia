@@ -8,5 +8,6 @@ COPY src/ /app/src/
 COPY scripts/root-credentials.js /app/scripts/root-credentials.js
 RUN printf '%s\n' "$SKRYNIA_VERSION" > /app/VERSION \
     && printf '%s\n' "$SKRYNIA_COMMIT" > /app/COMMIT
+ENV SKRYNIA_HOST=0.0.0.0
 EXPOSE 17380
 ENTRYPOINT ["node", "/app/src/server.js"]

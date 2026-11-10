@@ -11,7 +11,7 @@ const {validKey,validLocations,matches,subset}=require('../src/grants.js');
 
 const tmp=()=>fs.mkdtempSync(path.join(os.tmpdir(),'skrynia-global-test-'));
 const auth=t=>({Authorization:'Bearer '+t});
-const grant=t=>({'X-Skrynia-Grant':t});
+const grant=t=>auth(t);
 async function open(dataDir,options={}) {
   const server=createServer({dataDir,skryniaUrl:'http://127.0.0.1:17380/platform',
     pushManual:true,...options});
@@ -178,7 +178,7 @@ async function run() {
     const cors=await expect(port,204,'OPTIONS','/store/alice.index.html',null,{
       Origin:'https://example.org',
       'Access-Control-Request-Method':'PUT',
-      'Access-Control-Request-Headers':'x-skrynia-grant,if-match'});
+      'Access-Control-Request-Headers':'authorization,if-match'});
     assert.match(cors.headers['access-control-allow-headers'],/If-Match/);
     console.log('global store, dot keys, delegation, quotas, root regeneration: OK');
   }finally{

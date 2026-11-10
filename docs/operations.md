@@ -8,12 +8,14 @@ The HTTP API does not contain special administrative endpoints.
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | SKRYNIA_URL | required | Canonical absolute HTTP API URL, optionally including a path |
-| SKRYNIA_PORT | 17380 | Local listener on 127.0.0.1 |
+| SKRYNIA_PORT | 17380 | HTTP listen port |
+| SKRYNIA_HOST | 127.0.0.1 | Listener bind address; Docker image defaults to 0.0.0.0 for port mapping |
 | SKRYNIA_DATA_DIR | /var/lib/skrynia | Persistent object and private authority state |
 | SKRYNIA_MAX_KEY_LENGTH | 256 | Max length of each object identifier |
 | SKRYNIA_MAX_OBJECT_SIZE | 10485760 | Max bytes per uploaded value |
 | SKRYNIA_PUSH_SUBJECT | SKRYNIA_URL | Web Push VAPID contact |
 | SKRYNIA_PUSH_SEND_TIMEOUT_MS | 10000 | Delivery timeout in milliseconds |
+| SKRYNIA_PUSH_CONCURRENCY | 8 | Maximum concurrent Web Push deliveries |
 
 Start the server after installing Node.js 20+ and dependencies:
 
@@ -50,6 +52,28 @@ writer processes against the same directory, including across containers
 sharing the same volume. Persist the directory across container restarts.
 Back up the directory consistently, including `state/` and `store/`.
 Restore private credentials and object files together when recovering state.
+
+## Container and network security
+
+The host process defaults to listening only on `127.0.0.1`. The Docker
+image sets `SKRYNIA_HOST=0.0.0.0` so ordinary Docker port mappings work:
+
+```sh
+docker run --name skrynia -p 127.0.0.1:17380:17380 \
+  -v skrynia-data:/var/lib/skrynia \
+  -e SKRYNIA_URL=http://127.0.0.1:17380 \
+  ghcr.io/ottojung/skrynia:latest
+```
+
+Use HTTPS and a reverse proxy in public deployments. Never expose private
+grant credentials or `state/`. Authorized API requests use explicit
+`Authorization: Bearer` tokens rather than cookies.
+
+Web Push uses HTTPS endpoints with no embedded credentials. At connection
+time, Skrynia pins DNS resolution to public routable IP addresses, rejecting
+loopback and private services. Enforce an outbound firewall as defense in
+depth. `SKRYNIA_PUSH_SEND_TIMEOUT_MS` sets the delivery timeout, and
+`SKRYNIA_PUSH_CONCURRENCY` (default 8) bounds simultaneous sends.
 
 ## Filesystem and static serving
 
