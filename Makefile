@@ -6,6 +6,7 @@ builder: builder/Dockerfile
 
 test:
 	node tests/test-grants.js
+	node tests/test-deployment-grants.js
 	node tests/test-action.js
 
 .PHONY: builder test

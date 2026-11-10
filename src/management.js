@@ -375,9 +375,12 @@ function createManagement(opts) {
       const permIssues = validateTreePermissions(stageDir);
       if (permIssues.length) fail(500, 'tree_permissions_invalid', permIssues.join('; '));
 
+      // Root grants default to full namespace write/delegate/retention authority.
       const rootGrant = grants.createRoot(ns,
         params.quota == null ? shared.DEFAULT_QUOTA_BYTES : Number(params.quota),
-        params.maxObjects == null ? shared.DEFAULT_MAX_OBJECTS : Number(params.maxObjects));
+        params.maxObjects == null ? shared.DEFAULT_MAX_OBJECTS : Number(params.maxObjects),
+        params.locations === undefined ? '*' : params.locations,
+        params.operations === undefined ? undefined : String(params.operations).split(','));
 
       const ts = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 17);
       const releaseId = ts + '-' + crypto.randomBytes(3).toString('hex');
@@ -418,7 +421,6 @@ function createManagement(opts) {
     deactivateRelease(ns);
     rmrfDir(path.join(RELEASES_DIR, ns));
     rmrfDir(shared.nsStoreDir(ns));
-    rmrfDir(shared.nsStoreMetaDir(ns));
     rmrfDir(path.join(STATE_DIR, ns));
     return { ok: true, namespace: ns };
   }

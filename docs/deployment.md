@@ -1,200 +1,124 @@
-# Skrynia Deployment Guide
+# Deploying Skrynia
 
-> `SKRYNIA_URL` is the complete public root for Skrynia. The `/platform` path used in examples below is only an example deployment choice; Skrynia itself does not define a prefix.
+Skrynia serves static application releases and a grant-controlled key/value
+store. A successful first deployment creates its namespace root grant.
 
-## Prerequisites
+## Environment
 
-- Node.js 20+ when running Skrynia directly
-- Docker (the server launches builder containers during deploy)
-- git and an SSH client for cloning app repositories
+| Variable | Default | Purpose |
+|---|---|---|
+| SKRYNIA_PORT | 17380 | HTTP listener |
+| SKRYNIA_URL | required | Canonical HTTP base URL, possibly including a path |
+| SKRYNIA_TOKEN | none | Management API token |
+| SKRYNIA_DATA_DIR | /var/lib/skrynia | State, object values and release files |
+| SKRYNIA_APP_DIR | unset | External app symlink directory |
+| SKRYNIA_APP_BASE_PATH | /apps | Public app route |
+| SKRYNIA_BUILDER_IMAGE | skrynia-builder:0.1.0 | Builder image |
+| SKRYNIA_DEFAULT_QUOTA_BYTES | 10485760 | Root grant maxBytes |
+| SKRYNIA_MAX_OBJECT_COUNT | 10000 | Root grant maxObjects |
+| SKRYNIA_MAX_OBJECT_SIZE | 10485760 | Object payload maximum |
+| SKRYNIA_MAX_KEY_LENGTH | 256 | Maximum key length |
 
-The published Skrynia runtime image already includes git, OpenSSH client, and the Docker CLI.
+The Node.js server is the only owner of its data directory. A private
+reverse proxy may forward API calls; nginx may serve GET object files from
+store/{namespace}/{key} directly. Use HTTPS for any request with credentials.
 
-## Configuration
+### Local setup
 
-Skrynia is configured via environment variables or `createServer()` options:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SKRYNIA_PORT` | `17380` | Server listen port |
-| `SKRYNIA_TOKEN` | (none) | Management API token; management is disabled when unset |
-| `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Mutable state: releases, storage, namespace state, build workspaces |
-| `SKRYNIA_APP_BASE_PATH` | `/apps` | URL prefix for app serving (set to match your proxy) |
-| `SKRYNIA_APP_DIR` | (none) | Filesystem dir for exposed app symlinks |
-| `SKRYNIA_BUILDER_IMAGE` | `skrynia-builder:0.1.0` | Docker image for building apps |
-| `SKRYNIA_DEFAULT_QUOTA_BYTES` | `10485760` | Default namespace quota (10 MiB) |
-| `SKRYNIA_MAX_OBJECT_COUNT` | `10000` | Default max objects per namespace |
-| `SKRYNIA_MAX_KEY_LENGTH` | `256` | Max key length |
-| `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Max single object size (10 MiB) |
-| `SKRYNIA_PUSH_SUBJECT` | (SKRYNIA_URL) | VAPID subject (`mailto:` or URL) identifying the push sender |
-| `SKRYNIA_PUSH_SEND_TIMEOUT_MS` | `10000` | Per-subscription delivery timeout; timeout is retried as a transient failure |
-
-Web Push delivery uses the pinned `web-push` npm package (see
-`package.json`/`package-lock.json`), installed as a production dependency in
-the runtime image. The installation owns one stable VAPID keypair persisted at
-`STATE_DIR/_push/vapid.json` (mode `0600`); it is generated on first start and
-kept across restarts. The private key is never served over HTTP. Push rules
-live at `STATE_DIR/{ns}/push-rules.json`, private subscription records at
-`STATE_DIR/{ns}/push-subs/`, and the durable delivery outbox at
-`STATE_DIR/_push/outbox/`; all are removed with the namespace on
-undeploy/namespace-remove except already-queued outbox items, which drain
-harmlessly. All push-private files are written `0600` with file fsync before
-rename plus directory fsync, so pre-commit outbox persistence is durable
-across OS-level crashes, not just process restarts. Transient delivery
-failures retry indefinitely with capped exponential backoff and never drop
-entries; expired (404/410) subscriptions are removed. Storage is bounded by
-the outbox capacity (10000 items): a matching mutation is rejected with
-`507 push_outbox_full` instead of committing without notification state.
-Subscriptions are capped at 500 per channel and 2000 per namespace, which
-bounds public registration state without relying on client IP addresses (often
-hidden by reverse proxies). Each external delivery attempt has a finite timeout
-(default 10 seconds), so a stuck provider request cannot indefinitely block
-later subscriptions on the same channel.
-
-When `SKRYNIA_APP_DIR` is set, deployment atomically creates or replaces `APP_DIR/{namespace}` as the one active-release symlink. An external web server such as nginx can serve that directory directly.
-
-## Runtime container mounts
-
-When the server runs in Docker, deployment happens inside the long-lived Skrynia server process. The runtime therefore needs explicit access to:
-
-- `SKRYNIA_DATA_DIR` read-write;
-- `SKRYNIA_APP_DIR` read-write when configured, because activation replaces symlinks there;
-- `/var/run/docker.sock` so the server can launch the builder container;
-- repository credentials such as `/root/.ssh` read-only when private SSH repositories are used.
-
-The Skrynia runtime root filesystem can remain `--read-only`; give it a writable `/tmp` tmpfs. The separate builder container is intentionally writable and disposable.
-
-## Staging areas
-
-Skrynia uses two staging locations during deploy:
-
-- **Build workspace** (`DATA_DIR/builds/build-*`): disposable clone/workspace. Removed after every deployment attempt.
-- **Release staging** (`RELEASES_DIR/{ns}/.staging-*`): a fresh unique directory for each deploy, containing validated build output before atomic rename into the immutable release directory. Existing staging directories are never reused and are excluded from release listings.
-
-Both are under `DATA_DIR` so the path is visible to the server and to builder containers through the Docker host bind mount.
-
-## Running
-
-```sh
-SKRYNIA_URL=http://127.0.0.1:17380/platform SKRYNIA_TOKEN=replace-me node src/server.js
-```
-
-Health remains public:
-
-```sh
-curl http://127.0.0.1:17380/platform/health
-```
-
-## Deploying an app
-
-Deployment is an authenticated HTTP request. The URL must be quoted in a shell because it contains `&` characters. The `repo` parameter must be an SSH Git URL in scp-like form `user@host:path`.
-
-```sh
-curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:myorg/myapp.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=replace-me'
-```
-
-A custom builder can be supplied with `builder=...`.
-
-The request is synchronous: curl returns after clone, build, validation, activation, and cleanup complete.
-
-### GitHub Action
-
-Skrynia ships a reusable GitHub Action for CI/CD. App repositories reference it directly — no fork or copy needed.
-
-```yaml
-# .github/workflows/deploy.yml
-name: Deploy to Skrynia
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: ottojung/Skrynia/action/deploy@main
-        with:
-          namespace: my-app
-          token: ${{ secrets.SKRYNIA_TOKEN }}
-          skrynia-url: https://skrynia.example.com/platform
-```
-
-For production use, pin to a known commit SHA or published tag instead of `@main` for reproducibility.
-
-| Input | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `namespace` | yes | — | Skrynia namespace (app name and URL suffix) |
-| `token` | yes | — | Management token; store as a GitHub secret |
-| `skrynia-url` | yes | — | complete Skrynia HTTP root, e.g. `https://vau.place/platform` |
-| `repo` | no | calling GitHub repository | SSH scp-like Git URL |
-| `commit` | no | calling workflow commit | Full commit SHA |
-| `subdir` | no | `.` | Subdirectory within the repo containing the app |
-| `builder` | no | — | Builder Docker image override |
-
-Outputs written to `GITHUB_OUTPUT`: `release` (the activated release id) and `path` (the app serving path).
-
-Deploy process:
-
-1. Validate SSH scp-like repo URL, namespace, subdirectory, and full 40- or 64-hex commit id.
-2. Clone to `DATA_DIR/builds/build-*`.
-3. Check out the requested commit and verify exact HEAD equality.
-4. Resolve the requested subdirectory and reject escapes outside the clone.
-5. Run `make build` in the builder container.
-6. Require `build/` and reject symlinks/special files in output.
-7. Auto-create the namespace only after a valid build.
-8. Copy output to a fresh unique release staging directory and atomically rename it to the release directory.
-9. Atomically replace the one active-release symlink.
-10. Save deployment metadata and retain the newest three releases.
-
-### Included examples
-
-```sh
-curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/hello&namespace=hello-app&token=replace-me'
-
-curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:ottojung/Skrynia.git&commit=0123456789012345678901234567890123456789&subdir=example/birthday-list&namespace=birthday-list&token=replace-me'
-```
-
-## Rollback and releases
-
-```sh
-# Roll back to the previous release
-curl 'http://127.0.0.1:17380/platform/rollback?namespace=myapp&token=replace-me'
-
-# Roll back to a named release
-curl 'http://127.0.0.1:17380/platform/rollback?namespace=myapp&release=20260910120000000-abc123&token=replace-me'
-
-# List releases
-curl 'http://127.0.0.1:17380/platform/releases?namespace=myapp&token=replace-me'
-
-# Inspect deployment metadata
-curl 'http://127.0.0.1:17380/platform/inspect?namespace=myapp&token=replace-me'
-```
-
-## Undeploy
-
-```sh
-curl 'http://127.0.0.1:17380/platform/undeploy?namespace=myapp&token=replace-me'
-```
-
-Undeploy is destructive: it removes the active link, releases, stored data, and namespace state.
-
-## Managing namespaces
-
-```sh
-curl 'http://127.0.0.1:17380/platform/ns/create?namespace=myns&quota=20971520&token=replace-me'
-curl 'http://127.0.0.1:17380/platform/ns/list?token=replace-me'
-curl 'http://127.0.0.1:17380/platform/ns/inspect?namespace=myns&token=replace-me'
-curl 'http://127.0.0.1:17380/platform/ns/remove?namespace=myns&token=replace-me'
-```
-
-## Builder
-
-The default builder is a `node:20-alpine` image containing `make`, `git`, and `npm`, published to GHCR from `builder/Dockerfile`.
-
-Builder containers are deliberately simple: writable root filesystem, normal network access, repository mounted read-write, `HOME=/tmp`, and `--rm` so each build container is thrown away. Skrynia does not present the builder as a security sandbox.
-
-To build the builder image locally:
-
-```sh
+~~~sh
+npm ci
 make builder
-```
+SKRYNIA_URL=http://127.0.0.1:17380/platform \
+SKRYNIA_TOKEN=your-management-secret \
+node src/server.js
+~~~
+
+## First deployment
+
+~~~sh
+curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:org/app.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=your-management-secret'
+~~~
+
+An authenticated deploy verifies the exact commit, runs the build in a
+disposable Docker container, validates output, activates an immutable
+release using an atomic symlink switch, and retains up to three releases.
+
+It creates a root grant for the namespace if necessary, with:
+- locations = "*" (or the optional locations deployment parameter)
+- operations = ["write","delegate","keep","release","subscribe"]
+  (or comma-separated optional operations parameter)
+- maxBytes = quota parameter (or configured default)
+- maxObjects = maxObjects parameter (or configured default)
+
+Its one-time rootGrant response contains user and issuer tokens. Preserve
+them in your secrets store. Subsequent deployments return only its ID and
+do not expose credentials again. Root authority remains unchanged between
+deployments.
+
+The GitHub deploy action exports the one-time root tokens as secret masked
+root-user-token and root-issuer-token outputs.
+
+## Issuing authority to the application
+
+Root grants can create narrower children. For example, share a grant whose
+locations is "comments", operations is ["write"], maxBytes is 65536 and
+maxObjects is 1. It allows object writes to exactly that location without
+grant delegation, votes, or subscriptions.
+
+Do not embed an unrestricted root user token in a publicly served static app.
+
+An application creates/edits/deletes objects using X-Skrynia-Grant with
+a grant user token. Public reads and nginx static GET serving need no token.
+
+## Release and namespace operations
+
+Management routes use the management token in their query parameters:
+
+- GET /releases?namespace=myapp
+- GET /rollback?namespace=myapp
+- GET /rollback?namespace=myapp&release=ID
+- GET /inspect?namespace=myapp
+- GET /ns/inspect?namespace=myapp
+- GET /ns/list
+- GET /undeploy?namespace=myapp
+
+Append the token parameter to every management request.
+
+Undeploy removes the app release and its namespace resources.
+
+## State and push
+
+Data directory layout:
+
+~~~text
+releases/{namespace}/
+store/{namespace}/{key}
+store-tmp/
+state/{namespace}/config.json
+state/{namespace}/etag-sequence
+state/{namespace}/grants/{id}.json
+state/{namespace}/push-subs/
+state/{namespace}/push-rules.json
+state/_push/vapid.json
+state/_push/outbox/
+state/_grant-deletions/
+~~~
+
+Object keys consist solely of ASCII letters, digits, and underscore.
+No per-object credentials or owner metadata are stored. Grant records are
+private and must not be served as static files.
+
+Push subscription creation requires a grant with subscribe authority and
+X-Skrynia-Grant. Its independent subscription credential is used for later
+subscription updates/removal. Preserve the private VAPID key across process
+restarts.
+
+## Running tests
+
+~~~sh
+npm ci
+make test
+~~~
+
+See [the HTTP API](api-spec.md) and
+[location-authority intent](intent-location-authority.md) for full rules.

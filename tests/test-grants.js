@@ -2,31 +2,32 @@
 'use strict';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const os = require('node:os');
 const http = require('node:http');
 const {createServer} = require('../src/server.js');
-
-const mk = () => fs.mkdtempSync(path.join(os.tmpdir(), 'skrynia-grants-'));
-async function open(tmp) {
-  const server = createServer({dataDir: tmp, token:'admin-token',
-    skryniaUrl:'http://127.0.0.1:17880/platform', pushManual:true});
-  await new Promise(ok => server.listen(0,'127.0.0.1',ok));
+const {matches, subset, KEY_RE, LOCATION_RE} = require('../src/grants.js');
+const DAY = 86400000;
+const mk = () => fs.mkdtempSync(path.join(os.tmpdir(), 'skrynia-spec-'));
+async function open(dir) {
+  const server = createServer({dataDir:dir,token:'admin-token',
+    skryniaUrl:'http://127.0.0.1:17880/platform',pushManual:true});
+  await new Promise(ok=>server.listen(0,'127.0.0.1',ok));
   return {server,port:server.address().port};
 }
-function close(server) { return new Promise(ok => server.close(ok)); }
-function request(port, method, route, body, headers={}) {
+const close = server=>new Promise(ok=>server.close(ok));
+const user = token=>({Authorization:'Bearer '+token});
+const grant = token=>({'X-Skrynia-Grant':token});
+function request(port, method, endpoint, body, headers={}) {
   return new Promise((resolve,reject)=>{
     const data = body == null ? null : Buffer.isBuffer(body) ? body :
       typeof body === 'object' ? Buffer.from(JSON.stringify(body)) : Buffer.from(body);
     const req = http.request({hostname:'127.0.0.1',port,method,
-      path:'/platform'+route, headers:{...headers,
-        ...(data ? {'Content-Length':data.length} : {})}},res=>{
-      const chunks=[]; res.on('data',c=>chunks.push(c));
-      res.on('end',()=>{
-        const raw=Buffer.concat(chunks).toString('utf8');
-        let json=null; try { json=JSON.parse(raw); } catch {}
-        resolve({status:res.statusCode,body:raw,json,etag:res.headers.etag});
+      path:'/platform'+endpoint,headers:{...headers,...(data?{'Content-Length':data.length}:{})}},res=>{
+      const chunks=[]; res.on('data',c=>chunks.push(c)); res.on('end',()=>{
+        const bytes=Buffer.concat(chunks), raw=bytes.toString('utf8');
+        let json;try{json=JSON.parse(raw);}catch{}
+        resolve({status:res.statusCode,body:raw,json,etag:res.headers.etag,bytes});
       });
     });
     req.on('error',reject);
@@ -34,228 +35,198 @@ function request(port, method, route, body, headers={}) {
     req.end();
   });
 }
-const user = token=>({Authorization:'Bearer '+token});
-const grant = token=>({'X-Skrynia-Grant':token});
-const issuer = (ns,id,token,kind)=>({ns,id,token,route:'/grants/'+id+(kind==null?'':'/'+kind)+'?namespace='+ns});
-async function test() {
+async function demand(port, status, method, url, body, headers) {
+  const r=await request(port,method,url,body,headers);
+  assert.equal(r.status,status,method+' '+url+': '+r.body);
+  return r;
+}
+function due(dir,ns,id) {
+  const p=path.join(dir,'state',ns,'grants',id+'.json');
+  const g=JSON.parse(fs.readFileSync(p,'utf8'));
+  g.nextCheckAt=Date.now()-1;
+  fs.writeFileSync(p,JSON.stringify(g));
+}
+function checkGrammar() {
+  for(const key of ['report','report12','REPORT_3','_x','A0']) assert(KEY_RE.test(key));
+  for(const key of ['','report-1','a:b','ab*','a\\b','a/b','é']) assert(!KEY_RE.test(key));
+  for(const pattern of ['','*','report','report*','A_1*']) assert(LOCATION_RE.test(pattern));
+  for(const pattern of ['**','*a','a**','abc:','a-b','a\\b']) assert(!LOCATION_RE.test(pattern));
+  assert(matches('*','A_1'));
+  assert(matches('report*','report') && matches('report*','report_1'));
+  assert(!matches('report','report1') && !matches('','report'));
+  assert(subset('', 'report'));
+  assert(subset('report_1', 'report*'));
+  assert(subset('report_1*','report*'));
+  assert(!subset('report*','report_1') && !subset('*','report*'));
+  assert(!subset('foo*','foo'));
+  assert(subset('report','report'));
+  console.log('matchers: OK');
+}
+async function testHttp() {
   const dir=mk(); let server,port;
   try {
     ({server,port}=await open(dir));
-    const grants=server.skrynia.grants;
-    const root=grants.createRoot('forum', 60000,100);
-    assert.equal(root.created,true);
-    assert.match(root.userToken,/^[a-f0-9]{64}$/);
-    assert.notEqual(root.userToken,root.issuerToken);
-    assert.equal(grants.createRoot('forum',60000,100).created,false);
+    const engine=server.skrynia.grants;
+    const root=engine.createRoot('forum',120000,100);
+    assert.equal(root.locations,'*');
+    assert.deepEqual(root.operations,['write','delegate','keep','release','subscribe']);
+    assert.equal(engine.createRoot('forum',120000,100).created,false);
 
-    let r=await request(port,'POST','/store/forum/noauth','x');
-    assert.equal(r.status,401,'anonymous create forbidden');
-    r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:20000,maxObjects:10});
-    assert.equal(r.status,401,'anonymous subgrant forbidden');
+    await demand(port,401,'POST','/store/forum/report1','x');
+    await demand(port,401,'POST','/grants',{namespace:'forum',maxBytes:3500,maxObjects:5});
+    await demand(port,400,'POST','/store/forum/invalid-name','x',grant(root.userToken));
+    await demand(port,400,'POST','/store/forum/a%2Ab','x',grant(root.userToken));
+    await demand(port,400,'POST','/store/forum/a%3Ab','x',grant(root.userToken));
+    await demand(port,400,'POST','/store/forum/a%5Cb','x',grant(root.userToken));
 
-    r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:12000,maxObjects:5},user(root.issuerToken));
-    assert.equal(r.status,403,'issuer is not a user');
-    r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:20000,maxObjects:10},user(root.userToken));
-    assert.equal(r.status,200);
-    const child=r.json;
-    r=await request(port,'POST','/grants/'+child.id+'/users?namespace=forum',
-      null,user(child.userToken));
-    assert.equal(r.status,200,'grant users may mint more user tokens');
-    const otherUser=r.json.userToken;
-    assert.notEqual(otherUser,child.userToken);
-    assert.equal(grants.inspect('forum',child.id,otherUser).userCount,2);
-    r=await request(port,'POST','/grants/'+child.id+'/users?namespace=forum',
-      null,user(child.issuerToken));
-    assert.equal(r.status,403,'issuer cannot mint user tokens');
-    r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:6000,maxObjects:5},user(child.userToken));
-    assert.equal(r.status,200);
-    const grand=r.json;
-    r=await request(port,'POST','/grants',{namespace:'forum',maxBytes:6000,maxObjects:5},user(root.userToken));
-    const sibling=r.json; assert.equal(r.status,200);
+    const newGrant = (p,token,params)=>demand(p,200,'POST','/grants',
+      {namespace:'forum',maxBytes:params.maxBytes,maxObjects:params.maxObjects,
+       ...(params.locations===undefined?{}:{locations:params.locations}),
+       ...(params.operations===undefined?{}:{operations:params.operations})},user(token));
+    const A=(await newGrant(port,root.userToken,
+      {maxBytes:3560,maxObjects:5,locations:'report*',operations:['write','delegate']})).json;
+    const B=(await newGrant(port,root.userToken,
+      {maxBytes:4560,maxObjects:5,locations:'report*',operations:['write']})).json;
 
-    r=await request(port,'POST','/push/subscriptions?namespace=forum&channel=updates',
-      {endpoint:'https://push.example.test/p/1',keys:{p256dh:'sample-key',auth:'auth-key'}});
-    assert.equal(r.status,401,'push subscription cannot be created anonymously');
-    r=await request(port,'POST','/push/subscriptions?namespace=forum&channel=updates',
-      {endpoint:'https://push.example.test/p/1',keys:{p256dh:'sample-key',auth:'auth-key'}},
-      grant(child.userToken));
-    assert.equal(r.status,201,'push subscription grant sponsorship');
+    assert.equal(A.locations,'report*');
+    assert.deepEqual(A.operations,['write','delegate']);
+    await demand(port,403,'POST','/grants',
+      {namespace:'forum',maxBytes:2048,maxObjects:1,locations:'wrong*'},user(A.userToken));
+    await demand(port,403,'POST','/grants',
+      {namespace:'forum',maxBytes:2048,maxObjects:1,locations:'report*',
+       operations:['write','keep']},user(A.userToken));
+    await demand(port,403,'POST','/grants',
+      {namespace:'forum',maxBytes:2048,maxObjects:1},user(B.userToken));
+    await demand(port,400,'POST','/grants',
+      {namespace:'forum',maxBytes:2048,maxObjects:1,locations:'**'},user(root.userToken));
+    await demand(port,400,'POST','/grants',
+      {namespace:'forum',maxBytes:2048,maxObjects:1,operations:['write','write']},user(root.userToken));
+    await demand(port,403,'POST','/grants/'+B.id+'/users?namespace=forum',null,user(B.userToken));
+    await demand(port,403,'POST','/grants/'+B.id+'/confirmation?namespace=forum',
+      {need:true},user(B.userToken));
 
-    r=await request(port,'POST','/store/forum/post','hello',grant(child.userToken));
-    assert.equal(r.status,201);
-    const writeCap=r.json.capability;
-    r=await request(port,'GET','/store/forum/post');
-    assert.equal(r.body,'hello');
-    const etag=r.etag;
-    r=await request(port,'PUT','/store/forum/post','world',
-      {'X-Skrynia-Capability':writeCap,'If-Match':etag});
-    assert.equal(r.status,200);
-    r=await request(port,'PUT','/store/forum/post','invalid',
-      {'X-Skrynia-Capability':writeCap,'If-Match':etag});
-    assert.equal(r.status,412,'CAS semantics retained');
-    // Deleted keys release metadata, but a recreate must never reuse its ETag.
-    const last=await request(port,'GET','/store/forum/post');
-    r=await request(port,'DELETE','/store/forum/post',null,
-      {'X-Skrynia-Capability':writeCap});
-    assert.equal(r.status,200);
-    r=await request(port,'POST','/store/forum/post','again',grant(child.userToken));
-    assert.equal(r.status,201);
-    const recreated=await request(port,'GET','/store/forum/post');
-    assert.notEqual(recreated.etag,last.etag,'ETag ABA protection after deletion');
+    // B can fill its own budget; A's lower ceiling is not a global invariant.
+    await demand(port,201,'POST','/store/forum/report1','x'.repeat(2000),grant(B.userToken));
+    const g=await demand(port,200,'GET','/store/forum/report1');
+    assert.equal(g.body.length,2000);
+    assert(!fs.existsSync(path.join(dir,'store-meta')),'object metadata is unnecessary');
+    assert.equal(engine.usage('forum',A.id).bytes,2048+512+2000);
+    assert.equal(engine.usage('forum',B.id).bytes,2048+512+2000);
+    await demand(port,507,'PUT','/store/forum/report1','a'.repeat(1500),
+      {...grant(A.userToken),'If-Match':g.etag});
+    assert.equal((await demand(port,200,'GET','/store/forum/report1')).body.length,2000);
+    await demand(port,200,'PUT','/store/forum/report1','a'.repeat(500),
+      {...grant(A.userToken),'If-Match':g.etag});
+    const after=await demand(port,200,'GET','/store/forum/report1');
+    assert.equal(after.body.length,500);
+    assert.notEqual(after.etag,g.etag);
+    await demand(port,412,'PUT','/store/forum/report1','no', {...grant(B.userToken),'If-Match':g.etag});
+    await demand(port,400,'PUT','/store/forum/report1','no',
+      {...grant(B.userToken),'X-Skrynia-Mode':'public-write'});
+    await demand(port,401,'DELETE','/store/forum/report1');
+    await demand(port,200,'DELETE','/store/forum/report1',null,grant(A.userToken));
+    await demand(port,201,'POST','/store/forum/report1','again',grant(B.userToken));
+    const recreated=await demand(port,200,'GET','/store/forum/report1');
+    assert.notEqual(recreated.etag,after.etag,'no ETag ABA');
+    await demand(port,403,'POST','/store/forum/secret1','no',grant(A.userToken));
 
+    // Child scope and operations cannot exceed their parent, and omitted fields inherit.
+    const X=(await newGrant(port,root.userToken,
+      {maxBytes:30000,maxObjects:20,locations:'secret*',
+       operations:['write','delegate','keep','release','subscribe']})).json;
+    const C=(await newGrant(port,X.userToken,
+      {maxBytes:15000,maxObjects:10,locations:'secret1'})).json;
+    assert.equal(C.locations,'secret1');
+    assert.deepEqual(C.operations,X.operations);
+    const N=(await newGrant(port,root.userToken,
+      {maxBytes:8000,maxObjects:10,locations:'secret*',
+       operations:['write']})).json;
+    await demand(port,201,'POST','/store/forum/secret1','sibling',grant(N.userToken));
+    await demand(port,201,'POST','/store/forum/secret2','local',grant(X.userToken));
+    await demand(port,201,'POST','/push/subscriptions?namespace=forum&channel=alerts',
+      {endpoint:'https://push.example.test/a1',keys:{p256dh:'sample-key',auth:'sample-auth'}},
+      grant(X.userToken));
+    await demand(port,403,'POST','/push/subscriptions?namespace=forum&channel=alerts',
+      {endpoint:'https://push.example.test/a2',keys:{p256dh:'sample-key',auth:'sample-auth'}},
+      grant(N.userToken));
 
-    r=await request(port,'POST','/store/forum/grand','child data',grant(grand.userToken));
-    assert.equal(r.status,201);
-    r=await request(port,'POST','/store/forum/sibling','sibling data',grant(sibling.userToken));
-    assert.equal(r.status,201);
+    await demand(port,200,'POST','/grants/'+X.id+'/confirmation?namespace=forum',
+      {need:false},user(X.userToken));
+    await demand(port,200,'POST','/grants/'+C.id+'/confirmation?namespace=forum',
+      {need:true},user(C.userToken));
+    await new Promise(ok=>setTimeout(ok,12));
+    due(dir,'forum',X.id);
+    engine.sweep();
+    await demand(port,200,'GET','/store/forum/secret1');
+    assert.equal(engine.inspect('forum',C.id,C.userToken).id,C.id);
 
-    // A descendant's keep protects its ancestors, not sibling grants.
-    r=await request(port,'POST','/grants/'+root.id+'/confirmation?namespace=forum',
-      {need:false},user(root.userToken));
-    assert.equal(r.status,200);
-    r=await request(port,'POST','/grants/'+grand.id+'/confirmation?namespace=forum',
-      {need:true},user(grand.userToken));
-    assert.equal(r.status,200);
-    function due(ns,id) {
-      const p=path.join(dir,'state',ns,'grants',id+'.json');
-      const g=JSON.parse(fs.readFileSync(p,'utf8'));
-      g.windowStart=Date.now()-grants.DAY-1000;
-      g.nextCheckAt=Date.now()-1;
-      fs.writeFileSync(p,JSON.stringify(g));
-    }
-    await new Promise(resolve=>setTimeout(resolve,10));
-    due('forum',root.id);
-    const beforeRoot=JSON.parse(fs.readFileSync(path.join(dir,'state','forum','grants',root.id+'.json')));
-    const beforeGrand=JSON.parse(fs.readFileSync(path.join(dir,'state','forum','grants',grand.id+'.json')));
-    assert(beforeGrand.keepAt >= beforeRoot.windowStart &&
-      beforeGrand.keepAt < beforeRoot.nextCheckAt,
-      'positive descendant keep must precede root checkpoint: '+JSON.stringify({beforeRoot,beforeGrand}));
-    grants.sweep(Date.now());
-    assert(fs.existsSync(path.join(dir,'state','forum','grants',grand.id+'.json')),
-      'transitive keep must preserve descendant grant');
+    // A new release without keep triggers revoke + reissue using identical tokens.
+    await demand(port,200,'POST','/grants/'+X.id+'/confirmation?namespace=forum',
+      {need:false},user(X.userToken));
+    await new Promise(ok=>setTimeout(ok,12));
+    due(dir,'forum',X.id);
+    engine.sweep();
+    await demand(port,404,'GET','/store/forum/secret1');
+    await demand(port,404,'GET','/store/forum/secret2');
+    assert.equal(engine.inspect('forum',X.id,X.userToken).id,X.id);
+    assert.equal(engine.inspect('forum',X.id,X.userToken).locations,'secret*');
+    assert.deepEqual(engine.inspect('forum',X.id,X.userToken).operations,X.operations);
+    assert.throws(()=>engine.inspect('forum',C.id,C.userToken),/invalid_grant_user_token/);
+    assert.equal(engine.inspect('forum',N.id,N.userToken).id,N.id,'unrelated grant survives');
+    const pushDir=path.join(dir,'state','forum','push-subs');
+    assert.equal(fs.readdirSync(pushDir).filter(x=>x.endsWith('.json')).length,0);
+    await demand(port,201,'POST','/store/forum/secret1','reused',grant(X.userToken));
+    await demand(port,200,'DELETE','/grants/'+X.id+'/space?namespace=forum',null,user(X.issuerToken));
+    await demand(port,404,'GET','/store/forum/secret1');
+    await demand(port,201,'POST','/store/forum/secret1','reused-again',grant(X.userToken));
+    await demand(port,200,'DELETE','/grants/'+X.id+'?namespace=forum',null,user(X.issuerToken));
+    await demand(port,404,'GET','/store/forum/secret1');
+    assert.throws(()=>engine.inspect('forum',X.id,X.userToken),/invalid_grant_user_token/);
+    assert.equal(engine.inspect('forum',N.id,N.userToken).id,N.id);
 
-    assert.equal(grants.root('forum').id,root.id);
-    assert.equal((await request(port,'GET','/store/forum/grand')).status,200);
+    // Exact matcher permits precisely one key, empty matcher permits none.
+    const exact=(await newGrant(port,root.userToken,
+      {maxBytes:4096,maxObjects:1,locations:'EXACT_1',operations:['write']})).json;
+    await demand(port,201,'POST','/store/forum/EXACT_1','ok',grant(exact.userToken));
+    await demand(port,403,'POST','/store/forum/EXACT_12','no',grant(exact.userToken));
+    const empty=(await newGrant(port,root.userToken,
+      {maxBytes:2048,maxObjects:1,locations:'',operations:['write']})).json;
+    await demand(port,403,'PUT','/store/forum/EXACT_1','no',grant(empty.userToken));
 
-    // Issuer cleanup bypasses votes but preserves child authority.
-    r=await request(port,'DELETE','/grants/'+child.id+'/space?namespace=forum',null,
-      user(child.issuerToken));
-    assert.equal(r.status,200);
-    assert.equal((await request(port,'GET','/store/forum/post')).status,404);
-    assert.equal((await request(port,'GET','/store/forum/grand')).status,404);
-    assert.equal((await request(port,'GET','/store/forum/sibling')).status,200);
-    assert.equal(grants.inspect('forum',child.id,child.userToken).id,child.id);
-    assert.throws(()=>grants.inspect('forum',grand.id,grand.userToken),/invalid_grant_user_token|grant_not_found/);
-    r=await request(port,'POST','/store/forum/new','new',grant(child.userToken));
-    assert.equal(r.status,201,'cleaned grant remains usable');
-
-    // Negative vote in a new window collects descendants and data, not root.
-    r=await request(port,'POST','/grants/'+root.id+'/confirmation?namespace=forum',
-      {need:false},user(root.userToken));
-    assert.equal(r.status,200);
-    await new Promise(resolve=>setTimeout(resolve,10));
-    due('forum',root.id);
-    grants.sweep(Date.now());
-    assert.equal((await request(port,'GET','/store/forum/sibling')).status,404);
-    assert.equal(grants.root('forum').id,root.id);
-    r=await request(port,'POST','/store/forum/reborn','yes',grant(root.userToken));
-    assert.equal(r.status,201);
-
-    // A bad or issuer-only token cannot vote or create storage.
-    r=await request(port,'POST','/grants/'+root.id+'/confirmation?namespace=forum',
-      {need:true},user(root.issuerToken));
-    assert.equal(r.status,403);
-    r=await request(port,'DELETE','/grants/'+root.id+'?namespace=forum',null,user(root.issuerToken));
-    assert.equal(r.status,200);
-    assert.equal(grants.root('forum'),null);
-    assert.equal((await request(port,'GET','/store/forum/reborn')).status,404);
-    r=await request(port,'POST','/store/forum/forbidden','no',grant(root.userToken));
-    assert.equal(r.status,409);
-
-    await close(server);server=null;
-    // Grant metadata is charged, even when no objects exist.
-    ({server,port}=await open(dir));
-    const little=server.skrynia.grants.createRoot('small',4096,100);
-    const one=await request(port,'POST','/grants',{namespace:'small',maxBytes:2048,maxObjects:1},user(little.userToken));
-    assert.equal(one.status,200);
-    const two=await request(port,'POST','/grants',{namespace:'small',maxBytes:2048,maxObjects:1},user(little.userToken));
-    assert.equal(two.status,507);
-
-    // Interrupted recursive deletion resumes from its persisted subtree list.
-    const smallChild=one.json;
-    fs.mkdirSync(path.join(dir,'state','_grant-deletions'),{recursive:true});
-    fs.writeFileSync(path.join(dir,'state','_grant-deletions',little.id+'.json'),
-      JSON.stringify({ns:'small',id:little.id,action:'clean',ids:[little.id,smallChild.id]}));
-    await close(server);server=null;
-    ({server,port}=await open(dir));
-    assert.equal(server.skrynia.grants.root('small').id,little.id);
-    assert.throws(()=>server.skrynia.grants.inspect('small',smallChild.id,smallChild.userToken),/invalid_grant_user_token|grant_not_found/);
-    assert.equal(fs.readdirSync(path.join(dir,'state','_grant-deletions')).length,0);
-    console.log('recursive grants: all assertions passed');
+    // Root revocation removes all namespace keys and invalidates every user token.
+    await demand(port,200,'DELETE','/grants/'+root.id+'?namespace=forum',null,user(root.issuerToken));
+    await demand(port,404,'GET','/store/forum/report1');
+    await demand(port,404,'GET','/store/forum/EXACT_1');
+    await demand(port,404,'POST','/store/forum/reborn','no',grant(root.userToken));
+    console.log('HTTP and recursive grant behavior: OK');
   } finally {
+    if(server) await close(server);
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+}
+async function testRecovery() {
+  const dir=mk();let server,port;
+  try{
+    ({server,port}=await open(dir));
+    const g=server.skrynia.grants;
+    const root=g.createRoot('recovery',20000,20);
+    const child=g.createChild('recovery',root.userToken,9000,10,'logs*',['write','keep']);
+    await demand(port,201,'POST','/store/recovery/logs1','data',grant(child.userToken));
+    const marker=path.join(dir,'state','_grant-deletions','recovery-'+child.id+'.json');
+    fs.mkdirSync(path.dirname(marker),{recursive:true});
+    fs.writeFileSync(marker,JSON.stringify({ns:'recovery',id:child.id,
+      action:'clean',ids:[child.id],locations:'logs*'}));
+    await close(server);server=null;
+    ({server,port}=await open(dir));
+    await demand(port,404,'GET','/store/recovery/logs1');
+    assert.equal(fs.existsSync(marker),false);
+    assert.equal(server.skrynia.grants.inspect('recovery',child.id,child.userToken).id,child.id);
+    await demand(port,201,'POST','/store/recovery/logs1','new',grant(child.userToken));
+    console.log('interrupted cleanup recovery: OK');
+  }finally{
     if(server)await close(server);
     fs.rmSync(dir,{recursive:true,force:true});
   }
 }
-async function testDeployment() {
-  const dir=mk(), bin=path.join(dir,'bin'), source=path.join(dir,'source');
-  fs.mkdirSync(bin); fs.mkdirSync(source);
-  fs.writeFileSync(path.join(source,'index.html'),'<h1>test</h1>');
-  const {execFileSync}=require('node:child_process');
-  execFileSync('git',['init',source]);
-  execFileSync('git',['-C',source,'config','user.name','Test']);
-  execFileSync('git',['-C',source,'config','user.email','test@example.test']);
-  execFileSync('git',['-C',source,'add','.']);
-  execFileSync('git',['-C',source,'commit','-m','initial']);
-  const sha=execFileSync('git',['-C',source,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
-  const fakeGit = '#!/bin/sh\nif [ "$1" = "clone" ]; then exec /usr/bin/git clone --quiet "$SKRYNIA_TEST_SOURCE_REPO" "$4"; fi\nexec /usr/bin/git "$@"\n';
-  const fakeDocker = '#!/bin/sh\nset -eu\nrepo=""\nwhile [ "$#" -gt 0 ]; do case "$1" in -v) repo="${2%%:*}"; shift 2;; *) shift;; esac; done\n[ -n "$repo" ]\nmkdir -p "$repo/build"\ncp "$repo/index.html" "$repo/build/index.html"\n';
-  fs.writeFileSync(path.join(bin,'git'),fakeGit,{mode:0o755});
-  fs.writeFileSync(path.join(bin,'docker'),fakeDocker,{mode:0o755});
-  const oldPath=process.env.PATH, oldRepo=process.env.SKRYNIA_TEST_SOURCE_REPO;
-  process.env.PATH=bin+':'+oldPath;
-  process.env.SKRYNIA_TEST_SOURCE_REPO=source;
-  let server;
-  try {
-    const running=await open(path.join(dir,'data')); server=running.server;
-    const route='/deploy?'+new URLSearchParams({repo:'git@github.com:test/mock.git',
-      commit:sha,subdir:'.',namespace:'demo',token:'admin-token',
-      quota:'12000',maxObjects:'40'}).toString();
-    let r=await request(running.port,'GET',route);
-    assert.equal(r.status,200,'deployment should bootstrap root');
-    assert.equal(r.json.rootGrant.created,true);
-    assert.equal(r.json.rootGrant.maxBytes,12000);
-    assert.match(r.json.rootGrant.userToken,/^[a-f0-9]{64}$/);
-    const initial=r.json.rootGrant;
-    r=await request(running.port,'POST','/store/demo/first','ok',grant(initial.userToken));
-    assert.equal(r.status,201,'newly-issued root token must be functional');
-    r=await request(running.port,'GET',route);
-    assert.equal(r.status,200);
-    assert.equal(r.json.rootGrant.created,false);
-    assert.equal(r.json.rootGrant.id,initial.id);
-    assert.equal(r.json.rootGrant.userToken,undefined,'deployment must not re-expose token');
-    assert.equal((await request(running.port,'GET','/store/demo/first')).status,200);
-    console.log('deployment bootstrapping: all assertions passed');
-  } finally {
-    if(server) await close(server);
-    process.env.PATH=oldPath;
-    if(oldRepo===undefined)delete process.env.SKRYNIA_TEST_SOURCE_REPO;
-    else process.env.SKRYNIA_TEST_SOURCE_REPO=oldRepo;
-    fs.rmSync(dir,{recursive:true,force:true});
-  }
-}
-
-function testRejectLegacy() {
-  const dir=mk();
-  try {
-    fs.mkdirSync(path.join(dir,'state','legacy'),{recursive:true});
-    fs.writeFileSync(path.join(dir,'state','legacy','quota.json'),
-      JSON.stringify({quotaBytes:1000,maxObjects:100}));
-    assert.throws(() => createServer({dataDir:dir,
-      skryniaUrl:'http://127.0.0.1:17880/platform',pushManual:true}),
-      /unsupported old namespace schema|old quota schema/,
-      'old data must fail explicitly; no migrations');
-    console.log('incompatible on-disk schemas: correctly rejected');
-  } finally { fs.rmSync(dir,{recursive:true,force:true}); }
-}
-test().then(testDeployment).then(testRejectLegacy).catch(e=>{console.error(e);process.exitCode=1;});
+(async()=>{checkGrammar();await testHttp();await testRecovery();})()
+  .catch(e=>{console.error(e);process.exitCode=1;});

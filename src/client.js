@@ -1,183 +1,136 @@
 /**
- * Skrynia client library - tiny dependency-free helper for browser apps.
- *
- * Binary-safe: GET responses are returned as raw bytes (ArrayBuffer).
- * Convenience methods .text() and .json() decode via TextDecoder on demand.
- *
- * Usage:
- *   const store = Skrynia.store('my-namespace', grantUserToken);
- *   const result = await store.get('key');
- *   const text = await result.bytes.text();
- *   const obj = await result.bytes.json();
- *   await store.create('key', data, { mode: 'public-write' });
- *   await store.put('key', newData, { capability: cap, etag: result.meta.etag });
- *   await store.delete('key', { capability: cap });
+ * Skrynia browser client: public reads and grant-authorized mutations.
+ * A grant can be deliberately published with only "write" authority at
+ * a fixed location; no object-specific write credentials exist.
  */
 (function(root) {
   'use strict';
 
   function detectRoot() {
-    if (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) {
+    if (typeof document !== 'undefined' &&
+        document.currentScript && document.currentScript.src) {
       try {
-        var scriptUrl = new URL(document.currentScript.src, root.location && root.location.href ? root.location.href : undefined);
+        var u = new URL(document.currentScript.src, root.location && root.location.href);
         var suffix = '/client/skrynia.js';
-        if (scriptUrl.pathname.slice(-suffix.length) === suffix) {
-          scriptUrl.pathname = scriptUrl.pathname.slice(0, -suffix.length) || '/';
-          scriptUrl.search = '';
-          scriptUrl.hash = '';
-          return scriptUrl.href.replace(/\/+$/, '');
+        if (u.pathname.slice(-suffix.length) === suffix) {
+          u.pathname = u.pathname.slice(0, -suffix.length) || '/';
+          u.search = '';
+          u.hash = '';
+          return u.href.replace(/\/+$/, '');
         }
       } catch (_) {}
     }
     return '';
   }
+  var API_ROOT = detectRoot();
 
-  var ROOT = detectRoot();
-  var BASE = ROOT + '/store';
-
-  function SkryniaClient() {}
-
-  SkryniaClient.prototype.store = function(ns, grantUserToken) {
-    return new Store(ns, grantUserToken);
-  };
-
-  function Store(ns, grantUserToken) { this.ns = ns; this.grantUserToken = grantUserToken; }
-
-  function RawBytes(xhr) {
-    this._xhr = xhr;
-  }
-
+  function RawBytes(xhr) { this._xhr = xhr; }
   RawBytes.prototype.text = function() {
-    var buf = this._xhr.response;
-    if (!buf || buf.byteLength === 0) return '';
-    return new TextDecoder('utf-8').decode(new Uint8Array(buf));
+    var b = this._xhr.response;
+    return b && b.byteLength ?
+      new TextDecoder('utf-8').decode(new Uint8Array(b)) : '';
   };
-
   RawBytes.prototype.json = function() {
-    var txt = this.text();
-    return txt === '' ? null : JSON.parse(txt);
+    var text = this.text();
+    return text ? JSON.parse(text) : null;
   };
-
   RawBytes.prototype.bytes = function() {
     return new Uint8Array(this._xhr.response);
   };
-
-  RawBytes.prototype.status = function() {
-    return this._xhr.status;
-  };
-
+  RawBytes.prototype.status = function() { return this._xhr.status; };
   RawBytes.prototype.header = function(name) {
     return this._xhr.getResponseHeader(name);
   };
 
-  function request(method, url, body, headers, responseType) {
+  function request(method, url, body, headers) {
     return new Promise(function(resolve, reject) {
       var xhr = new XMLHttpRequest();
       xhr.open(method, url, true);
-      if (responseType) xhr.responseType = responseType;
-      if (headers) {
-        for (var k in headers) {
-          if (headers.hasOwnProperty(k)) xhr.setRequestHeader(k, headers[k]);
-        }
+      xhr.responseType = 'arraybuffer';
+      if (headers) for (var k in headers) if (Object.prototype.hasOwnProperty.call(headers, k)) {
+        xhr.setRequestHeader(k, headers[k]);
       }
       xhr.onload = function() { resolve(new RawBytes(xhr)); };
       xhr.onerror = function() { reject(new Error('network error')); };
-      // Send body; empty string for methods that should not carry a body,
-      // null for GET/HEAD. Omitting body entirely is correct for zero-length.
-      xhr.send(body != null ? body : undefined);
+      xhr.send(body == null ? undefined : body);
     });
   }
+  function grantHeader(token) {
+    return token ? {'X-Skrynia-Grant':token} : {};
+  }
+  function GrantError(method, response) {
+    return new Error(method + ' failed: HTTP ' + response.status());
+  }
 
+  function Store(ns, userToken) {
+    this.ns = ns;
+    this.userToken = userToken;
+  }
   Store.prototype._url = function(key) {
-    return BASE + '/' + encodeURIComponent(this.ns) + '/' + encodeURIComponent(key);
+    return API_ROOT + '/store/' +
+      encodeURIComponent(this.ns) + '/' + encodeURIComponent(key);
   };
-
-  /**
-   * Get an object. Returns RawBytes with .text(), .json(), .bytes() methods.
-   * Returns null if 404.
-   */
   Store.prototype.get = function(key) {
-    return request('GET', this._url(key), null, null, 'arraybuffer').then(function(raw) {
+    return request('GET', this._url(key)).then(function(raw) {
       if (raw.status() === 404) return null;
-      if (raw.status() !== 200) throw new Error('get failed: ' + raw.status());
-      return {
-        bytes: raw,
-        meta: {
-          etag: raw.header('etag'),
-        },
-      };
+      if (raw.status() !== 200) throw GrantError('get', raw);
+      return {bytes:raw, meta:{etag:raw.header('etag')}};
     });
   };
-
-  /**
-   * Create a new object. Returns { ok, mode, capability? }
-   */
-  Store.prototype.create = function(key, data, opts) {
-    opts = opts || {};
-    var headers = {
-      'X-Skrynia-Mode': opts.mode || 'capability-write',
-    };
-    var grantToken = opts.grantUserToken || this.grantUserToken;
-    if (grantToken) headers['X-Skrynia-Grant'] = grantToken;
-    return request('POST', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
-      if (raw.status() !== 201) throw new Error('create failed: ' + raw.status());
+  Store.prototype.create = function(key, bytes, opts) {
+    var token = opts && opts.grantUserToken || this.userToken;
+    return request('POST', this._url(key), bytes, grantHeader(token))
+      .then(function(raw) {
+        if (raw.status() !== 201) throw GrantError('create', raw);
+        return raw.json();
+      });
+  };
+  Store.prototype.put = function(key, bytes, opts) {
+    var token = opts && opts.grantUserToken || this.userToken;
+    var headers = grantHeader(token);
+    if (opts && opts.etag) headers['If-Match'] = opts.etag;
+    return request('PUT', this._url(key), bytes, headers).then(function(raw) {
+      if (raw.status() !== 200) throw GrantError('put', raw);
       return raw.json();
     });
   };
-
-  /**
-   * Put (replace) an existing object.
-   */
-  Store.prototype.put = function(key, data, opts) {
-    opts = opts || {};
-    var headers = {};
-    if (opts.capability) headers['X-Skrynia-Capability'] = opts.capability;
-    if (opts.etag) headers['If-Match'] = opts.etag;
-    return request('PUT', this._url(key), data, headers, 'arraybuffer').then(function(raw) {
-      if (raw.status() !== 200) throw new Error('put failed: ' + raw.status());
-      return raw.json();
-    });
-  };
-
-  /**
-   * Delete an object.
-   */
   Store.prototype.delete = function(key, opts) {
-    opts = opts || {};
-    var headers = {};
-    if (opts.capability) headers['X-Skrynia-Capability'] = opts.capability;
-    return request('DELETE', this._url(key), undefined, headers, 'arraybuffer').then(function(raw) {
-      if (raw.status() !== 200) throw new Error('delete failed: ' + raw.status());
+    var token = opts && opts.grantUserToken || this.userToken;
+    var headers = grantHeader(token);
+    if (opts && opts.etag) headers['If-Match'] = opts.etag;
+    return request('DELETE', this._url(key), null, headers).then(function(raw) {
+      if (raw.status() !== 200) throw GrantError('delete', raw);
       return raw.json();
     });
   };
 
   function grantRequest(method, url, token, body) {
-    return request(method, ROOT + url, body == null ? null : JSON.stringify(body),
-      { 'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json' }, 'arraybuffer')
+    return request(method, API_ROOT + url,
+      body === undefined ? null : JSON.stringify(body),
+      {'Authorization':'Bearer ' + token, 'Content-Type':'application/json'})
       .then(function(raw) {
-        if (raw.status() !== 200) throw new Error('grant request failed: ' + raw.status());
+        if (raw.status() !== 200) throw GrantError('grant', raw);
         return raw.json();
       });
   }
 
-  SkryniaClient.prototype.createGrant = function(ns, parentUserToken, maxBytes, maxObjects) {
+  function SkryniaClient() {}
+  SkryniaClient.prototype.store = function(ns, userToken) {
+    return new Store(ns, userToken);
+  };
+  SkryniaClient.prototype.createGrant = function(ns, parentUserToken, options) {
     return grantRequest('POST', '/grants', parentUserToken,
-      {namespace:ns, maxBytes:maxBytes, maxObjects:maxObjects});
+      Object.assign({namespace:ns}, options));
   };
   SkryniaClient.prototype.grant = function(ns, id, userToken) {
-    var endpoint = '/grants/' + encodeURIComponent(id) + '?namespace=' + encodeURIComponent(ns);
+    var base = '/grants/' + encodeURIComponent(id);
+    var query = '?namespace=' + encodeURIComponent(ns);
     return {
-      inspect: function() { return grantRequest('GET', endpoint, userToken); },
-      createUser: function() {
-        return grantRequest('POST', '/grants/' + encodeURIComponent(id) +
-          '/users?namespace=' + encodeURIComponent(ns), userToken);
-      },
+      inspect: function() { return grantRequest('GET', base + query, userToken); },
+      createUser: function() { return grantRequest('POST', base + '/users' + query, userToken); },
       confirm: function(need) {
-        return grantRequest('POST', '/grants/' + encodeURIComponent(id) +
-          '/confirmation?namespace=' + encodeURIComponent(ns), userToken,
-          {need: Boolean(need)});
+        return grantRequest('POST', base + '/confirmation' + query, userToken,
+          {need:need});
       }
     };
   };
@@ -189,6 +142,5 @@
     return grantRequest('DELETE', '/grants/' + encodeURIComponent(id) +
       '?namespace=' + encodeURIComponent(ns), issuerToken);
   };
-
   root.Skrynia = new SkryniaClient();
 })(typeof window !== 'undefined' ? window : this);

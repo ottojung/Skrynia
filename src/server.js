@@ -17,15 +17,9 @@ const { normalizeBasePath } = require('./base-path.js');
 const { createManagement, ManagementError } = require('./management.js');
 const { createPush } = require('./push.js');
 const { createGrants } = require('./grants.js');
-const { NS_RE, validNs, ensureDir, createShared } = require('./shared.js');
+const { validNs, ensureDir, createShared } = require('./shared.js');
 
 const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
-
-// Modes accepted at creation. Legacy immutable objects can still exist on disk;
-// their stored mode is never accepted at creation and never rewritten, but it
-// grants no privilege either, so they behave as public-write for every purpose.
-const CREATE_MODES = ['capability-write', 'public-write'];
-const READABLE_MODES = CREATE_MODES;
 
 const {
   existsSync,
@@ -33,7 +27,6 @@ const {
   writeFileSync,
   unlinkSync,
   statSync,
-  readdirSync,
   realpathSync,
   renameSync,
   linkSync,
@@ -113,10 +106,8 @@ function createServer(opts) {
   }
 
   function safeKey(key) {
-    if (typeof key !== 'string' || key.length === 0 || key.length > MAX_KEY_LENGTH) return null;
-    if (key.includes('\0') || key.includes('..') || key.startsWith('/') || key.includes('//')) return null;
-    if (key.includes('/') || key === '.' || key === '..') return null;
-    return key;
+    return typeof key === 'string' && key.length <= MAX_KEY_LENGTH &&
+      grants.validKey(key) ? key : null;
   }
 
   function nsExists(ns) { return Boolean(grants.root(ns)); }
@@ -127,25 +118,6 @@ function createServer(opts) {
       return false;
     }
     return true;
-  }
-
-  function requireNsCreate(ns, res) {
-    if (!nsExists(ns)) {
-      json(res, 409, {error:'namespace_not_created', detail:'create the namespace through the ns/create endpoint first'});
-      return false;
-    }
-    return true;
-  }
-
-  function generateCapability() { return crypto.randomBytes(32).toString('hex'); }
-  function sha256hex(data) { return crypto.createHash('sha256').update(data).digest('hex'); }
-
-  function timingSafeEqualHex(a, b) {
-    if (typeof a !== 'string' || typeof b !== 'string' || a.length !== b.length) return false;
-    const bufA = Buffer.from(a, 'hex');
-    const bufB = Buffer.from(b, 'hex');
-    if (bufA.length !== bufB.length) return false;
-    return crypto.timingSafeEqual(bufA, bufB);
   }
 
   function timingSafeEqualString(a, b) {
@@ -196,34 +168,19 @@ function createServer(opts) {
   }
 
   function handleCreate(ns, key, body, req, res) {
-    if (!requireNsCreate(ns, res)) return;
-    const mode = req.headers['x-skrynia-mode'] || 'capability-write';
-    if (!CREATE_MODES.includes(mode)) return json(res, 400, {error:'invalid_mode'});
+    if (!requireNs(ns, res)) return;
+    grants.sweep();
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
-
-    shared.ensureStoreNamespace(ns);
     const op = shared.nsObjPath(ns, key);
     if (existsSync(op)) return json(res, 409, {error:'already_exists'});
-    const grantId = grants.accountCreate(ns, req.headers['x-skrynia-grant'], body.length);
-
-    const version = shared.nextVersion(ns);
-    const response = { ok: true, mode };
-    const meta = { mode, version, grantId };
-    if (mode === 'capability-write') {
-      const capability = generateCapability();
-      meta.capHash = sha256hex(capability);
-      response.capability = capability;
-    }
-
-    const tmp = prepareObjectTemp(ns, body, version);
+    grants.authorizeWrite(ns, req.headers['x-skrynia-grant'], key, body.length);
+    shared.ensureStoreNamespace(ns);
+    const tmp = prepareObjectTemp(ns, body, shared.nextVersion(ns));
     try {
-      shared.writeObjectMeta(ns, key, meta);
-      try {
-        push.enqueue(ns, key, 'create');
-      } catch (e) {
-        if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-        console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
-        return json(res, 500, {error:'push_enqueue_failed'});
+      try { push.enqueue(ns, key, 'create'); }
+      catch (e) {
+        if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full'});
+        throw e;
       }
       try { linkSync(tmp, op); }
       catch (e) {
@@ -232,45 +189,29 @@ function createServer(opts) {
       }
     } finally {
       discardTemp(tmp);
-      // Creation may abort after metadata is staged (e.g. push backpressure).
-      // No committed object means no permanent metadata or uncharged disk use.
-      if (!existsSync(op)) {
-        try { unlinkSync(shared.nsMetaPath(ns, key)); }
-        catch (e) { if (e.code !== 'ENOENT') throw e; }
-      }
     }
-    json(res, 201, response);
+    json(res, 201, {ok:true});
   }
 
   function handlePut(ns, key, body, req, res) {
     if (!requireNs(ns, res)) return;
+    grants.sweep();
     const op = shared.nsObjPath(ns, key);
     if (!existsSync(op)) return json(res, 404, {error:'not_found'});
-    const meta = shared.readObjectMeta(ns, key);
-    if (!meta || !READABLE_MODES.includes(meta.mode)) return json(res, 500, {error:'object_metadata_missing'});
-    if (meta.mode === 'capability-write') {
-      const capability = req.headers['x-skrynia-capability'];
-      if (!capability) return json(res, 403, {error:'capability_required'});
-      if (!meta.capHash || !timingSafeEqualHex(sha256hex(capability), meta.capHash)) return json(res, 403, {error:'invalid_capability'});
-    }
     const ifMatch = req.headers['if-match'];
-    if (ifMatch !== undefined && ifMatch !== staticFileEtag(op)) return json(res, 412, {error:'etag_mismatch'});
-    if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
-
-    if (!meta.grantId) throw new Error('unsupported old object schema');
-    grants.accountReplace(ns, meta.grantId, statSync(op).size, body.length);
-    try {
-      push.enqueue(ns, key, 'replace');
-    } catch (e) {
-      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
-      return json(res, 500, {error:'push_enqueue_failed'});
+    if (ifMatch !== undefined && ifMatch !== staticFileEtag(op)) {
+      return json(res, 412, {error:'etag_mismatch'});
     }
-
-    const version = shared.nextVersion(ns);
-    const tmp = prepareObjectTemp(ns, body, version);
+    if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
+    // Semantics: logical delete, then full-cost create in one transaction.
+    grants.authorizeWrite(ns, req.headers['x-skrynia-grant'], key, body.length);
+    const tmp = prepareObjectTemp(ns, body, shared.nextVersion(ns));
     try {
-      shared.writeObjectMeta(ns, key, Object.assign({}, meta, {version}));
+      try { push.enqueue(ns, key, 'replace'); }
+      catch (e) {
+        if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full'});
+        throw e;
+      }
       renameSync(tmp, op);
     } finally {
       discardTemp(tmp);
@@ -280,27 +221,20 @@ function createServer(opts) {
 
   function handleDelete(ns, key, req, res) {
     if (!requireNs(ns, res)) return;
+    grants.sweep();
     const op = shared.nsObjPath(ns, key);
     if (!existsSync(op)) return json(res, 404, {error:'not_found'});
-    const meta = shared.readObjectMeta(ns, key);
-    if (!meta || !READABLE_MODES.includes(meta.mode)) return json(res, 500, {error:'object_metadata_missing'});
-    if (meta.mode === 'capability-write') {
-      const capability = req.headers['x-skrynia-capability'];
-      if (!capability) return json(res, 403, {error:'capability_required'});
-      if (!meta.capHash || !timingSafeEqualHex(sha256hex(capability), meta.capHash)) return json(res, 403, {error:'invalid_capability'});
+    grants.authorizeWrite(ns, req.headers['x-skrynia-grant'], key, null);
+    const ifMatch = req.headers['if-match'];
+    if (ifMatch !== undefined && ifMatch !== staticFileEtag(op)) {
+      return json(res, 412, {error:'etag_mismatch'});
     }
-    if (!meta.grantId) throw new Error('unsupported old object schema');
-    grants.sweep();
-    try {
-      push.enqueue(ns, key, 'delete');
-    } catch (e) {
-      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full', detail:'durable push outbox at capacity; retry after it drains'});
-      console.error('skrynia push enqueue error:', e && e.message ? e.message : e);
-      return json(res, 500, {error:'push_enqueue_failed'});
+    try { push.enqueue(ns, key, 'delete'); }
+    catch (e) {
+      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full'});
+      throw e;
     }
-
     unlinkSync(op);
-    unlinkSync(shared.nsMetaPath(ns, key));
     json(res, 200, {ok:true});
   }
 
@@ -555,7 +489,9 @@ function createServer(opts) {
 
     if (p === '/grants' && req.method === 'POST') {
       return readPushJson(req, res, body => grantResult(res, () => {
-        const out = grants.createChild(body.namespace, bearer(req), body.maxBytes, body.maxObjects);
+        if (!body || typeof body !== 'object' || Array.isArray(body)) throw Object.assign(new Error('invalid_grant'), {status:400, code:'invalid_grant'});
+        const out = grants.createChild(body.namespace, bearer(req), body.maxBytes, body.maxObjects,
+          body.locations, body.operations);
         return out;
       }));
     }
@@ -613,11 +549,13 @@ function createServer(opts) {
         return handleGet(ns, key, res);
       }
       if (req.method === 'DELETE') {
+        if (req.headers['x-skrynia-mode'] || req.headers['x-skrynia-capability']) return json(res, 400, {error:'invalid_storage_header'});
         try { return handleDelete(ns, key, req, res); }
         catch (e) { if (e.status) return json(res, e.status, {error:e.code});
           console.error('skrynia store error:', e); return json(res, 500, {error:'internal_error'}); }
       }
       if (req.method === 'PUT' || req.method === 'POST') {
+        if (req.headers['x-skrynia-mode'] || req.headers['x-skrynia-capability']) return json(res, 400, {error:'invalid_storage_header'});
         return readBody(req, res, body => {
           try {
             if (req.method === 'POST') handleCreate(ns, key, body, req, res);

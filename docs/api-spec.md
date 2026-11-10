@@ -1,214 +1,231 @@
 # Skrynia HTTP API
 
-This is the **grant-only** storage model. Older namespace quota files,
-unassociated objects and subscriptions are unsupported. There is no migration
-path or compatibility API; initialize a new data directory for this release.
+This specification is normative together with
+[location-authority intent](intent-location-authority.md).
 
-All routes below are relative to `SKRYNIA_URL`, which may include a path
-component. Grant credentials are bearer secrets; use HTTPS, do not place them
-in URLs, and store them securely. No token can be recovered from its verifier.
+All paths are relative to the canonical SKRYNIA_URL, including its optional
+path component. Credentials are unguessable bearer secrets; use HTTPS.
 
-## Deployment and root grant
+## Namespace bootstrap
 
-`GET /deploy?repo=git@github.com:org/app.git&commit=<full-sha>&subdir=.&namespace=app&token=<management-token>`
+A successful first authenticated GET /deploy creates the namespace root grant
+after building and validating the static application. Parameters:
+- repo: scp-like SSH Git URL
+- commit: full verified commit SHA
+- subdir: app directory within the repository
+- namespace: namespace name
+- token: deployment management token
+- quota: optional root maxBytes, default 10485760
+- maxObjects: optional root maxObjects, default 10000
+- locations: optional root location matcher, default "*"
+- operations: optional comma-separated root operations, default all operations
+- builder: optional builder image override
 
-A successful first deployment validates and builds the app, then creates a
-root grant for its namespace. Optional `quota` and `maxObjects` parameters
-set that root's limits; otherwise defaults are taken from
-`SKRYNIA_DEFAULT_QUOTA_BYTES` (10 MiB) and
-`SKRYNIA_MAX_OBJECT_COUNT` (10,000).
+The first successful deployment returns rootGrant.id, rootGrant.issuerToken,
+rootGrant.userToken, rootGrant.locations, rootGrant.operations, the budget
+limits and nextCheckAt. These credentials are returned once. Re-deployment
+retains its root grant and does not reissue or reveal the credentials.
 
-The first deploy response includes:
-```json
-{
-  "ok": true, "namespace": "app", "release": "example", "path": "/apps/app/",
-  "rootGrant": {
-    "id": "32-hex-id",
-    "created": true,
-    "issuerToken": "64-hex-secret",
-    "userToken": "64-hex-secret",
-    "maxBytes": 10485760,
-    "maxObjects": 10000,
-    "nextCheckAt": 0
-  }
-}
-```
+The GitHub deployment action securely masks one-time credentials and exports
+root-grant-id, root-user-token and root-issuer-token outputs.
 
-`nextCheckAt` is a Unix timestamp in **milliseconds** (the example above is
-a placeholder). Later deployments preserve the root grant and its contents
-and return `{"rootGrant":{"created":false,"id":"..."}}`, never its secrets.
-The bundled GitHub deploy action masks and exports the credentials as
-`root-user-token` and `root-issuer-token` outputs, only on first creation.
+## Keys
 
-No ordinary storage or grant creation works without an existing grant.
-`/ns/create` and `/ns/remove` have been removed.
+A key is a nonempty ASCII string matching:
 
-## Grant authority
+~~~regex
+^[A-Za-z0-9_]+$
+~~~
 
-Every grant belongs to exactly one namespace and has one parent, except the
-namespace root. Every grant has an **issuer token** and one or more **user
-tokens**. Tokens are separate random bearer secrets.
+and must not exceed SKRYNIA_MAX_KEY_LENGTH characters (default 256).
+Case is significant.
 
-- An issuer token can **clean the grant's entire space** or **revoke the
-  grant entirely**, immediately and unconditionally; it cannot create
-  objects, create subgrants, mint user tokens or vote.
-- A user token can create objects funded by the grant, create subgrants,
-  mint additional user tokens for that grant, and confirm `need` or
-  `release`. It cannot unilaterally revoke the grant.
-- Existing object write capabilities remain separate: grant user tokens
-  authorize *allocation*, not modification of an already-created object.
+A locations pattern must match:
 
-### Create a subgrant
+~~~regex
+^[A-Za-z0-9_]*\*?$
+~~~
 
-```http
+- "*" matches every valid key.
+- "abc*" matches keys beginning with "abc", including "abc" itself.
+- "abc" matches exactly "abc".
+- "" matches no valid keys.
+
+No escaping, separators, alternative patterns, or arbitrary expressions exist.
+
+## Grants
+
+A grant has an immutable namespace, ID, parent ID (null for root),
+locations, operations, maxBytes, maxObjects, issuer-token verifier and at
+least one user-token verifier. Grant state also contains voting timestamps.
+
+Valid operations:
+
+| Operation | Authority |
+|---|---|
+| write | Create, replace, or delete objects at permitted locations |
+| delegate | Create subgrants and issue additional user tokens |
+| keep | Submit need:true |
+| release | Submit need:false |
+| subscribe | Create a browser push subscription |
+
+Reads always require no operation and no token.
+
+A child can only be issued by a user token from a grant containing delegate.
+It inherits locations and operations if omitted. Explicit child locations
+must denote a subset of the parent's matched keys, and child operations must
+be a subset of its parent's. A grant with no operations is valid.
+
+### POST /grants
+
+~~~http
 POST /grants
 Authorization: Bearer <parent-user-token>
 Content-Type: application/json
 
-{"namespace":"app","maxBytes":5242880,"maxObjects":100}
-```
+{
+  "namespace": "forum",
+  "locations": "reports*",
+  "operations": ["write"],
+  "maxBytes": 4096,
+  "maxObjects": 1
+}
+~~~
 
-Response (200) contains `id`, `issuerToken`, `userToken`, `maxBytes`,
-`maxObjects`, `nextCheckAt`.
+Returns an ID, issuerToken, userToken, locations, operations, resource maxima,
+and nextCheckAt. maxBytes/maxObjects must be positive safe integers.
+Neither limit reserves capacity in the parent. Grant metadata itself consumes
+the parent's available byte budget.
 
-The child shares its parent's namespace. A parent does **not** reserve its
-whole maximum for each child. Actual consumption of every subtree must
-remain under the limits of **every ancestor**. Sibling grants can share
-unused headroom and can also compete for it.
+### POST /grants/{id}/users?namespace=forum
 
-### Mint an additional user token
+Requires a user token for exactly that grant and the delegate operation.
+Issues one new peer user token under the same grant, charging metadata cost.
 
-```http
-POST /grants/<id>/users?namespace=app
-Authorization: Bearer <existing-user-token>
-```
+### GET /grants/{id}?namespace=forum
 
-Returns `{"grantId":"...","userToken":"..."}`.
-This consumes grant metadata allowance. Each token represents an independent
-bearer credential, not necessarily a human identity.
+Requires a user token for exactly that grant. Returns public grant properties,
+userCount, and current location-scoped usage. Never returns token verifiers.
 
-### Inspect a grant
+## Objects
 
-```http
-GET /grants/<id>?namespace=app
-Authorization: Bearer <user-token>
-```
+All values are files, with no creator, owner or grant reference. Read
+access is public, including direct nginx static-file serving.
 
-Returns public grant fields and current subtree `usage`, excluding token
-verifiers. It is usable only by a user token for that exact grant.
+### GET /store/{namespace}/{key}
 
-## Store
+Returns raw bytes and a strong ETag, or 404.
 
-Every newly created object has a funding grant:
+### POST /store/{namespace}/{key}
 
-```http
-POST /store/app/my-key
-X-Skrynia-Grant: <grant-user-token>
-X-Skrynia-Mode: capability-write
+~~~http
+POST /store/forum/reports1
+X-Skrynia-Grant: <user-token>
 
-<arbitrary bytes>
-```
+<raw bytes>
+~~~
 
-Returns `201` and a one-time per-object write capability (default mode).
-`X-Skrynia-Mode: public-write` is also supported. No anonymous creation,
-no immutable mode and no legacy object formats.
+Requires a grant whose operations include write and whose locations match
+the key. Creates only if the key is absent. Returns 201 and {"ok":true}.
+Object creation returns no other credential.
 
-- `GET /store/{namespace}/{key}` returns raw bytes with a strong ETag,
-  without needing a token.
-- `PUT /store/{namespace}/{key}` requires the object's write capability
-  when in `capability-write` mode. `If-Match: <etag>` is an optional
-  compare-and-replace precondition. Growth is charged to the object's
-  original grant and every ancestor, even if a different writer holds the
-  object's write capability.
-- `DELETE /store/{namespace}/{key}` requires that same object capability
-  when applicable and removes the object and its private metadata.
+### PUT /store/{namespace}/{key}
 
-ETag versions use a single monotonic namespace counter, so deletion does not
-leave unbounded per-key tombstones, yet delete/recreate cannot reuse an ETag.
-Files remain nginx-static-file compatible.
+~~~http
+PUT /store/forum/reports1
+X-Skrynia-Grant: <user-token>
+If-Match: "<etag-if-needed>"
+
+<replacement bytes>
+~~~
+
+Requires the write operation and key authorization. Must target an existing
+object. If-Match is optional and returns 412 on ETag mismatch.
+
+This operation is semantically atomic delete followed by create. The resulting
+full object must fit every limit of the writing grant and its transitive
+ancestors, after the old value is logically removed. A failed write preserves
+the original object. There is no exception for a shrinking replacement whose
+result is still over a grant's budget.
+
+### DELETE /store/{namespace}/{key}
+
+Requires a grant user token with write on the key. If-Match is supported.
+Removes the object and releases its charged presence from location usage.
+Does not require available quota.
 
 ## Resource accounting
 
-Every subtree must obey:
+Let matched(g) be all live objects at keys matching grant g's locations.
 
-```text
-sum(object byte lengths)
-+ 512 bytes per stored object (reserved metadata)
-+ 2,048 bytes per grant (including the root)
-+ 128 bytes per additional grant user token
-+ 4,096 bytes per browser PushSubscription
-<= maxBytes
-```
+Bytes used by g:
 
-`maxObjects` counts stored objects and browser push subscriptions in the
-subtree. Grants themselves use byte allowance, not object-count allowance.
-These charges are conservative upper bounds on private records; no recursive
-creation is free. A root grant can have only the resources established at
-deployment. There is no separate namespace quota layer.
+~~~text
+sum over matched(g) of (payloadBytes + 512)
++ 2048 per grant in g's inclusive descendant tree
++ 128 per additional user token beyond the first in that tree
++ 4096 per push subscription sponsored by that tree
+~~~
 
-## Confirmation-based cleanup
+Object count = count(matched(g)) + sponsored subscription count in subtree.
+Grant metadata is charged in bytes, not in object count.
 
-Every grant has a 24-hour checkpoint period. Each user token may submit:
+Only the **grant used for the mutation and its transitive ancestors** are
+checked. Overlapping sibling grants are independent constraints on writes
+using their respective tokens. A grant may measure usage beyond its own
+maximum due to writes from an unrelated grant; it then cannot create an
+object or perform an edit that still exceeds its own ceiling, but can delete
+objects at its authorized locations.
 
-```http
-POST /grants/<id>/confirmation?namespace=app
-Authorization: Bearer <grant-user-token>
+No value is associated with a grant. Grant sponsorship remains recorded only
+for non-object resources such as subscriptions.
+
+## Cleanup and revocation
+
+### POST /grants/{id}/confirmation?namespace=forum
+
+~~~http
+Authorization: Bearer <user-token>
 Content-Type: application/json
 
 {"need":true}
-```
+~~~
 
-Or `{"need":false}` to propose cleanup. Signals accumulate within the
-period. Grant user tokens can be shared and need not represent persons.
+true requires keep, false requires release. At every 24-hour checkpoint, any
+release signal for that grant triggers cleanup unless there was a keep signal
+for that grant or any descendant in the same window. Total silence preserves
+the state. A keep signal protects ancestors, not siblings.
 
-At its checkpoint, a grant is **cleaned** exactly if:
-1. At least one negative confirmation was recorded for the grant during
-   its period; and
-2. **No** positive confirmation was recorded during that period for this
-   grant **or any descendant**.
+### DELETE /grants/{id}/space?namespace=forum
 
-Thus one descendant's `need:true` protects all its ancestors. Positive
-confirmations do not protect sibling or descendant grants against their own
-independently authorized cleanup. Total silence preserves the space.
-Checks are performed in the running server and after the next request following
-a delay/restart. A server restart does not imply a vote.
+Requires the grant's issuer token. Unconditionally cleans its space, by
+revoking the grant and reissuing the exact same grant with identical ID,
+parent, locations, operations, resource ceilings and user/issuer credentials,
+but a new confirmation window and no descendants.
 
-A **clean** deletes every object funded by the target or descendants, and
-all descendant grants and their tokens. The target grant itself, its user and
-issuer tokens, and its limits survive, and can be reused immediately.
+### DELETE /grants/{id}?namespace=forum
 
-### Issuer operations
+Requires the grant's issuer token. Revokes the grant without reissuance.
 
-```http
-DELETE /grants/<id>/space?namespace=app
-Authorization: Bearer <issuer-token>
-```
+Both operations recursively remove descendants and their user/issuer tokens,
+all objects whose keys match the target grant's locations, and push
+subscriptions sponsored by the revoked subtree. Sibling grants survive,
+even if their location scopes overlap with deleted keys. The deletion is
+atomic at the HTTP interface; interrupted deletion is recovered before a
+server can accept new requests.
 
-Unconditionally cleans the space while preserving that grant.
+## Browser push subscriptions
 
-```http
-DELETE /grants/<id>?namespace=app
-Authorization: Bearer <issuer-token>
-```
+POST /push/subscriptions?namespace={ns}&channel={channel} requires a valid
+grant user token in X-Skrynia-Grant with the subscribe operation, plus the
+subscription request body. Each subscription is charged to its creating
+grant and ancestors and removed with that grant's subtree. Subscription
+update and removal use that subscription's own credential.
 
-Unconditionally revokes the grant itself and the entire subtree, including
-all objects, descendants, and tokens. It overrides all confirmations.
+## Deployment and management routes
 
-Both deletion operations persist their complete affected subtree in a private
-pending-deletion record first and resume an interrupted deletion on process
-restart. Operations are synchronous for the single server process; no
-concurrent writes can recreate doomed objects during deletion.
+Authenticated deployment management routes include:
+GET /deploy, /undeploy, /rollback, /releases, /inspect, /ns/inspect,
+ /ns/list, and /push/rules/{set,get,list,remove}.
 
-## Push, management and deployment
-
-The PushSubscription creation endpoint
-`POST /push/subscriptions?namespace={ns}&channel={channel}` additionally
-requires `X-Skrynia-Grant: <user-token>` for new subscriptions. Subscriptions
-retain independent update/delete capabilities and are deleted when their
-funding grant is cleaned. Other push endpoints and management endpoints
-remain documented in the README. Management authentication still uses
-`SKRYNIA_TOKEN`.
-
-The node process must remain the single owner of its data directory.
-This implementation offers no distributed transaction processing and no
-in-place upgrade path for existing storage data.
+A single Skrynia server process owns one data directory.

@@ -63,6 +63,10 @@ def build_parser():
     deploy.add_argument("--subdir", required=True)
     deploy.add_argument("--namespace", required=True)
     deploy.add_argument("--builder")
+    deploy.add_argument("--quota", type=int)
+    deploy.add_argument("--max-objects", type=int)
+    deploy.add_argument("--locations")
+    deploy.add_argument("--operations", help="Comma-separated grant operations")
 
     undeploy = commands.add_parser("undeploy")
     add_namespace(undeploy)
@@ -79,13 +83,6 @@ def build_parser():
 
     ns = commands.add_parser("ns")
     ns_commands = ns.add_subparsers(dest="ns_command", required=True)
-
-    ns_create = ns_commands.add_parser("create")
-    add_namespace(ns_create)
-    ns_create.add_argument("--quota", type=int)
-
-    ns_remove = ns_commands.add_parser("remove")
-    add_namespace(ns_remove)
 
     ns_inspect = ns_commands.add_parser("inspect")
     add_namespace(ns_inspect)
@@ -105,6 +102,10 @@ def main():
             "subdir": args.subdir,
             "namespace": args.namespace,
             "builder": args.builder,
+            "quota": args.quota,
+            "maxObjects": args.max_objects,
+            "locations": args.locations,
+            "operations": args.operations,
         })
     if args.command == "undeploy":
         return call("undeploy", {"namespace": args.namespace})
@@ -115,10 +116,6 @@ def main():
     if args.command == "inspect":
         return call("inspect", {"namespace": args.namespace})
     if args.command == "ns":
-        if args.ns_command == "create":
-            return call("ns/create", {"namespace": args.namespace, "quota": args.quota})
-        if args.ns_command == "remove":
-            return call("ns/remove", {"namespace": args.namespace})
         if args.ns_command == "inspect":
             return call("ns/inspect", {"namespace": args.namespace})
         if args.ns_command == "list":
