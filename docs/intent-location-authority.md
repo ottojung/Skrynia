@@ -42,8 +42,17 @@ Status: normative. This document defines Skrynia's storage model.
 - An issuer token can generate independent user tokens for exactly its own
   grant through POST /grants/{id}/users. Only issuers may mint these tokens,
   regardless of a grant's delegate operation. A grant may have zero users.
-- Grant issuer tokens also authorize unconditional recursive revocation
-  or cleaning; user tokens never have issuer authority.
+- Grant issuer tokens also authorize recursive grant revocation or cleaning;
+  user tokens never have issuer authority. A non-root grant's issuer may
+  delete physical object values during that operation only if the grant
+  carries `write` or `release`. The `delegate` operation alone cannot
+  be used to manufacture destructive object authority. The namespace
+  root issuer remains fully administrative.
+- The issuer may enumerate its own grant's user credential IDs, labels and
+  creation timestamps, and revoke one user token by ID without deleting
+  data. The management authority may rotate the root issuer token without
+  affecting root user tokens, descendants, or objects. The previous
+  issuer credential becomes invalid immediately.
 - An intentionally public user token with `locations: "some_key"` and
   `operations: ["write"]` provides public write authority only for that key.
 
@@ -81,7 +90,10 @@ Status: normative. This document defines Skrynia's storage model.
   object regardless of its current resource usage, and doesn't need byte
   headroom. Creating a fresh key charges the full new value and object.
 - The writer's identity is not recorded as an object owner or sponsor.
-  No ownership moves during edits.
+  No ownership moves during edits. Object sizes and prefix usage may be
+  indexed in memory, provided the filesystem can reconstruct the index on
+  startup and all successful mutations update the index atomically from the
+  API perspective.
 - The overall maximum size of a single HTTP request remains an independent
   server-wide limit. ETag/If-Match conditional replacement remains supported.
 
@@ -142,7 +154,17 @@ Status: normative. This document defines Skrynia's storage model.
 - The intermediate revoked state is never observable to Skrynia API users.
   Interrupted filesystem deletion is resumed before serving requests.
   Implementations may optimize physical deletion while preserving these
-  semantics.
+  semantics. Filesystem sync and durable intent records support recovery,
+  but external file servers may observe intermediate per-file deletions.
+- Committed object mutations and durable push enqueue are linked by a
+  recoverable intent record. Notifications are delivered at least once,
+  not exactly once. Crashes between enqueue and intent finalization can
+  cause duplicate notifications; a failed notification enqueue after a
+  committed mutation must never be reported as a rolled-back mutation.
+- Management operations require a bearer header; mutations use HTTP
+  POST/DELETE with JSON bodies rather than credentials in query strings.
+  Administrative listing/inspection of keys, grants and quotas must not
+  reveal credential verifiers.
 
 ## Out-of-scope assumptions
 

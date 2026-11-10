@@ -59,7 +59,19 @@ function run(env) {
 
 function startServer(handler) {
   return new Promise(function (resolve) {
-    var server = http.createServer(handler);
+    var server = http.createServer(function(req,res) {
+      assert(req.method === 'POST', 'action must use POST');
+      assert(req.headers.authorization === 'Bearer ' + TOKEN,
+        'management secret must be in Authorization header');
+      assert(!req.url.includes('token='), 'management token must never appear in URL');
+      const chunks=[];
+      req.on('data',chunk=>chunks.push(chunk));
+      req.on('end',()=>{
+        try {req.skryniaParams=JSON.parse(Buffer.concat(chunks).toString('utf8'));}
+        catch(e){return res.writeHead(400).end('invalid json');}
+        handler(req,res);
+      });
+    });
     server.listen(0, '127.0.0.1', function () {
       resolve({ server: server, port: server.address().port });
     });
@@ -176,11 +188,11 @@ async function test_successful_deploy() {
   var srv = await startServer(function (req, res) {
     var url = new URL(req.url, 'http://localhost');
     assert(url.pathname === '/platform/deploy', 'correct path');
-    assert(url.searchParams.get('repo') === 'git@github.com:myorg/myapp.git', 'repo param');
-    assert(url.searchParams.get('commit') === 'aabbccddeeff0011223344556677889900112233', 'commit param');
-    assert(url.searchParams.get('subdir') === '.', 'subdir param');
-    assert(url.searchParams.get('namespace') === 'myapp', 'namespace param');
-    assert(url.searchParams.get('token') === TOKEN, 'token param');
+    assert(req.skryniaParams.repo === 'git@github.com:myorg/myapp.git', 'repo param');
+    assert(req.skryniaParams.commit === 'aabbccddeeff0011223344556677889900112233', 'commit param');
+    assert(req.skryniaParams.subdir === '.', 'subdir param');
+    assert(req.skryniaParams.namespace === 'myapp', 'namespace param');
+    assert(req.headers.authorization === 'Bearer ' + TOKEN, 'management bearer header');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, namespace: 'myapp', release: '20260910120000000-abc', path: '/apps/myapp/' }));
   });
@@ -276,7 +288,7 @@ async function test_root_url_deploy() {
 async function test_default_repo_from_github_repository() {
   var srv = await startServer(function (req, res) {
     var url = new URL(req.url, 'http://localhost');
-    assert(url.searchParams.get('repo') === 'git@github.com:org/repo.git', 'default repo');
+    assert(req.skryniaParams.repo === 'git@github.com:org/repo.git', 'default repo');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, release: 'r1' }));
   });
@@ -317,7 +329,7 @@ async function test_http_error() {
 async function test_builder_param() {
   var srv = await startServer(function (req, res) {
     var url = new URL(req.url, 'http://localhost');
-    assert(url.searchParams.get('builder') === 'custom:latest', 'builder param');
+    assert(req.skryniaParams.builder === 'custom:latest', 'builder param');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, release: 'r2' }));
   });
@@ -339,7 +351,7 @@ async function test_builder_param() {
 async function test_subdir_param() {
   var srv = await startServer(function (req, res) {
     var url = new URL(req.url, 'http://localhost');
-    assert(url.searchParams.get('subdir') === 'example/app', 'subdir param');
+    assert(req.skryniaParams.subdir === 'example/app', 'subdir param');
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, release: 'r3' }));
   });

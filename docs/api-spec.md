@@ -8,7 +8,7 @@ path component. Credentials are unguessable bearer secrets; use HTTPS.
 
 ## Namespace bootstrap
 
-A successful first authenticated GET /deploy creates the namespace root grant
+A successful first management-authorized POST /deploy creates the namespace root grant
 after building and validating the static application. Parameters:
 - repo: scp-like SSH Git URL
 - commit: full verified commit SHA
@@ -111,11 +111,23 @@ Authorization: Bearer <grant-issuer-token>
 ~~~
 
 Requires the **issuer token of that exact grant**. Returns
-`{"grantId":"...","userToken":"..."}`. Every call issues a distinct user
-token with the operations specified by the grant, even if the grant lacks
-`delegate`. A user token cannot issue other user tokens. The first token
-fits within the grant's base metadata charge; subsequent tokens consume
-additional metadata allowance.
+`{"grantId":"...","userId":"...","userToken":"..."}`. Every call issues a distinct user
+token and its unique userId, with the operations specified by the grant,
+even if it lacks `delegate`. Optionally send JSON `{"label":"guest"}`
+to attach a non-secret description (at most 80 characters). A user token
+cannot issue other user tokens. The first token fits within the grant's
+base metadata charge; subsequent tokens consume additional metadata
+allowance.
+
+### GET /grants/{id}/users?namespace=forum
+
+Requires that grant's issuer token. Returns user IDs, labels and creation
+timestamps, but never stored hashes or token secrets.
+
+### DELETE /grants/{id}/users/{userId}?namespace=forum
+
+Requires the grant's issuer token. Revokes just that user credential,
+without deleting objects or affecting other users or descendants.
 
 ### GET /grants/{id}?namespace=forum
 
@@ -222,6 +234,14 @@ but a new confirmation window and no descendants.
 
 Requires the grant's issuer token. Revokes the grant without reissuance.
 
+**Destructive authority constraint:** a non-root grant's cleanup or
+revocation may delete object data only when that grant includes `write`
+or `release`. A grant holding only `delegate` may still create, clean,
+or revoke descendants, but cannot thereby obtain authority to delete
+stored values. Root issuer authority remains administrative and may
+clean the entire namespace. Descendant grants can never acquire an
+operation absent from their parent.
+
 Both operations remove the grant's descendants and their credentials, and
 push subscriptions sponsored by the revoked subtree. An object is deleted
 only if (1) its key matches the target grant's locations and (2) **no
@@ -255,8 +275,59 @@ update and removal use that subscription's own credential.
 
 ## Deployment and management routes
 
-Authenticated deployment management routes include:
-GET /deploy, /undeploy, /rollback, /releases, /inspect, /ns/inspect,
- /ns/list, and /push/rules/{set,get,list,remove}.
+Every management request requires `Authorization: Bearer <management-token>`.
+Mutations use a JSON request body and the specified HTTP method; the
+management token must never be placed in the URL.
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | /deploy | Build and deploy a Git commit; create root grant if absent |
+| DELETE | /undeploy | Remove app release and namespace resources |
+| POST | /rollback | Switch to a previous release |
+| GET | /releases | List releases in a namespace |
+| GET | /inspect | Inspect deployment metadata |
+| GET | /ns/inspect | Inspect root grant and resource usage |
+| GET | /ns/list | List namespaces |
+| GET | /ns/grants | List grants, operations, limits and current usage |
+| GET | /ns/keys | Paginate key names and byte sizes |
+| POST | /ns/issuer/rotate | Recover/rotate root issuer token |
+| POST | /push/rules/set | Configure Web Push rules |
+| GET | /push/rules/get | Retrieve a Web Push rule |
+| GET | /push/rules/list | List Web Push rules |
+| DELETE | /push/rules/remove | Remove a Web Push rule |
+
+GET requests take non-secret filters in query parameters (for example,
+`?namespace=forum`). `/ns/keys` accepts optional ASCII `prefix`,
+exclusive `after` cursor and integer `limit` (1–200), and returns
+`keys: [{key,bytes}]` plus `nextAfter` or null.
+
+POST /ns/issuer/rotate takes `{"namespace":"forum"}`, immediately
+invalidates the previous root issuer credential, and returns
+`{"grantId":"...","issuerToken":"..."}`. Existing root user tokens,
+descendants, and objects survive unchanged. Use this recovery operation if
+the original deployment response is lost or the issuer token is compromised.
 
 A single Skrynia server process owns one data directory.
+
+## Quota index and crash consistency
+
+Location-scoped object sizes are held in a per-namespace incremental index,
+loaded from stored object files at startup or on first use. Successful
+create/replace/delete and grant cleanup update it synchronously. The durable
+filesystem remains authoritative; the index is reconstructed after restart.
+
+Object mutations write an fsynced intent record before committing a
+single-key filesystem operation, and enqueue durable Web Push notifications
+after the object commits. If outbox persistence fails *after* the object
+commits, the HTTP result indicates `notificationPending:true`, and
+the intent is replayed after restart or by the recovery timer. Duplicate
+notifications are possible (at-least-once delivery). Failed preflight
+outbox-capacity checks reject the write before changing the object.
+
+Grant cleanup also records an fsynced intent and recovery resumes the
+original independent-protection decision. Skrynia serializes mutations
+inside one Node.js process; its public API cannot observe intermediate
+operations. A separate process serving raw object files (such as nginx)
+may observe intermediate states during multi-object cleanup. The system
+does not provide cross-key ACID transactions or simultaneous multi-process
+writers.

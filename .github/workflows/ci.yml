@@ -144,7 +144,8 @@ jobs:
           VERSION_JSON="$(curl -fsS http://127.0.0.1:17380/platform/version)"
           printf '%s\n' "$VERSION_JSON" | grep -F "\"version\":\"${{ steps.gitver.outputs.version }}\""
           printf '%s\n' "$VERSION_JSON" | grep -F "\"commit\":\"${{ steps.gitver.outputs.commit }}\""
-          curl -fsS 'http://127.0.0.1:17380/platform/ns/list?token=smoke-token' | grep '"namespaces"'
+          curl -fsS -H 'Authorization: Bearer smoke-token' \
+            'http://127.0.0.1:17380/platform/ns/list' | grep '"namespaces"'
 
       - name: Smoke test skrynia-builder image
         run: |

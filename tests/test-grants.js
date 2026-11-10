@@ -190,6 +190,7 @@ async function testHttp() {
       {need:true},user(C.userToken));
     await new Promise(ok=>setTimeout(ok,12));
     due(dir,'forum',X.id);
+    engine.reloadGrants('forum');
     engine.sweep();
     await demand(port,200,'GET','/store/forum/secret1');
     assert.equal(engine.inspect('forum',C.id,C.userToken).id,C.id);
@@ -199,6 +200,7 @@ async function testHttp() {
       {need:false},user(X.userToken));
     await new Promise(ok=>setTimeout(ok,12));
     due(dir,'forum',X.id);
+    engine.reloadGrants('forum');
     engine.sweep();
     const preserved = await demand(port,200,'GET','/store/forum/secret1');
     assert.equal(preserved.body,'sibling');

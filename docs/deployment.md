@@ -36,7 +36,12 @@ node src/server.js
 ## First deployment
 
 ~~~sh
-curl 'http://127.0.0.1:17380/platform/deploy?repo=git@github.com:org/app.git&commit=0123456789012345678901234567890123456789&subdir=.&namespace=myapp&token=your-management-secret'
+curl -sS -X POST 'http://127.0.0.1:17380/platform/deploy' \
+  -H 'Authorization: Bearer your-management-secret' \
+  -H 'Content-Type: application/json' \
+  --data '{"repo":"git@github.com:org/app.git",
+           "commit":"0123456789012345678901234567890123456789",
+           "subdir":".","namespace":"myapp"}'
 ~~~
 
 An authenticated deploy verifies the exact commit, runs the build in a
@@ -78,17 +83,34 @@ a grant user token. Public reads and nginx static GET serving need no token.
 
 ## Release and namespace operations
 
-Management routes use the management token in their query parameters:
+Management requests use `Authorization: Bearer $SKRYNIA_TOKEN`.
+`GET` routes are read-only; `POST` and `DELETE` require JSON bodies.
 
 - GET /releases?namespace=myapp
-- GET /rollback?namespace=myapp
-- GET /rollback?namespace=myapp&release=ID
+- POST /rollback with `{"namespace":"myapp","release":"ID"}`
 - GET /inspect?namespace=myapp
 - GET /ns/inspect?namespace=myapp
 - GET /ns/list
-- GET /undeploy?namespace=myapp
+- GET /ns/grants?namespace=myapp
+- GET /ns/keys?namespace=myapp&prefix=notes&limit=100
+- POST /ns/issuer/rotate with `{"namespace":"myapp"}`
+- DELETE /undeploy with `{"namespace":"myapp"}`
 
-Append the token parameter to every management request.
+`scripts/cli.py` implements these operations. For example:
+
+~~~sh
+python3 scripts/cli.py ns grants --namespace myapp
+python3 scripts/cli.py ns keys --namespace myapp --prefix notes
+python3 scripts/cli.py ns rotate-issuer --namespace myapp
+~~~
+
+If the root issuer token was lost during an interrupted deployment, use
+`ns rotate-issuer` to issue a new root issuer token. This invalidates the
+old issuer credential, without affecting user tokens, grants or objects.
+
+To list, issue or revoke individual user tokens, set
+`SKRYNIA_ISSUER_TOKEN` and use the CLI `grant list-users`,
+`grant issue-user` or `grant revoke-user` commands.
 
 Undeploy removes the app release and its namespace resources.
 
