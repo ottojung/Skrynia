@@ -126,7 +126,7 @@ function createServer(opts={}) {
   function create(key,body,req,res) {
     const file=shared.objPath(key);
     if(fs.existsSync(file)) return json(res,409,{error:'already_exists'});
-    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'create',body);
+    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'create',body.length);
     const version=shared.nextVersion(),tmp=tempObject(body,version);
     try {
       const outcome=journal.commit(key,'create',version,()=>{
@@ -143,8 +143,7 @@ function createServer(opts={}) {
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
     if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
       return json(res,412,{error:'etag_mismatch'});
-    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'replace',
-      body,()=>fs.readFileSync(file));
+    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'replace',body.length);
     const version=shared.nextVersion(),tmp=tempObject(body,version);
     try {
       const outcome=journal.commit(key,'replace',version,()=>{
@@ -278,6 +277,14 @@ function createServer(opts={}) {
       try{return json(res,200,grants.revokeUser(user[1],bearer(req),user[2]));}
       catch(e){return error(res,e);}
     }
+    if(p==='/store'&&req.method==='GET') {
+      const patterns=url.searchParams.getAll('locations');
+      if(patterns.length!==1||url.searchParams.size!==1)
+        return json(res,400,{error:'invalid_locations'});
+      try {return json(res,200,grants.listObjects(req.headers['x-skrynia-grant'],patterns[0]));}
+      catch(e){return error(res,e);}
+    }
+    if(p==='/store') return json(res,405,{error:'method_not_allowed'});
     const keyMatch=p?.match(/^\/store\/(.+)$/);
     if(keyMatch) {
       let key;
