@@ -27,7 +27,8 @@ def call(endpoint, method="GET", params=None, credential="SKRYNIA_TOKEN"):
     if method == "GET":
         query = urllib.parse.urlencode(params)
     elif method in ("POST", "DELETE"):
-        body = json.dumps(params).encode("utf-8")
+        if params:
+            body = json.dumps(params).encode("utf-8")
     else:
         raise ValueError("invalid request method")
     url = base + "/" + endpoint + (("?" + query) if query else "")
@@ -85,12 +86,10 @@ def parser():
             c.add_argument("--limit", type=int, default=100)
     ns.add_parser("list")
     grants = commands.add_parser("grant").add_subparsers(dest="subcommand", required=True)
-    for name in ("issue-user", "list-users", "revoke-user"):
+    for name in ("issue-user", "revoke-user"):
         c = grants.add_parser(name)
         namespace(c)
         c.add_argument("--grant-id", required=True)
-        if name == "issue-user":
-            c.add_argument("--label")
         if name == "revoke-user":
             c.add_argument("--user-id", required=True)
     return p
@@ -128,9 +127,7 @@ def main():
         suffix = "?namespace=" + urllib.parse.quote(args.namespace, safe="")
         if args.subcommand == "issue-user":
             return call(url + "/users" + suffix, "POST",
-                        {"label": args.label}, "SKRYNIA_ISSUER_TOKEN")
-        if args.subcommand == "list-users":
-            return call(url + "/users" + suffix, credential="SKRYNIA_ISSUER_TOKEN")
+                        credential="SKRYNIA_ISSUER_TOKEN")
         if args.subcommand == "revoke-user":
             return call(url + "/users/" +
                         urllib.parse.quote(args.user_id, safe="") + suffix,

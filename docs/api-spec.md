@@ -110,19 +110,14 @@ POST /grants/<grant-id>/users?namespace=forum
 Authorization: Bearer <grant-issuer-token>
 ~~~
 
-Requires the **issuer token of that exact grant**. Returns
-`{"grantId":"...","userId":"...","userToken":"..."}`. Every call issues a distinct user
-token and its unique userId, with the operations specified by the grant,
-even if it lacks `delegate`. Optionally send JSON `{"label":"guest"}`
-to attach a non-secret description (at most 80 characters). A user token
-cannot issue other user tokens. The first token fits within the grant's
-base metadata charge; subsequent tokens consume additional metadata
-allowance.
-
-### GET /grants/{id}/users?namespace=forum
-
-Requires that grant's issuer token. Returns user IDs, labels and creation
-timestamps, but never stored hashes or token secrets.
+Requires the **issuer token of that exact grant**. The request has no
+body. Returns `{"grantId":"...","userId":"...","userToken":"..."}`.
+Every call issues a distinct user token and a revocation ID, regardless
+of the grant's `delegate` operation. A user token cannot issue user tokens.
+Skrynia does not keep labels or provide user-token listing; clients may
+track issued IDs and their metadata themselves. The first token fits
+within the grant's base metadata charge; subsequent tokens consume
+additional metadata allowance.
 
 ### DELETE /grants/{id}/users/{userId}?namespace=forum
 
@@ -234,13 +229,12 @@ but a new confirmation window and no descendants.
 
 Requires the grant's issuer token. Revokes the grant without reissuance.
 
-**Destructive authority constraint:** a non-root grant's cleanup or
-revocation may delete object data only when that grant includes `write`
-or `release`. A grant holding only `delegate` may still create, clean,
-or revoke descendants, but cannot thereby obtain authority to delete
-stored values. Root issuer authority remains administrative and may
-clean the entire namespace. Descendant grants can never acquire an
-operation absent from their parent.
+**Cleanup is independent of user operations.** An issuer can clean or
+revoke its grant regardless of its operations, including when the grant
+has no operations at all. The same rule applies at every depth. The
+`write` operation controls ordinary object mutation, `release`
+controls a negative retention vote, and `delegate` controls issuing
+subgrants; none is a prerequisite for issuer cleanup.
 
 Both operations remove the grant's descendants and their credentials, and
 push subscriptions sponsored by the revoked subtree. An object is deleted
@@ -252,8 +246,7 @@ An ancestor does not protect its descendant's keys from that descendant's
 cleanup. Descendants and the grant reissued during cleaning do not count as
 independent protectors either. A sibling or another independent branch
 protects matching keys even if it has no users, no `write` operation,
-and no remaining quota. In particular, revoking or cleaning the root
-deletes all objects in its scope.
+and no remaining quota.
 
 This protection applies to cleanup/revocation, not to ordinary
 `DELETE /store/{namespace}/{key}`, which remains authorized through `write`.

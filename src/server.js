@@ -512,16 +512,12 @@ function createServer(opts) {
         return grantResult(res, () => grants.inspect(ns, id, bearer(req)));
       }
       if (req.method === 'POST' && action === 'users') {
-        if (Number(req.headers['content-length'] || 0) === 0 &&
-            !req.headers['transfer-encoding']) {
-          return grantResult(res, () => grants.createUser(ns, id, bearer(req)));
+        // User token issuance requires no metadata beyond issuer authority.
+        if (Number(req.headers['content-length'] || 0) > 0 ||
+            req.headers['transfer-encoding']) {
+          return json(res, 400, {error:'unexpected_body'});
         }
-        return readPushJson(req, res, body =>
-          grantResult(res, () => grants.createUser(ns, id, bearer(req),
-            body && body.label)));
-      }
-      if (req.method === 'GET' && action === 'users') {
-        return grantResult(res, () => grants.listUsers(ns, id, bearer(req)));
+        return grantResult(res, () => grants.createUser(ns, id, bearer(req)));
       }
       if (req.method === 'POST' && action === 'confirmation') {
         return readPushJson(req, res, body =>
