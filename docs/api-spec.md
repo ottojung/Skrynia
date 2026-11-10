@@ -23,11 +23,12 @@ A child grant's locations must select a subset of its parent's matched keys.
 | HTTP method | Path | Semantics |
 | --- | --- | --- |
 | GET | /store/{key} | Public raw bytes and a strong ETag; 404 if absent |
+| GET | /store?locations={matcher} | List matching keys, requires a user token with `list` |
 | POST | /store/{key} | Create if absent, requires authorized user token; 201 or 409 |
 | PUT | /store/{key} | Replace if present, requires authorized user token; 200 or 404 |
 | DELETE | /store/{key} | Delete if present, requires authorized user token; 200 or 404 |
 
-Mutations use `X-Skrynia-Grant: <user-token>`. Both PUT and DELETE accept an
+Mutations and listings use `X-Skrynia-Grant: <user-token>`. Both PUT and DELETE accept an
 optional `If-Match: "<etag>"` and return HTTP 412 if the current ETag
 does not match. The strong ETag changes on every successful object mutation,
 including an identical-byte PUT and deletion followed by recreation.
@@ -46,6 +47,28 @@ Object writes commit atomically per key. A failed conditional mutation
 preserves the existing object. The request/body maximum
 (`SKRYNIA_MAX_OBJECT_SIZE`, default 10 MiB) is independent of grant quota.
 
+### Scoped key listing
+
+`GET /store?locations=alice.*` returns JSON like
+`{"keys":["alice.app.js","alice.index.html"]}`. The requester supplies
+its user token in `X-Skrynia-Grant`; the server checks the `list` operation
+and requires `locations` to be a non-strict subset of the token's grant
+scope. Exact matches, prefix matchers, `*` (all), and the empty matcher
+(no keys) follow the same grammar as grant locations.
+
+Keys are sorted, and every currently stored object matching the supplied
+matcher is returned, **regardless of which grant created it**. Replacement
+and deletion immediately affect the result. A missing, duplicated, or
+invalid matcher yields HTTP 400; a matcher outside the caller's authority
+yields HTTP 403. Listing is not available to anonymous callers. There is
+no separate privileged enumeration API or creator-tracking metadata.
+
+A listing is a snapshot of the keys at request time, not a lock on a range;
+clients should account for concurrent creations and deletions. To clean up a
+subgrant's storage, use exclusive prefixes; a shared prefix may contain keys
+written by other grants. Listing confers no deletion permission. Large ranges
+return large responses, so callers should narrow their matcher as needed.
+
 ## Grants and credentials
 
 All grants form one rooted tree. Each grant has:
@@ -54,26 +77,17 @@ All grants form one rooted tree. Each grant has:
 - `maxBytes` and `maxObjects` (positive safe integers for child grants)
 - an issuer credential and zero or more independently revocable user credentials
 
-Operations: `write`, `append`, `delegate`, and `subscribe`.
+Operations: `write`, `list`, `delegate`, and `subscribe`.
 
-- `write` permits creation, arbitrary replacement and deletion.
-- `append` permits creation and replacement only when the proposed new
-  bytes start with the complete existing value, compared byte-for-byte.
-  Binary payloads and zero-length suffixes are supported. It never
-  permits deletion.
-- If both `write` and `append` are held, `write` permits arbitrary edits.
+- `write` permits creation, arbitrary replacement, and deletion.
+- `list` permits enumerating existing keys in a requested location range
+  that is a non-strict subset of the calling grant's `locations`.
 - `delegate` permits child grants; `subscribe` permits Web Push subscriptions.
-- Reads are public and do not require a grant.
+- Reading a known object's bytes remains public and unauthenticated.
 
-No separate append endpoint exists: both authorities use `POST /store/{key}`
-and `PUT /store/{key}`. If an append-only `PUT` would overwrite or truncate
-any existing bytes, the server returns HTTP 409 `append_prefix_mismatch`
-without changing the object. When `If-Match` is present, a stale ETag
-returns HTTP 412 instead. A client seeking to append an event reads the
-current bytes (and preferably its ETag), concatenates a suffix, and tries
-`PUT`, retrying from the latest value on a conflict. Append-only grants
-cannot enforce monotonicity against a *different* token with `write`
-authority for the same key.
+Listing is authorized by a **grant user token**, not an issuer token.
+A grant with `list` but not `write` can discover keys without changing data.
+The two operations can be delegated independently.
 
 On each server start, after completing recovery, if the tree has no root,
 Skrynia creates one with `locations:"*"`, all operations and
@@ -103,10 +117,7 @@ Content-Type: application/json
 The response contains the new grant's ID and one-time issuer token; it
 does **not** generate a user token. `delegate` must be present in the
 parent's operations. A child may narrow locations and operations, never widen
-them. `append` is strictly narrower than `write`: a parent with
-`write` and `delegate` can delegate `append` even if its operations
-do not explicitly contain `append`; an `append`-only parent cannot
-delegate `write`. Child limits do not reserve capacity in ancestors.
+them. Child limits do not reserve capacity in ancestors.
 
 Issuing a user token returns `grantId`, `userId`, and `userToken`.
 Credentials are independent: user tokens cannot issue more user tokens,

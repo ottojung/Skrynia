@@ -11,7 +11,7 @@ const GRANT_COST=2048,OBJECT_COST=512,PUSH_SUB_COST=4096,EXTRA_USER_COST=128;
 const ID_RE=/^[a-f0-9]{32}$/;
 const KEY_RE=/^[A-Za-z0-9_][A-Za-z0-9_.]*$/;
 const LOCATION_RE=/^(?:[A-Za-z0-9_][A-Za-z0-9_.]*\*?|\*)?$/;
-const OPERATIONS=Object.freeze(['write','append','delegate','subscribe']);
+const OPERATIONS=Object.freeze(['write','list','delegate','subscribe']);
 
 function validKey(key) {return typeof key==='string'&&KEY_RE.test(key);}
 function validLocations(loc) {return typeof loc==='string'&&LOCATION_RE.test(loc);}
@@ -40,12 +40,6 @@ function normalizeOperations(value) {
   if(!Array.isArray(value)||value.some(x=>!OPERATIONS.includes(x))||
     new Set(value).size!==value.length) throw fault(400,'invalid_operations');
   return OPERATIONS.filter(x=>value.includes(x));
-}
-// 'write' includes append authority, so delegation may attenuate write
-// into append even when the parent need not spell out both permissions.
-function operationsSubset(child,parent) {
-  return child.every(op=>parent.includes(op)||
-    (op==='append'&&parent.includes('write')));
 }
 function validFiniteLimit(v) {return Number.isSafeInteger(v)&&v>0;}
 function within(usage,max) {return max===null||usage<=max;}
@@ -118,7 +112,7 @@ function createGrants(shared) {
         }
         const parent=map.get(g.parent);
         if(!parent||!subset(g.locations,parent.locations)||
-          !operationsSubset(g.operations,parent.operations)) {
+          !g.operations.every(op=>parent.operations.includes(op))) {
           throw new Error('invalid grant ancestry');
         }
       }
@@ -206,33 +200,14 @@ function createGrants(shared) {
   function requireOperation(g,op) {
     if(!g.operations.includes(op)) throw fault(403,'grant_operation_forbidden');
   }
-  // Atomic mutation authorization. Append-only updates must retain every
-  // previous byte, including binary data and the empty prefix. The caller
-  // passes the current object bytes for replacements while the event loop
-  // holds the single-writer serialization boundary.
-  function authorizeMutation(secret,key,kind,nextBody,previousBody) {
+  function authorizeMutation(secret,key,kind,newBytes) {
     const g=requireUser(secret);
+    requireOperation(g,'write');
     if(!matches(g.locations,key)) throw fault(403,'location_not_authorized');
     if(!['create','replace','delete'].includes(kind)) throw fault(400,'invalid_mutation');
-    const canWrite=g.operations.includes('write');
-    const canAppend=g.operations.includes('append');
-    if(kind==='delete') {
-      if(!canWrite) throw fault(403,'grant_operation_forbidden');
-      return g.id;
-    }
-    if(!canWrite&&!canAppend) throw fault(403,'grant_operation_forbidden');
-    if(!Buffer.isBuffer(nextBody)) throw fault(400,'invalid_object_body');
-    if(kind==='replace'&&!canWrite) {
-      // A normal writer need not read the old body. An append-only writer
-      // must check the actual current bytes inside the same mutation turn.
-      const previous=typeof previousBody==='function'?previousBody():previousBody;
-      if(!Buffer.isBuffer(previous)) throw fault(400,'invalid_previous_body');
-      if(nextBody.length<previous.length||
-         !nextBody.subarray(0,previous.length).equals(previous)) {
-        throw fault(409,'append_prefix_mismatch');
-      }
-    }
-    const newBytes=nextBody.length;
+    if(kind==='delete') return g.id;
+    if(!Number.isSafeInteger(newBytes)||newBytes<0)
+      throw fault(400,'invalid_object_size');
     const map=validateTree(),subs=subscriptionEntries();
     const old=index.value(key);
     const delta=newBytes-(old===null?0:old)+(old===null?OBJECT_COST:0);
@@ -244,6 +219,15 @@ function createGrants(shared) {
       }
     }
     return g.id;
+  }
+  // Listings are constrained by the calling grant, not by creator identity.
+  function listObjects(secret,locations) {
+    const g=requireUser(secret);
+    requireOperation(g,'list');
+    if(!validLocations(locations)) throw fault(400,'invalid_locations');
+    if(!subset(locations,g.locations)) throw fault(403,'locations_outside_grant');
+    return {keys:index.entries().filter(({key})=>matches(locations,key))
+      .map(({key})=>key).sort()};
   }
   function recordObject(key,bytes) {index.replace(key,bytes);}
   function ensureRoot() {
@@ -270,7 +254,7 @@ function createGrants(shared) {
     const ops=operations===undefined?parent.operations:normalizeOperations(operations);
     if(!validLocations(loc)) throw fault(400,'invalid_locations');
     if(!subset(loc,parent.locations)) throw fault(403,'locations_outside_parent');
-    if(!operationsSubset(ops,parent.operations)) throw fault(403,'operations_outside_parent');
+    if(!ops.every(op=>parent.operations.includes(op))) throw fault(403,'operations_outside_parent');
     assertCapacity(parent.id,GRANT_COST,0);
     const issuerToken=token();
     const record={id:randomId(),parent:parent.id,locations:loc,operations:[...ops],
@@ -362,6 +346,6 @@ function createGrants(shared) {
   return {GRANT_COST,OBJECT_COST,PUSH_SUB_COST,OPERATIONS,validKey,
     validLocations,matches,subset,root,ensureRoot,createChild,createUser,
     revokeUser,revokeGrant,recover,recoverRevocations,requireUser,
-    authorizeMutation,recordObject,accountSubscription,subscriptionChanged,usage,inspect};
+    authorizeMutation,listObjects,recordObject,accountSubscription,subscriptionChanged,usage,inspect};
 }
 module.exports={createGrants,KEY_RE,LOCATION_RE,OPERATIONS,validKey,validLocations,matches,subset};

@@ -3,8 +3,8 @@
 **A durable public object store with delegable, resource-bounded authority.**
 
 Skrynia stores opaque bytes at named keys. Every object is publicly readable.
-Bearer-token grants determine where clients may create, replace, append to,
-and delete objects, delegate authority, and subscribe to changes. A single global root grant
+Bearer-token grants determine where clients may create, replace, and delete
+objects, list keys in authorized ranges, delegate authority, and subscribe to changes. A single global root grant
 provides all authority. Applications, websites, indexes, logs, and versioned
 releases are **client-side protocols** built on ordinary stored objects.
 
@@ -63,11 +63,20 @@ curl -i "$SKRYNIA_URL/store/alice.index.html"
 ```
 
 `POST` creates only if absent; `PUT` replaces an existing object.
-`PUT` and `DELETE` support `If-Match` for compare-and-swap. With an
-`append`-only grant, the same `POST` and `PUT` endpoints work, but a
-replacement must begin with every byte of the previous value. The
-`append` operation cannot delete an object. Use an ETag or retry from
-the latest value when multiple appenders compete.
+`PUT` and `DELETE` support `If-Match` for compare-and-swap.
+
+A grant with `list` can enumerate all objects in any matching subrange:
+
+```sh
+curl -fsS "$SKRYNIA_URL/store?locations=alice.*" \
+  -H "X-Skrynia-Grant: $ROOT_USER_TOKEN"
+```
+
+Results are sorted keys, regardless of who created them. A listing needs
+a user token with `list` and its matcher must be a subset of that grant's
+`locations`. It can be delegated without granting write access. For
+participant cleanup, give each participant a separate prefix: listing
+by prefix does not establish who created a key.
 
 Skrynia serves standard extensions with their normal HTTP MIME types,
 including HTML, JavaScript, CSS, and JSON. nginx or another configured static
@@ -82,7 +91,7 @@ origins using separate hostnames; key prefixes aren't browser sandboxes.
 curl -fsS -X POST "$SKRYNIA_URL/grants" \
   -H "Authorization: Bearer $ROOT_USER_TOKEN" \
   -H 'Content-Type: application/json' \
-  --data '{"locations":"alice.*","operations":["write","delegate","subscribe"],
+  --data '{"locations":"alice.*","operations":["write","list","delegate","subscribe"],
            "maxBytes":1048576,"maxObjects":100}'
 ```
 
@@ -125,7 +134,8 @@ consumes the sponsoring grant's quotas.
 - **CAS:** Single-key conditional writes can serialize client-authored logical
   multi-object transactions over immutable versions.
 - **Delegation:** Grants constrain operations, location prefixes, and budgets.
-  A holder of `write` can delegate the narrower `append` authority.
+  Scoped `list` enables key discovery and delegated cleanup without giving
+  broader enumeration authority.
 - **Client protocols:** Applications define schemas, indexing, publication,
   cryptographic validation, and computation outside Skrynia.
 - **One writer process:** Only one Skrynia instance may own a data directory.

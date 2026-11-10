@@ -67,6 +67,11 @@
   }
   const Skrynia={
     store:userToken=>new Store(userToken),
+    listObjects:async (locations,grantUserToken)=>{
+      const r=await request('GET','/store?locations='+encodeURIComponent(locations),
+        null,userHeader(grantUserToken));
+      return r.json();
+    },
     createGrant:(parentUserToken,options)=>
       grantRequest('POST','/grants',parentUserToken,options),
     inspectGrant:(id,userToken)=>

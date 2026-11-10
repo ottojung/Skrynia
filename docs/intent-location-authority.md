@@ -25,18 +25,14 @@ until the next startup.
 
 ## Authority
 
-Valid operations are `write`, `append`, `delegate`, and `subscribe`.
-Reading always requires no grant. `write` enables create, replace,
-and delete at matching locations. `append` enables create and
-replacement where the proposed bytes begin with the existing bytes.
-It cannot delete or truncate a value. The byte-prefix check is enforced
-by the server during each mutation, including unconditional PUT.
-`delegate` enables issuing a child grant under a parent user token.
-A child cannot enlarge its parent's matched locations or effective
-operations: `write` includes the narrower `append` capability and can
-be delegated as such even when not spelled out by the parent.
-Conversely, `append` does not authorize delegating `write`.
-A child may have fewer operations or no operations.
+Valid operations are `write`, `list`, `delegate`, and `subscribe`.
+Reading a known object's bytes requires no grant. `write` enables create,
+replace, and delete at matching locations. `list` enables enumeration of
+all live keys matching a requested location matcher that is a non-strict
+subset of the calling grant's locations. Listings are independent of
+which grant created each object. `delegate` enables issuing a child
+grant under a parent user token. A child cannot enlarge the parent's
+locations or operation set. It may have fewer or no operations.
 
 An issuer token is independent from user tokens. Each new grant returns
 an issuer token; no user token is issued automatically. The issuer may

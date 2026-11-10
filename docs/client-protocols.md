@@ -19,7 +19,7 @@ databases and application servers.
 | Atomic single-key replacement | `PUT` of an existing key | Versioned state, publication pointers |
 | Compare-and-swap (CAS) | `GET` ETag, then `PUT` with `If-Match` (200 or 412) | Optimistic concurrency, one-key linearization points |
 | Conditional deletion | `DELETE` with optional `If-Match` | Reclamation coordinated with a key version |
-| Scoped, delegable grants | Key/prefix matcher, subset of `write` / `append` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
+| Scoped, delegable grants | Key/prefix matcher, subset of `write` / `list` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
 | Notifications | Grant-scoped Web Push subscriptions | Wake interested clients without running application code on Skrynia |
 
 Keys match `[A-Za-z0-9_][A-Za-z0-9_.]*`, permitting consecutive dots but
@@ -146,29 +146,29 @@ anonymous public readers, there is no automatic way to prove that *every*
 reader has finished. Keeping versions indefinitely is the simplest safe
 policy; reclamation trades space for explicit assumptions.
 
-## Direct append-only objects
+## Scoped key discovery and log entries
 
-A location-scoped grant with `append` but not `write` makes a stored
-object a simple append-only byte string. The same `POST` and `PUT`
-operations apply. On `POST`, the previous value is empty. On `PUT`,
-the new bytes must start with the exact current bytes; otherwise the
-mutation is rejected with HTTP 409. `DELETE` is unauthorized.
+A holder of `list` can enumerate live keys within any subset of its
+grant's `locations` matcher using `GET /store?locations=...`. This
+includes objects created by other grants. Applications can use a grant
+scoped to `events.*` to discover event entries without maintaining a
+second shared index.
 
-To append, a client reads the current bytes and ETag, concatenates an
-event encoding, and performs conditional `PUT` with `If-Match`. Competing
-appenders retry against the newest value. This protects the log's
-existing prefix even when a client omits `If-Match`: a stale proposal
-cannot erase a competing append because it would fail the prefix check.
+One event can be one object named `events.<unique-id>`; its bytes hold
+the event or a pointer to a payload. Each contributor creates an entry
+with `POST` (create-if-absent), so independent contributions need not
+rewrite a growing shared file. Clients with `list` discover entries by
+range and read their contents publicly. Keys do not inherently define
+a chronological order: an application can encode sequence identifiers,
+follow predecessor links, or impose an order in a signed manifest.
 
-**This is a direct append-only log**, simpler than a CAS-linked list
-when the entire log comfortably fits in one object. It has real limits:
-each update uploads the entire new log, and each value must fit the
-maximum object size. High-volume or long-lived logs can use segmented
-append-only objects and CAS-linked manifests. Authority is scoped to
-the particular grant; another holder of `write` on the same key can
-still modify or delete its value. Append-only authority preserves
-previous bytes but does not validate whether appended events are
-well-formed or correctly signed.
+When clients require a canonical ordered history, a CAS-linked log or
+committed manifest supplies its ordering. `list` alone is key discovery,
+not a tamper-resistance guarantee: another authorized writer can replace or
+delete entries. A maintainer can list a delegated key range
+and explicitly delete unwanted contributions with an appropriate write
+token. Subspace isolation, cryptographic validation, and client protocols
+control what histories participants accept.
 
 ## 2. Shared logs, queues and state machines
 
@@ -177,7 +177,7 @@ well-formed or correctly signed.
 Create the entry first, then CAS a `log_head` pointer to the entry. Two
 concurrent appends compete at the head; the loser rereads, creates an entry
 with the new predecessor, and retries. Readers walk the committed chain.
-This has one ordered commit point without an append endpoint.
+This has one ordered commit point independent of key enumeration.
 
 **Queue / work distribution:** Maintain a queue head or an immutable-tree
 queue state under CAS. Clients claim work through conditional state
@@ -197,8 +197,8 @@ wait-free, fair, or independent of Skrynia's availability.
 index, or persistent search tree in immutable objects with one published root.
 Readers evaluate queries on the selected version in their own process.
 Updates to records **and their indexes** can commit together as one *logical*
-transaction. No SQL implementation or key-list endpoint is required; a client-managed
-index supplies discovery.
+transaction. A client-managed index enables arbitrary queries; scoped
+`list` covers simpler key-prefix discovery without a SQL query engine.
 
 Theoretical context: CAS is a *universal synchronization primitive* in the
 classical shared-memory model (Maurice Herlihy, 1991,

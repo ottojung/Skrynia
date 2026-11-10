@@ -73,7 +73,7 @@ async function run() {
     assert.equal(oldRoot.locations,'*');
     assert.equal(oldRoot.maxBytes,null);
     assert.equal(oldRoot.maxObjects,null);
-    assert.deepEqual(oldRoot.operations,['write','append','delegate','subscribe']);
+    assert.deepEqual(oldRoot.operations,['write','list','delegate','subscribe']);
     assert.match(oldRoot.rootIssuerToken,/^[a-f0-9]{64}$/);
     const recordPath=path.join(dir,'state','grants',oldRoot.id+'.json');
     assert.equal(fs.statSync(recordPath).mode & 0o777,0o600);
