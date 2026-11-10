@@ -1,641 +1,317 @@
 #!/usr/bin/env node
 'use strict';
 
-// Skrynia HTTP server.
-//
-// Runtime invariant: exactly one server process per data directory. Storage
-// mutations remain serialized by the Node.js event loop. A deployment request
-// stays open through clone, build, activation, and cleanup, but its child
-// processes run asynchronously so health and unrelated storage traffic remain
-// responsive.
+// One object store, one delegable authority tree, one owning server process.
+const http=require('http');
+const fs=require('fs');
+const path=require('path');
+const crypto=require('crypto');
+const {normalizeBasePath}=require('./base-path.js');
+const {createShared,ensureDir}=require('./shared.js');
+const {createGrants}=require('./grants.js');
+const {createPush}=require('./push.js');
+const {createStoreJournal}=require('./store-journal.js');
 
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-const crypto = require('crypto');
-const { normalizeBasePath } = require('./base-path.js');
-const { createManagement, ManagementError } = require('./management.js');
-const { createPush } = require('./push.js');
-const { createGrants } = require('./grants.js');
-const { createStoreJournal } = require('./store-journal.js');
-const { validNs, ensureDir, createShared } = require('./shared.js');
-
-const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
-
-const {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-  unlinkSync,
-  statSync,
-  realpathSync,
-  renameSync,
-  linkSync,
-  chmodSync,
-} = fs;
-
+const DEFAULT_BUILD_INFO=Object.freeze({version:'development',commit:'development'});
 function loadBuildInfo(dir) {
-  const root = dir || path.join(__dirname, '..');
-  const versionPath = path.join(root, 'VERSION');
-  const commitPath = path.join(root, 'COMMIT');
-  const hasVersion = existsSync(versionPath);
-  const hasCommit = existsSync(commitPath);
-  if (!hasVersion && !hasCommit) return DEFAULT_BUILD_INFO;
-  if (!hasVersion || !hasCommit) throw new Error('incomplete Skrynia build metadata');
-  const version = readFileSync(versionPath, 'utf8').trim();
-  const commit = readFileSync(commitPath, 'utf8').trim();
-  const development = version === 'development' && commit === 'development';
-  if (!version || (!development && !/^[0-9a-f]{40,64}$/i.test(commit))) {
-    throw new Error('invalid Skrynia build metadata');
-  }
-  return Object.freeze({ version, commit });
+  const root=dir||path.join(__dirname,'..');
+  const ver=path.join(root,'VERSION'),commit=path.join(root,'COMMIT');
+  if(!fs.existsSync(ver)&&!fs.existsSync(commit)) return DEFAULT_BUILD_INFO;
+  if(!fs.existsSync(ver)||!fs.existsSync(commit)) throw new Error('incomplete build info');
+  const version=fs.readFileSync(ver,'utf8').trim();
+  const sha=fs.readFileSync(commit,'utf8').trim();
+  if(!version||!(version==='development'&&sha==='development')&&
+    !/^[0-9a-f]{40,64}$/i.test(sha)) throw new Error('invalid build info');
+  return {version,commit:sha};
 }
-
-function createServer(opts) {
-  opts = opts || {};
-
-  const buildInfo = opts.buildInfo || loadBuildInfo(opts.buildInfoDir);
-  const shared = createShared(opts.dataDir);
-  const grants = createGrants(shared);
-  grants.recover();
-  const { RELEASES_DIR, STATE_DIR } = shared;
-
-  const CLIENT_PATH = path.join(__dirname, 'client.js');
-  const APP_BASE_PATH = normalizeBasePath(opts.appBasePath || process.env.SKRYNIA_APP_BASE_PATH || '/apps');
-  const APP_DIR = opts.appDir || process.env.SKRYNIA_APP_DIR || '';
-  const TOKEN = opts.token !== undefined ? String(opts.token) : String(process.env.SKRYNIA_TOKEN || '');
-  const SKRYNIA_URL = opts.skryniaUrl !== undefined ? String(opts.skryniaUrl) : String(process.env.SKRYNIA_URL || '');
-  if (!SKRYNIA_URL) throw new Error('SKRYNIA_URL is required');
+function mimeType(key) {
+  const extension=path.extname(key).toLowerCase();
+  const types={'.html':'text/html; charset=utf-8',
+    '.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8',
+    '.css':'text/css; charset=utf-8','.json':'application/json',
+    '.webmanifest':'application/manifest+json','.txt':'text/plain; charset=utf-8',
+    '.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg',
+    '.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp',
+    '.ico':'image/x-icon','.wasm':'application/wasm','.pdf':'application/pdf'};
+  return types[extension]||'application/octet-stream';
+}
+function createServer(opts={}) {
+  const shared=createShared(opts.dataDir);
+  const grants=createGrants(shared);
+  const buildInfo=opts.buildInfo||loadBuildInfo(opts.buildInfoDir);
+  const external=opts.skryniaUrl??process.env.SKRYNIA_URL;
+  if(!external) throw new Error('SKRYNIA_URL is required');
   let publicUrl;
-  try { publicUrl = new URL(SKRYNIA_URL); }
-  catch { throw new Error('SKRYNIA_URL must be an absolute URL'); }
-  if (publicUrl.protocol !== 'http:' && publicUrl.protocol !== 'https:') throw new Error('SKRYNIA_URL must use http or https');
-  if (publicUrl.search || publicUrl.hash) throw new Error('SKRYNIA_URL must not contain query or fragment components');
-  const HTTP_BASE_PATH = normalizeBasePath(publicUrl.pathname || '/');
-
-  const MAX_KEY_LENGTH = parseInt(process.env.SKRYNIA_MAX_KEY_LENGTH || '256', 10);
-  const MAX_OBJECT_SIZE = parseInt(process.env.SKRYNIA_MAX_OBJECT_SIZE || '10485760', 10);
-
-  const push = createPush({
-    dataDir: shared.dataDir,
-    skryniaUrl: SKRYNIA_URL,
-    pushTransport: opts.pushTransport,
-    pushPollMs: opts.pushPollMs,
-    pushSubject: opts.pushSubject,
-    pushManual: opts.pushManual,
-    pushSendTimeoutMs: opts.pushSendTimeoutMs,
-    maxKeyLength: MAX_KEY_LENGTH,
-    onSubscriptionCreate: (ns, secret) => grants.accountSubscription(ns, secret),
-    onSubscriptionMutation: ns => grants.subscriptionChanged(ns),
-    maxSubsPerNamespace: opts.pushMaxSubsPerNamespace,
-    maxOutboxItems: opts.pushMaxOutboxItems,
-  });
-
-  const storeJournal = createStoreJournal(shared, push, grants);
-  storeJournal.recover();
-
-  const management = createManagement({
-    dataDir: shared.dataDir,
-    grants,
-    appBasePath: APP_BASE_PATH,
-    appDir: APP_DIR,
-    builderImage: opts.builderImage,
-    gitTimeoutMs: opts.gitTimeoutMs,
-    buildTimeoutMs: opts.buildTimeoutMs,
-    push,
-    onNamespaceUndeploy: ns => {
-      storeJournal.forgetNamespace(ns);
-      push.dropNamespace(ns);
-    },
-  });
-
-  function json(res, status, body) {
-    res.writeHead(status, {'Content-Type':'application/json'});
-    res.end(JSON.stringify(body));
+  try {publicUrl=new URL(external);}
+  catch {throw new Error('SKRYNIA_URL must be an absolute URL');}
+  if(!['http:','https:'].includes(publicUrl.protocol)||publicUrl.search||publicUrl.hash) {
+    throw new Error('invalid SKRYNIA_URL');
   }
-
-  function safeKey(key) {
-    return typeof key === 'string' && key.length <= MAX_KEY_LENGTH &&
-      grants.validKey(key) ? key : null;
+  const base=normalizeBasePath(publicUrl.pathname||'/');
+  const maxKeyLength=Number(process.env.SKRYNIA_MAX_KEY_LENGTH||256);
+  const maxObjectSize=Number(process.env.SKRYNIA_MAX_OBJECT_SIZE||10485760);
+  if(!Number.isSafeInteger(maxKeyLength)||maxKeyLength<1||
+    !Number.isSafeInteger(maxObjectSize)||maxObjectSize<1) {
+    throw new Error('invalid storage limits');
   }
+  const push=createPush({dataDir:shared.dataDir,skryniaUrl:external,
+    pushTransport:opts.pushTransport,pushPollMs:opts.pushPollMs,
+    pushSubject:opts.pushSubject,pushManual:opts.pushManual,
+    pushSendTimeoutMs:opts.pushSendTimeoutMs,
+    maxSubscriptions:opts.pushMaxSubscriptions,maxOutboxItems:opts.pushMaxOutboxItems,
+    onSubscriptionCreate:(secret,locations)=>grants.accountSubscription(secret,locations),
+    onSubscriptionMutation:()=>grants.subscriptionChanged()});
+  const journal=createStoreJournal(shared,push,grants);
+  grants.recover();
+  shared.ensureStoreRoots();
+  ensureDir(shared.STATE_DIR,0o700);
+  journal.recover();
+  grants.ensureRoot();
+  push.start();
 
-  function nsExists(ns) { return Boolean(grants.root(ns)); }
-
-  function requireNs(ns, res) {
-    if (!nsExists(ns)) {
-      json(res, 404, {error:'namespace_not_found'});
-      return false;
+  function json(res,status,value) {
+    res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});
+    res.end(JSON.stringify(value));
+  }
+  function error(res,e) {
+    if(e.status) return json(res,e.status,{error:e.code});
+    if(e.code==='outbox_full'||e.code==='subscriptions_full')
+      return json(res,507,{error:e.code});
+    if(['invalid_subscription','subscription_scope_immutable'].includes(e.code))
+      return json(res,400,{error:e.code});
+    if(['capability_required','invalid_capability'].includes(e.code))
+      return json(res,403,{error:e.code});
+    if(e.code==='endpoint_in_use') return json(res,409,{error:e.code});
+    if(e.code==='not_found') return json(res,404,{error:e.code});
+    console.error('Skrynia request failed:',e);
+    return json(res,500,{error:'internal_error'});
+  }
+  function validKey(key) {
+    return key.length<=maxKeyLength&&grants.validKey(key);
+  }
+  function etag(file) {
+    const st=fs.statSync(file);
+    return '"'+Math.floor(st.mtimeMs/1000).toString(16)+'-'+st.size.toString(16)+'"';
+  }
+  function setVersion(file,version) {
+    const time=new Date(version*1000);
+    fs.utimesSync(file,time,time);
+    if(Math.floor(fs.statSync(file).mtimeMs/1000)!==version) {
+      throw new Error('filesystem did not preserve object version');
     }
-    return true;
   }
-
-  function timingSafeEqualString(a, b) {
-    if (typeof a !== 'string' || typeof b !== 'string') return false;
-    const bufA = Buffer.from(a);
-    const bufB = Buffer.from(b);
-    if (bufA.length !== bufB.length) return false;
-    return crypto.timingSafeEqual(bufA, bufB);
+  function tempObject(body,version) {
+    const file=path.join(shared.STORE_TMP_DIR,
+      'obj.'+process.pid+'.'+crypto.randomBytes(12).toString('hex'));
+    fs.writeFileSync(file,body,{mode:0o600});
+    setVersion(file,version);
+    fs.chmodSync(file,0o644);
+    const fd=fs.openSync(file,'r');
+    try {fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+    journal.syncDir(shared.STORE_TMP_DIR);
+    return file;
   }
-
-  // Match nginx's native static-file ETag exactly: hex(mtime-seconds)-hex(size).
-  function staticFileEtag(filePath) {
-    const st = statSync(filePath);
-    const mtimeSeconds = Math.floor(st.mtimeMs / 1000);
-    return '"' + mtimeSeconds.toString(16) + '-' + st.size.toString(16) + '"';
+  function removeTemp(file) {
+    try{fs.unlinkSync(file);}catch(e){if(e.code!=='ENOENT')throw e;}
   }
-
-  function setObjectVersion(filePath, versionSeconds) {
-    const when = new Date(versionSeconds * 1000);
-    fs.utimesSync(filePath, when, when);
-    const actual = Math.floor(statSync(filePath).mtimeMs / 1000);
-    if (actual !== versionSeconds) throw new Error('filesystem did not preserve object version mtime');
-  }
-
-  function prepareObjectTemp(ns, body, versionSeconds) {
-    shared.ensureStoreRoots();
-    const tmp = path.join(shared.STORE_TMP_DIR, ns + '.' + process.pid + '.' + crypto.randomBytes(12).toString('hex'));
-    writeFileSync(tmp, body, { mode: 0o600 });
-    setObjectVersion(tmp, versionSeconds);
-    chmodSync(tmp, 0o644);
-    const fd = fs.openSync(tmp, 'r');
-    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-    storeJournal.syncDir(shared.STORE_TMP_DIR);
-    return tmp;
-  }
-
-  function discardTemp(filePath) {
-    try { unlinkSync(filePath); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  }
-
-  function handleGet(ns, key, res) {
-    const op = shared.nsObjPath(ns, key);
-    if (!existsSync(op)) { res.writeHead(404, {'Content-Type':'application/json'}); res.end(JSON.stringify({error:'not_found'})); return; }
-    const data = readFileSync(op);
-    res.writeHead(200, {
-      'Content-Type': 'application/octet-stream',
-      'Content-Length': String(data.length),
-      'ETag': staticFileEtag(op),
-    });
+  function get(key,res) {
+    const file=shared.objPath(key);
+    if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
+    const data=fs.readFileSync(file);
+    res.writeHead(200,{'Content-Type':mimeType(key),'Content-Length':data.length,
+      'ETag':etag(file),'Cache-Control':'no-cache',
+      'X-Content-Type-Options':'nosniff'});
     res.end(data);
   }
-
-  function handleCreate(ns, key, body, req, res) {
-    if (!requireNs(ns, res)) return;
-    if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
-    const op=shared.nsObjPath(ns,key);
-    if (existsSync(op)) return json(res, 409, {error:'already_exists'});
-    grants.authorizeWrite(ns,req.headers['x-skrynia-grant'],key,body.length);
-    shared.ensureStoreNamespace(ns);
-    const version=shared.nextVersion(ns);
-    const tmp=prepareObjectTemp(ns,body,version);
+  function create(key,body,req,res) {
+    const file=shared.objPath(key);
+    if(fs.existsSync(file)) return json(res,409,{error:'already_exists'});
+    grants.authorizeWrite(req.headers['x-skrynia-grant'],key,body.length);
+    const version=shared.nextVersion(),tmp=tempObject(body,version);
     try {
-      const outcome=storeJournal.commit(ns,key,'create',version,()=>{
-        linkSync(tmp,op);
-        grants.recordObject(ns,key,body.length);
+      const outcome=journal.commit(key,'create',version,()=>{
+        fs.linkSync(tmp,file);grants.recordObject(key,body.length);
       });
       return json(res,201,{ok:true,...outcome});
     } catch(e) {
-      if (e.code==='EEXIST') return json(res,409,{error:'already_exists'});
+      if(e.code==='EEXIST') return json(res,409,{error:'already_exists'});
       throw e;
-    } finally { discardTemp(tmp); }
+    } finally {removeTemp(tmp);}
   }
-
-  function handlePut(ns, key, body, req, res) {
-    if (!requireNs(ns, res)) return;
-    const op=shared.nsObjPath(ns,key);
-    if (!existsSync(op)) return json(res,404,{error:'not_found'});
-    const ifMatch=req.headers['if-match'];
-    if(ifMatch!==undefined && ifMatch!==staticFileEtag(op)) {
+  function replace(key,body,req,res) {
+    const file=shared.objPath(key);
+    if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
+    if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
       return json(res,412,{error:'etag_mismatch'});
-    }
-    if(body.length>MAX_OBJECT_SIZE) return json(res,413,{error:'object_too_large'});
-    grants.authorizeWrite(ns,req.headers['x-skrynia-grant'],key,body.length);
-    const version=shared.nextVersion(ns);
-    const tmp=prepareObjectTemp(ns,body,version);
+    grants.authorizeWrite(req.headers['x-skrynia-grant'],key,body.length);
+    const version=shared.nextVersion(),tmp=tempObject(body,version);
     try {
-      const outcome=storeJournal.commit(ns,key,'replace',version,()=>{
-        renameSync(tmp,op);
-        grants.recordObject(ns,key,body.length);
+      const outcome=journal.commit(key,'replace',version,()=>{
+        fs.renameSync(tmp,file);grants.recordObject(key,body.length);
       });
       return json(res,200,{ok:true,...outcome});
-    } finally { discardTemp(tmp); }
+    } finally {removeTemp(tmp);}
   }
-
-  function handleDelete(ns, key, req, res) {
-    if (!requireNs(ns, res)) return;
-    const op=shared.nsObjPath(ns,key);
-    if(!existsSync(op)) return json(res,404,{error:'not_found'});
-    grants.authorizeWrite(ns,req.headers['x-skrynia-grant'],key,null);
-    const ifMatch=req.headers['if-match'];
-    if(ifMatch!==undefined && ifMatch!==staticFileEtag(op)) {
+  function deleteObject(key,req,res) {
+    const file=shared.objPath(key);
+    if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
+    grants.authorizeWrite(req.headers['x-skrynia-grant'],key,null);
+    if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
       return json(res,412,{error:'etag_mismatch'});
-    }
-    const version=shared.nextVersion(ns);
-    const outcome=storeJournal.commit(ns,key,'delete',version,()=>{
-      unlinkSync(op);
-      grants.recordObject(ns,key,null);
+    const version=shared.nextVersion();
+    const outcome=journal.commit(key,'delete',version,()=>{
+      fs.unlinkSync(file);grants.recordObject(key,null);
     });
     return json(res,200,{ok:true,...outcome});
   }
-
-  function activeLink(ns) { return APP_DIR ? path.join(APP_DIR, ns) : shared.nsCurrentLink(ns); }
-
-  function serveFile(filePath, res) {
-    const types = {
-      '.html':'text/html',
-      '.js':'application/javascript',
-      '.css':'text/css',
-      '.json':'application/json',
-      '.png':'image/png',
-      '.svg':'image/svg+xml',
-    };
-    res.writeHead(200, {'Content-Type': types[path.extname(filePath)] || 'application/octet-stream'});
-    res.end(readFileSync(filePath));
-  }
-
-  function serveApp(ns, res, urlPath) {
-    const link = activeLink(ns);
-    if (!existsSync(link)) { res.writeHead(503, {'Content-Type':'text/plain'}); res.end('Service unavailable'); return; }
-
-    let appRoot;
-    try { appRoot = realpathSync(link); }
-    catch { res.writeHead(503, {'Content-Type':'text/plain'}); res.end('Service unavailable'); return; }
-
-    if (urlPath === '/') urlPath = '/index.html';
-    const safe = path.normalize(urlPath);
-    if (safe.includes('..')) { res.writeHead(403); res.end('Forbidden'); return; }
-    const filePath = path.join(appRoot, safe);
-    if (!existsSync(filePath)) { res.writeHead(404); res.end('Not found'); return; }
-
-    let resolved;
-    try { resolved = realpathSync(filePath); }
-    catch { resolved = null; }
-    if (!resolved || (resolved !== appRoot && !resolved.startsWith(appRoot + path.sep))) {
-      res.writeHead(403);
-      res.end('Forbidden');
-      return;
-    }
-
-    if (statSync(resolved).isDirectory()) {
-      const index = path.join(resolved, 'index.html');
-      if (!existsSync(index)) { res.writeHead(404); res.end('Not found'); return; }
-      const resolvedIndex = realpathSync(index);
-      if (resolvedIndex !== appRoot && !resolvedIndex.startsWith(appRoot + path.sep)) { res.writeHead(403); res.end('Forbidden'); return; }
-      return serveFile(resolvedIndex, res);
-    }
-    serveFile(resolved, res);
-  }
-
-  function readBody(req, res, cb) {
-    const chunks = [];
-    let size = 0;
-    let oversized = false;
-    req.on('data', chunk => {
-      if (oversized) return;
-      size += chunk.length;
-      if (size > MAX_OBJECT_SIZE) {
-        oversized = true;
-        json(res, 413, {error:'request_too_large'});
-        return;
-      }
+  function body(req,res,limit,callback) {
+    let count=0,finished=false;
+    const chunks=[];
+    req.on('data',chunk=>{
+      if(finished) return;
+      count+=chunk.length;
+      if(count>limit) {finished=true;json(res,413,{error:'request_too_large'});return;}
       chunks.push(chunk);
     });
-    req.on('end', () => { if (!oversized) cb(Buffer.concat(chunks)); });
+    req.on('end',()=>{if(!finished) callback(Buffer.concat(chunks));});
+    req.on('error',()=>{if(!finished) {finished=true;json(res,400,{error:'request_interrupted'});}});
   }
-
-  function requireManagementToken(req, res) {
-    if (!TOKEN) {
-      json(res, 503, {error:'management_api_disabled'});
-      return false;
-    }
-    const supplied = req.headers.authorization;
-    const m = typeof supplied === 'string' && /^Bearer (.+)$/.exec(supplied);
-    if (!m || !timingSafeEqualString(m[1], TOKEN)) {
-      json(res, 401, {error:'invalid_management_token'});
-      return false;
-    }
-    return true;
-  }
-
-  // Management mutations use JSON bodies; never secrets in URL parameters.
-  const managementRoutes = {
-    '/deploy': {method:'POST', run:params => management.deploy(params)},
-    '/undeploy': {method:'DELETE', run:params => management.undeploy(params)},
-    '/rollback': {method:'POST', run:params => management.rollback(params)},
-    '/releases': {method:'GET', run:params => management.releases(params)},
-    '/inspect': {method:'GET', run:params => management.inspect(params)},
-    '/ns/inspect': {method:'GET', run:params => management.namespaceInspect(params)},
-    '/ns/list': {method:'GET', run:() => management.namespaceList()},
-    '/ns/issuer/rotate': {method:'POST', run:params =>
-      grants.rotateRootIssuer(params.namespace)},
-    '/ns/grants': {method:'GET', run:params => grants.listGrants(params.namespace)},
-    '/ns/keys': {method:'GET', run:params =>
-      grants.listKeys(params.namespace, params.prefix, params.after, params.limit)},
-    '/push/rules/set': {method:'POST', run:params => management.pushRuleSet(params)},
-    '/push/rules/get': {method:'GET', run:params => management.pushRuleGet(params)},
-    '/push/rules/list': {method:'GET', run:params => management.pushRuleList(params)},
-    '/push/rules/remove': {method:'DELETE', run:params => management.pushRuleRemove(params)},
-  };
-
-  // --- Web Push public API ---
-
-  const PUSH_JSON_MAX = 8192;
-
-  function readPushJson(req, res, cb) {
-    const chunks = [];
-    let size = 0;
-    let done = false;
-    req.on('data', chunk => {
-      if (done) return;
-      size += chunk.length;
-      if (size > PUSH_JSON_MAX) {
-        done = true;
-        json(res, 413, {error:'request_too_large'});
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => {
-      if (done) return;
-      let body;
-      try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
-      catch { return json(res, 400, {error:'invalid_json'}); }
-      cb(body);
+  function jsonBody(req,res,callback) {
+    return body(req,res,8192,raw=>{
+      let value;
+      try{value=JSON.parse(raw.toString('utf8'));}
+      catch{return json(res,400,{error:'invalid_json'});}
+      if(!value||typeof value!=='object'||Array.isArray(value))
+        return json(res,400,{error:'invalid_json_object'});
+      callback(value);
     });
   }
-
-  function handlePushRegister(url, req, res, body) {
-    const ns = url.searchParams.get('namespace');
-    const channel = url.searchParams.get('channel');
-    if (!validNs(ns)) return json(res, 400, {error:'invalid_namespace'});
-    if (!nsExists(ns)) return json(res, 404, {error:'namespace_not_found'});
-    if (!push.validChannel(channel)) return json(res, 400, {error:'invalid_channel'});
-    const endpoint = body && body.endpoint;
-    const keys = body && body.keys;
-    if (!push.validEndpoint(endpoint)) return json(res, 400, {error:'invalid_subscription', detail:'endpoint must be an https:// URL'});
-    if (!push.validKeys(keys)) return json(res, 400, {error:'invalid_subscription', detail:'keys.p256dh and keys.auth are required'});
-    try {
-      const sub = push.createSub(ns, channel, endpoint, keys, pushCapability(req), req.headers['x-skrynia-grant']);
-      return json(res, 201, { ok: true, id: sub.id, capability: sub.capability, deduped: sub.deduped });
-    } catch (e) {
-      if (e.code === 'capability_required') return json(res, 403, {error:'capability_required'});
-      if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
-      if (e.code === 'channel_full') return json(res, 507, {error:'channel_full'});
-      if (e.code === 'namespace_full') return json(res, 507, {error:'namespace_full', detail:'subscription quota'});
-      if (e.status) return json(res, e.status, {error:e.code});
-      throw e;
-    }
-  }
-
-  function pushCapability(req) {
-    // Subscription-specific credential, kept out of URLs and proxy logs.
-    // Stored objects use grant user tokens rather than per-object secrets.
-    const cap = req.headers['x-skrynia-capability'];
-    return typeof cap === 'string' && cap ? cap : null;
-  }
-
-  function handlePushUpdate(id, req, res, body) {
-    const capability = pushCapability(req);
-    if (!capability) return json(res, 403, {error:'capability_required'});
-    const patch = {};
-    if (body && body.endpoint !== undefined) {
-      if (!push.validEndpoint(body.endpoint)) return json(res, 400, {error:'invalid_subscription', detail:'endpoint must be an https:// URL'});
-      patch.endpoint = body.endpoint;
-    }
-    if (body && body.keys !== undefined) {
-      if (!push.validKeys(body.keys)) return json(res, 400, {error:'invalid_subscription', detail:'keys.p256dh and keys.auth are required'});
-      patch.keys = body.keys;
-    }
-    if (patch.endpoint === undefined && patch.keys === undefined) return json(res, 400, {error:'nothing_to_update'});
-    try {
-      push.updateSubAnywhere(id, capability, patch);
-      return json(res, 200, {ok:true});
-    } catch (e) {
-      if (e.code === 'not_found') return json(res, 404, {error:'not_found'});
-      if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
-      if (e.code === 'endpoint_in_use') return json(res, 409, {error:'endpoint_in_use'});
-      throw e;
-    }
-  }
-
-  function handlePushDelete(id, req, res) {
-    const capability = pushCapability(req);
-    if (!capability) return json(res, 403, {error:'capability_required'});
-    try {
-      push.removeSubAnywhere(id, capability);
-      return json(res, 200, {ok:true});
-    } catch (e) {
-      if (e.code === 'not_found') return json(res, 404, {error:'not_found'});
-      if (e.code === 'invalid_capability') return json(res, 403, {error:'invalid_capability'});
-      throw e;
-    }
-  }
-
   function bearer(req) {
-    const m = /^Bearer ([a-f0-9]{64})$/.exec(req.headers.authorization || '');
-    return m ? m[1] : null;
+    const found=/^Bearer ([a-f0-9]{64})$/.exec(req.headers.authorization||'');
+    return found?found[1]:null;
   }
-
-  function grantResult(res, fn) {
-    try { return json(res, 200, fn()); }
-    catch (e) {
-      if (e.status) return json(res, e.status, {error: e.code});
-      console.error('skrynia grant error:', e && e.stack ? e.stack : e);
-      return json(res, 500, {error:'internal_error'});
-    }
+  function capability(req) {
+    return typeof req.headers['x-skrynia-capability']==='string'?
+      req.headers['x-skrynia-capability']:null;
   }
-
   function routePath(pathname) {
-    if (HTTP_BASE_PATH === '/') return pathname;
-    if (pathname === HTTP_BASE_PATH) return '/';
-    if (!pathname.startsWith(HTTP_BASE_PATH + '/')) return null;
-    return pathname.slice(HTTP_BASE_PATH.length);
+    if(base==='/') return pathname;
+    if(pathname===base) return '/';
+    return pathname.startsWith(base+'/')?pathname.slice(base.length):null;
   }
-
-  function route(req, res) {
+  function route(req,res) {
+    // No cookies or ambient credentials: every mutation requires a bearer secret.
+    res.setHeader('Access-Control-Allow-Origin','*');
+    res.setHeader('Access-Control-Expose-Headers','ETag');
+    if(req.method==='OPTIONS') {
+      res.writeHead(204,{'Access-Control-Allow-Methods':'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Skrynia-Grant, X-Skrynia-Capability, If-Match',
+        'Access-Control-Max-Age':'3600'});
+      return res.end();
+    }
     let url;
-    try { url = new URL(req.url, 'http://' + req.headers.host); }
-    catch { res.writeHead(400); res.end('Bad request'); return; }
-    const p = routePath(url.pathname);
-
-    if (p === '/health') return json(res, 200, {ok:true});
-
-    if (p === '/version') {
-      if (req.method !== 'GET') { res.writeHead(405); res.end('Method not allowed'); return; }
-      return json(res, 200, buildInfo);
+    try {url=new URL(req.url,'http://127.0.0.1');}
+    catch {return json(res,400,{error:'invalid_url'});}
+    const p=routePath(url.pathname);
+    if(p==='/health'&&req.method==='GET') return json(res,200,{ok:true});
+    if(p==='/version'&&req.method==='GET') return json(res,200,buildInfo);
+    if(p==='/client/skrynia.js'&&req.method==='GET') {
+      const file=path.join(__dirname,'client.js');
+      res.writeHead(200,{'Content-Type':'text/javascript','Cache-Control':'no-cache'});
+      return res.end(fs.readFileSync(file));
     }
-
-    if (p === '/client/skrynia.js') {
-      if (!existsSync(CLIENT_PATH)) { res.writeHead(404); res.end('Not found'); return; }
-      res.writeHead(200, {'Content-Type':'application/javascript'});
-      res.end(readFileSync(CLIENT_PATH));
-      return;
-    }
-
-    if (p === '/push/vapid' && req.method === 'GET') {
-      return json(res, 200, { publicKey: push.getPublicKey() });
-    }
-
-    if (p === '/push/subscriptions' && req.method === 'POST') {
-      return readPushJson(req, res, body => handlePushRegister(url, req, res, body));
-    }
-
-    const pushSubMatch = p === null ? null : p.match(/^\/push\/subscriptions\/([0-9a-zA-Z]+)$/);
-    if (pushSubMatch) {
-      const subId = pushSubMatch[1];
-      if (req.method === 'PUT') {
-        return readPushJson(req, res, body => handlePushUpdate(subId, req, res, body));
-      }
-      if (req.method === 'DELETE') {
-        return handlePushDelete(subId, req, res);
-      }
-      res.writeHead(405);
-      res.end('Method not allowed');
-      return;
-    }
-
-    if (p === '/grants' && req.method === 'POST') {
-      return readPushJson(req, res, body => grantResult(res, () => {
-        if (!body || typeof body !== 'object' || Array.isArray(body)) throw Object.assign(new Error('invalid_grant'), {status:400, code:'invalid_grant'});
-        const out = grants.createChild(body.namespace, bearer(req), body.maxBytes, body.maxObjects,
-          body.locations, body.operations);
-        return out;
-      }));
-    }
-    const grantMatch = p === null ? null : p.match(/^\/grants\/([a-f0-9]{32})(?:\/(users))?$/);
-    if (grantMatch) {
-      const id = grantMatch[1], action = grantMatch[2], ns = url.searchParams.get('namespace');
-      if (req.method === 'GET' && !action) {
-        return grantResult(res, () => grants.inspect(ns, id, bearer(req)));
-      }
-      if (req.method === 'POST' && action === 'users') {
-        // User token issuance requires no metadata beyond issuer authority.
-        if (Number(req.headers['content-length'] || 0) > 0 ||
-            req.headers['transfer-encoding']) {
-          return json(res, 400, {error:'unexpected_body'});
-        }
-        return grantResult(res, () => grants.createUser(ns, id, bearer(req)));
-      }
-      if (req.method === 'DELETE' && !action) {
-        return grantResult(res, () => grants.revokeGrant(ns, id, bearer(req)));
-      }
-      return json(res, 405, {error: 'method_not_allowed'});
-    }
-
-    const grantUserMatch = p === null ? null :
-      p.match(/^\/grants\/([a-f0-9]{32})\/users\/([a-f0-9]{32})$/);
-    if (grantUserMatch) {
-      if (req.method !== 'DELETE') return json(res, 405, {error:'method_not_allowed'});
-      return grantResult(res, () => grants.revokeUser(
-        url.searchParams.get('namespace'), grantUserMatch[1], bearer(req), grantUserMatch[2]));
-    }
-
-    const managementHandler = p === null ? undefined : managementRoutes[p];
-    if (managementHandler) {
-      if (req.method !== managementHandler.method) {
-        return json(res, 405, {error:'method_not_allowed'});
-      }
-      if (!requireManagementToken(req, res)) return;
-      const respond = params => Promise.resolve()
-        .then(() => managementHandler.run(params))
-        .then(result => json(res, 200, result))
-        .catch(e => {
-          if (e.status || e instanceof ManagementError) {
-            return json(res, e.status, {error:e.code, detail:e.detail});
-          }
-          console.error('skrynia management error:', e && e.stack ? e.stack : e);
-          return json(res, 500, {error:'internal_error'});
-        });
-      if (req.method === 'GET') {
-        return respond(Object.fromEntries(url.searchParams.entries()));
-      }
-      return readPushJson(req, res, body => {
-        if (!body || typeof body !== 'object' || Array.isArray(body)) {
-          return json(res, 400, {error:'invalid_management_body'});
-        }
-        return respond(body);
+    if(p==='/push/vapid'&&req.method==='GET')
+      return json(res,200,{publicKey:push.getPublicKey()});
+    if(p==='/push/subscriptions'&&req.method==='POST')
+      return jsonBody(req,res,value=>{
+        try {
+          const result=push.createSub(value.locations,
+            value.events??['create','replace','delete'],
+            value.endpoint,value.keys,capability(req),req.headers['x-skrynia-grant']);
+          json(res,201,{ok:true,...result});
+        }catch(e){error(res,e);}
       });
+    const sub=p?.match(/^\/push\/subscriptions\/([a-f0-9]{32})$/);
+    if(sub) {
+      if(req.method==='DELETE') {
+        try{return json(res,200,push.removeSub(sub[1],capability(req)));}
+        catch(e){return error(res,e);}
+      }
+      if(req.method==='PUT') return jsonBody(req,res,value=>{
+        if(value.endpoint===undefined&&value.keys===undefined)
+          return json(res,400,{error:'nothing_to_update'});
+        if(Object.keys(value).some(k=>!['endpoint','keys'].includes(k)))
+          return json(res,400,{error:'invalid_subscription_patch'});
+        try{return json(res,200,push.updateSub(sub[1],capability(req),value));}
+        catch(e){return error(res,e);}
+      });
+      return json(res,405,{error:'method_not_allowed'});
     }
-
-    const storeMatch = p === null ? null : p.match(/^\/store\/([^/]+)\/(.+)$/);
-    if (storeMatch) {
-      let ns;
+    if(p==='/grants'&&req.method==='POST') return jsonBody(req,res,value=>{
+      try{return json(res,200,grants.createChild(bearer(req),value.maxBytes,
+        value.maxObjects,value.locations,value.operations));}
+      catch(e){return error(res,e);}
+    });
+    const grant=p?.match(/^\/grants\/([a-f0-9]{32})(?:\/(users))?$/);
+    if(grant) {
+      const id=grant[1],action=grant[2];
+      if(req.method==='GET'&&!action) {
+        try{return json(res,200,grants.inspect(id,bearer(req)));}
+        catch(e){return error(res,e);}
+      }
+      if(req.method==='POST'&&action==='users') {
+        if(Number(req.headers['content-length']||0)>0||req.headers['transfer-encoding'])
+          return json(res,400,{error:'unexpected_body'});
+        try{return json(res,200,grants.createUser(id,bearer(req)));}
+        catch(e){return error(res,e);}
+      }
+      if(req.method==='DELETE'&&!action) {
+        try{return json(res,200,grants.revokeGrant(id,bearer(req)));}
+        catch(e){return error(res,e);}
+      }
+      return json(res,405,{error:'method_not_allowed'});
+    }
+    const user=p?.match(/^\/grants\/([a-f0-9]{32})\/users\/([a-f0-9]{32})$/);
+    if(user) {
+      if(req.method!=='DELETE') return json(res,405,{error:'method_not_allowed'});
+      try{return json(res,200,grants.revokeUser(user[1],bearer(req),user[2]));}
+      catch(e){return error(res,e);}
+    }
+    const keyMatch=p?.match(/^\/store\/(.+)$/);
+    if(keyMatch) {
       let key;
-      try {
-        ns = decodeURIComponent(storeMatch[1]);
-        key = safeKey(decodeURIComponent(storeMatch[2]));
-      } catch {
-        return json(res, 400, {error:'invalid_percent_encoding'});
+      try {key=decodeURIComponent(keyMatch[1]);}
+      catch{return json(res,400,{error:'invalid_percent_encoding'});}
+      if(!validKey(key)) return json(res,400,{error:'invalid_key'});
+      if(req.method==='GET') return get(key,res);
+      if(req.method==='DELETE') {
+        try{return deleteObject(key,req,res);}
+        catch(e){return error(res,e);}
       }
-      if (!validNs(ns)) return json(res, 400, {error:'invalid_namespace'});
-      if (!key) return json(res, 400, {error:'invalid_key'});
-      if (req.method === 'GET') {
-        return handleGet(ns, key, res);
-      }
-      if (req.method === 'DELETE') {
-        if (req.headers['x-skrynia-mode'] || req.headers['x-skrynia-capability']) return json(res, 400, {error:'invalid_storage_header'});
-        try { return handleDelete(ns, key, req, res); }
-        catch (e) { if (e.status) return json(res, e.status, {error:e.code});
-          if(e.code==='outbox_full') return json(res,507,{error:e.code});
-          console.error('skrynia store error:', e); return json(res, 500, {error:'internal_error'}); }
-      }
-      if (req.method === 'PUT' || req.method === 'POST') {
-        if (req.headers['x-skrynia-mode'] || req.headers['x-skrynia-capability']) return json(res, 400, {error:'invalid_storage_header'});
-        return readBody(req, res, body => {
+      if(req.method==='POST'||req.method==='PUT') return body(req,res,maxObjectSize,
+        bytes=>{
           try {
-            if (req.method === 'POST') handleCreate(ns, key, body, req, res);
-            else handlePut(ns, key, body, req, res);
-          } catch (e) {
-            if (e.status) return json(res, e.status, {error:e.code});
-            if (e.code==='outbox_full') return json(res,507,{error:e.code});
-            console.error('skrynia store error:', e && e.stack ? e.stack : e);
-            json(res, 500, {error:'internal_error'});
-          }
+            if(req.method==='POST') return create(key,bytes,req,res);
+            return replace(key,bytes,req,res);
+          } catch(e){return error(res,e);}
         });
-      }
-      res.writeHead(405);
-      res.end('Method not allowed');
-      return;
+      return json(res,405,{error:'method_not_allowed'});
     }
-
-    const baseRe = APP_BASE_PATH.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const appMatch = url.pathname.match(new RegExp('^' + baseRe + '/([^/]+)(/.*)?$'));
-    if (appMatch) {
-      let ns;
-      try { ns = decodeURIComponent(appMatch[1]); }
-      catch { res.writeHead(400); res.end('Bad namespace'); return; }
-      if (!validNs(ns)) { res.writeHead(400); res.end('Bad namespace'); return; }
-      return serveApp(ns, res, appMatch[2] || '/');
-    }
-
-    res.writeHead(404);
-    res.end('Not found');
+    return json(res,404,{error:'not_found'});
   }
-
-  ensureDir(RELEASES_DIR);
-  shared.ensureStoreRoots();
-  ensureDir(STATE_DIR);
-  push.start();
-  const recoveryTimer = setInterval(() => {
-    try { grants.recoverRevocations(); }
-    catch(e) { console.error('grant revocation recovery pending:',e); }
-    try { storeJournal.recover(); }
-    catch(e) { console.error('store journal recovery pending:',e); }
-  }, 60000);
+  const recoveryTimer=setInterval(()=>{
+    try{grants.recoverRevocations();journal.recover();}
+    catch(e){console.error('Skrynia recovery pending:',e);}
+  },60000);
   recoveryTimer.unref();
-
-  const server = http.createServer(route);
-  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), buildInfo, push, grants, storeJournal };
-  server.on('close', () => { clearInterval(recoveryTimer); push.close(); });
+  const server=http.createServer(route);
+  server.skrynia={HTTP_BASE_PATH:base,SKRYNIA_URL:external,DATA_DIR:shared.dataDir,
+    grants,push,storeJournal:journal,buildInfo};
+  server.on('close',()=>{clearInterval(recoveryTimer);push.close();});
   return server;
 }
-
-if (require.main === module) {
-  const PORT = parseInt(process.env.SKRYNIA_PORT || '17380', 10);
-  const server = createServer();
-  server.listen(PORT, '127.0.0.1', () => {
-    console.log('Skrynia server listening on 127.0.0.1:' + PORT);
-  });
+if(require.main===module) {
+  const port=Number(process.env.SKRYNIA_PORT||17380);
+  createServer().listen(port,'127.0.0.1',()=>console.log('Skrynia listening on 127.0.0.1:'+port));
 }
-
-module.exports = { createServer };
+module.exports={createServer};

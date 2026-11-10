@@ -1,67 +1,47 @@
 'use strict';
-
 const fs = require('fs');
 const path = require('path');
 
-const NS_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
-function validNs(ns) { return typeof ns === 'string' && NS_RE.test(ns); }
-
 function ensureDir(dir, mode) {
-  fs.mkdirSync(dir, {recursive:true, mode:mode || 0o777});
-  if (mode != null) fs.chmodSync(dir, mode);
+  fs.mkdirSync(dir, {recursive:true,mode:mode || 0o777});
+  if (mode != null) fs.chmodSync(dir,mode);
 }
-let atomicSequence = 0;
-function atomicWrite(filePath, data, mode) {
-  ensureDir(path.dirname(filePath), 0o700);
-  const tmp = filePath + '.tmp.' + process.pid + '.' + (++atomicSequence);
-  try {
-    fs.writeFileSync(tmp, data, {mode:mode == null ? 0o600 : mode});
-    fs.renameSync(tmp, filePath);
-  } finally {
-    try { fs.unlinkSync(tmp); } catch (e) { if (e.code !== 'ENOENT') throw e; }
-  }
+
+function syncDir(dir) {
+  const fd=fs.openSync(dir,'r');
+  try { fs.fsyncSync(fd); }
+  catch(e) { if(e.code!=='EINVAL' && e.code!=='ENOSYS') throw e; }
+  finally { fs.closeSync(fd); }
 }
+
 function createShared(dataDir) {
-  dataDir = dataDir || process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
-  const RELEASES_DIR = path.join(dataDir, 'releases');
-  const STORE_DIR = path.join(dataDir, 'store');
-  const STORE_TMP_DIR = path.join(dataDir, 'store-tmp');
-  const STATE_DIR = path.join(dataDir, 'state');
-  const DEFAULT_QUOTA_BYTES = parseInt(process.env.SKRYNIA_DEFAULT_QUOTA_BYTES || '10485760', 10);
-  const DEFAULT_MAX_OBJECTS = parseInt(process.env.SKRYNIA_MAX_OBJECT_COUNT || '10000', 10);
-
-  function nsStoreDir(ns) { return path.join(STORE_DIR, ns); }
-  function nsObjPath(ns, key) { return path.join(nsStoreDir(ns), key); }
-  function nsVersionPath(ns) { return path.join(STATE_DIR, ns, 'etag-sequence'); }
-  function nsCurrentLink(ns) { return path.join(RELEASES_DIR, ns, 'current'); }
-  function nsConfigPath(ns) { return path.join(STATE_DIR, ns, 'config.json'); }
-  function nsStagingDir(ns) { return path.join(RELEASES_DIR, ns, '.staging-' + process.pid); }
-
+  dataDir=dataDir || process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
+  const STORE_DIR=path.join(dataDir,'store');
+  const STORE_TMP_DIR=path.join(dataDir,'store-tmp');
+  const STATE_DIR=path.join(dataDir,'state');
+  const VERSION_PATH=path.join(STATE_DIR,'etag-sequence');
+  function objPath(key) { return path.join(STORE_DIR,key); }
   function ensureStoreRoots() {
-    ensureDir(STORE_DIR, 0o755);
-    ensureDir(STORE_TMP_DIR, 0o700);
+    ensureDir(STORE_DIR,0o755);
+    ensureDir(STORE_TMP_DIR,0o700);
   }
-  function ensureStoreNamespace(ns) {
-    ensureStoreRoots();
-    ensureDir(nsStoreDir(ns), 0o755);
-  }
-  function nextVersion(ns) {
-    const p = nsVersionPath(ns);
-    let previous = 0;
-    try { previous = Number(fs.readFileSync(p, 'utf8')); }
-    catch (e) { if (e.code !== 'ENOENT') throw e; }
-    if (!Number.isSafeInteger(previous) || previous < 0) throw new Error('invalid ETag sequence');
-    const next = Math.max(Math.floor(Date.now() / 1000), previous + 1);
-    if (!Number.isSafeInteger(next)) throw new Error('ETag sequence exhausted');
-    atomicWrite(p, String(next), 0o600);
+  function nextVersion() {
+    let previous=0;
+    try { previous=Number(fs.readFileSync(VERSION_PATH,'utf8')); }
+    catch(e) { if(e.code!=='ENOENT') throw e; }
+    if(!Number.isSafeInteger(previous)||previous<0) throw new Error('invalid ETag sequence');
+    const next=Math.max(Math.floor(Date.now()/1000),previous+1);
+    if(!Number.isSafeInteger(next)) throw new Error('ETag sequence exhausted');
+    ensureDir(STATE_DIR,0o700);
+    const tmp=VERSION_PATH+'.'+process.pid+'.tmp';
+    const fd=fs.openSync(tmp,'w',0o600);
+    try { fs.writeSync(fd,String(next));fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
+    fs.renameSync(tmp,VERSION_PATH);
+    syncDir(STATE_DIR);
     return next;
   }
-  return {
-    dataDir, RELEASES_DIR, STORE_DIR, STORE_TMP_DIR, STATE_DIR,
-    DEFAULT_QUOTA_BYTES, DEFAULT_MAX_OBJECTS,
-    nsStoreDir, nsObjPath, nsVersionPath, nextVersion,
-    nsCurrentLink, nsConfigPath, nsStagingDir,
-    ensureStoreRoots, ensureStoreNamespace,
-  };
+  return {dataDir,STORE_DIR,STORE_TMP_DIR,STATE_DIR,VERSION_PATH,
+    objPath,ensureStoreRoots,nextVersion};
 }
-module.exports = {NS_RE, validNs, ensureDir, createShared};
+module.exports={ensureDir,syncDir,createShared};

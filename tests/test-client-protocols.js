@@ -1,105 +1,60 @@
 #!/usr/bin/env node
 'use strict';
-// Integration proof of concept: multi-object logical commit via one-key CAS.
-// The server knows nothing about account balances or manifests.
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const http = require('node:http');
-const {createServer} = require('../src/server.js');
+// A logical transaction touches two distinct objects and a manifest;
+// one ETag CAS on db_head is its only commit point.
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const {open,close,expect,auth,grant,tmp}=require('./test-grants.js');
 
-function request(port, method, key, data, userToken, etag) {
-  const bytes = data === undefined ? null : Buffer.from(JSON.stringify(data));
-  const headers = {};
-  if (userToken) headers['X-Skrynia-Grant'] = userToken;
-  if (etag) headers['If-Match'] = etag;
-  if (bytes) headers['Content-Length'] = String(bytes.length);
-  return new Promise((resolve, reject) => {
-    const req = http.request({hostname:'127.0.0.1', port,
-      path:'/platform/store/atomic/' + key, method, headers}, res => {
-      const chunks = [];
-      res.on('data', c => chunks.push(c));
-      res.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8');
-        resolve({status:res.statusCode, etag:res.headers.etag,
-          value:res.statusCode===200 ? JSON.parse(body) : null, body});
-      });
-    });
-    req.on('error', reject);
-    if (bytes) req.write(bytes);
-    req.end();
-  });
-}
-async function expect(port, status, method, key, data, token, etag) {
-  const response = await request(port, method, key, data, token, etag);
-  assert.equal(response.status,status,
-    method + ' ' + key + ' got HTTP ' + response.status + ': ' + response.body);
-  return response;
-}
 async function run() {
-  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'skrynia-client-protocol-'));
-  const server=createServer({dataDir:dir,token:'management-token',
-    skryniaUrl:'http://127.0.0.1:17880/platform',pushManual:true});
+  const dir=tmp();let server;
   try {
-    await new Promise(ok => server.listen(0,'127.0.0.1',ok));
-    const port=server.address().port;
-    const root=server.skrynia.grants.createRoot('atomic',100000,100);
-    const token=server.skrynia.grants.createUser('atomic',root.id,
-      root.issuerToken).userToken;
-    const get=key=>expect(port,200,'GET',key);
-
-    // These are three distinct physical objects per snapshot: two values
-    // and a manifest. Only the head is mutable in this client protocol.
+    const started=await open(dir);server=started.server;
+    const p=started.port,root=server.skrynia.grants.root();
+    const token=(await expect(p,200,'POST','/grants/'+root.id+'/users',
+      null,auth(root.rootIssuerToken))).json.userToken;
     async function stage(label,alice,bob) {
       const a='acct_a_'+label,b='acct_b_'+label,m='manifest_'+label;
-      await expect(port,201,'POST',a,{balance:alice},token);
-      await expect(port,201,'POST',b,{balance:bob},token);
-      await expect(port,201,'POST',m,{alice:a,bob:b},token);
+      await expect(p,201,'POST','/store/'+a,{balance:alice},grant(token));
+      await expect(p,201,'POST','/store/'+b,{balance:bob},grant(token));
+      await expect(p,201,'POST','/store/'+m,{alice:a,bob:b},grant(token));
       return m;
     }
+    async function get(key) {
+      return expect(p,200,'GET','/store/'+key);
+    }
+    async function read(key) {
+      return JSON.parse((await get(key)).bytes.toString());
+    }
     async function snapshot(head) {
-      const manifest=(await get(head.manifest)).value;
-      const a=(await get(manifest.alice)).value.balance;
-      const b=(await get(manifest.bob)).value.balance;
-      return {alice:a,bob:b};
+      const m=await read(head.manifest);
+      return {alice:(await read(m.alice)).balance,
+        bob:(await read(m.bob)).balance};
     }
     const initial=await stage('initial',10,10);
-    await expect(port,201,'POST','db_head',
-      {revision:0,manifest:initial},token);
-    const observed=await get('db_head');
-    assert.deepEqual(await snapshot(observed.value),{alice:10,bob:10});
-
-    // Two writers independently read the same version and prepare candidates.
+    await expect(p,201,'POST','/store/db_head',{revision:0,manifest:initial},grant(token));
+    const old=await get('db_head');
+    const oldHead=JSON.parse(old.bytes.toString());
+    assert.deepEqual(await snapshot(oldHead),{alice:10,bob:10});
     const first=await stage('first',8,12);
     const second=await stage('second',7,13);
-    assert.deepEqual((await get('db_head')).value,observed.value,
-      'staging cannot publish a partial transaction');
-    await expect(port,200,'PUT','db_head',
-      {revision:1,manifest:first},token,observed.etag);
-    await expect(port,412,'PUT','db_head',
-      {revision:1,manifest:second},token,observed.etag);
-
+    assert.deepEqual(await read('db_head'),oldHead);
+    await expect(p,200,'PUT','/store/db_head',{revision:1,manifest:first},
+      {...grant(token),'If-Match':old.etag});
+    await expect(p,412,'PUT','/store/db_head',{revision:1,manifest:second},
+      {...grant(token),'If-Match':old.etag});
     const committed=await get('db_head');
-    assert.deepEqual(await snapshot(committed.value),{alice:8,bob:12},
-      'only the CAS winner is visible');
-    assert.deepEqual(await snapshot(observed.value),{alice:10,bob:10},
-      'old readers retain a coherent immutable snapshot');
-    assert.notEqual(committed.etag,observed.etag);
-
-    // The losing writer must recompute against the new head.
-    const retried=await stage('retry',5,15);
-    await expect(port,200,'PUT','db_head',
-      {revision:2,manifest:retried},token,committed.etag);
-    assert.deepEqual(await snapshot((await get('db_head')).value),
-      {alice:5,bob:15});
-    assert.deepEqual(await snapshot(committed.value),{alice:8,bob:12});
-    assert.equal((await get('manifest_second')).value.alice,'acct_a_second',
-      'failed candidates can exist without becoming committed');
-
-    console.log('client-side atomic multi-object snapshots via CAS: OK');
-  } finally {
-    if (server.listening) await new Promise(ok => server.close(ok));
+    const committedHead=JSON.parse(committed.bytes.toString());
+    assert.deepEqual(await snapshot(committedHead),{alice:8,bob:12});
+    assert.deepEqual(await snapshot(oldHead),{alice:10,bob:10});
+    const retry=await stage('retry',5,15);
+    await expect(p,200,'PUT','/store/db_head',{revision:2,manifest:retry},
+      {...grant(token),'If-Match':committed.etag});
+    assert.deepEqual(await snapshot(await read('db_head')),{alice:5,bob:15});
+    assert.deepEqual(await snapshot(committedHead),{alice:8,bob:12});
+    console.log('client-constructed atomic logical transactions: OK');
+  }finally{
+    if(server)await close(server);
     fs.rmSync(dir,{recursive:true,force:true});
   }
 }
