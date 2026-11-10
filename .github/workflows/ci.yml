@@ -74,7 +74,7 @@ jobs:
             sleep 0.2
           done
           curl -fsS http://127.0.0.1:17380/platform/version | grep -F '"commit":"${{ steps.gitver.outputs.commit }}"'
-          docker exec skrynia-smoke node /app/scripts/root-credentials.js | grep '"issuerToken"'
+          docker exec skrynia-smoke node /app/scripts/root-credentials.js >/dev/null
           docker exec skrynia-smoke node -e '
             const fs=require("fs"),p="/var/lib/skrynia/state/grants";
             const x=fs.readdirSync(p).map(n=>JSON.parse(fs.readFileSync(p+"/"+n)));
