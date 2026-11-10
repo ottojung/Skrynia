@@ -50,7 +50,7 @@ release using an atomic symlink switch, and retains up to three releases.
 
 It creates a root grant for the namespace if necessary, with:
 - locations = "*" (or the optional locations deployment parameter)
-- operations = ["write","delegate","keep","release","subscribe"]
+- operations = ["write","delegate","subscribe"]
   (or comma-separated optional operations parameter)
 - maxBytes = quota parameter (or configured default)
 - maxObjects = maxObjects parameter (or configured default)
@@ -74,7 +74,7 @@ separately.
 Root grants can create narrower children. For example, share a grant whose
 locations is "comments", operations is ["write"], maxBytes is 65536 and
 maxObjects is 1. It allows object writes to exactly that location without
-grant delegation, votes, or subscriptions.
+grant delegation or subscriptions.
 
 Do not embed an unrestricted root user token in a publicly served static app.
 
@@ -130,7 +130,7 @@ state/{namespace}/push-subs/
 state/{namespace}/push-rules.json
 state/_push/vapid.json
 state/_push/outbox/
-state/_grant-deletions/
+state/_grant-revocations/
 ~~~
 
 Object keys consist solely of ASCII letters, digits, and underscore.

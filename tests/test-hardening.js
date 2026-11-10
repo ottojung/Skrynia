@@ -113,45 +113,18 @@ async function run() {
     await expect(port,403,'POST','/store/audit/revoked','x',grant(guest.userToken));
     await expect(port,201,'POST','/store/audit/item','survives',grant(root.userToken));
 
+    // Revoking a grant removes credentials and subtree metadata, not values.
     const D=g.createChild('audit',root.userToken,10000,10,'item',['delegate']);
     D.userToken=g.createUser('audit',D.id,D.issuerToken).userToken;
     const E=g.createChild('audit',D.userToken,4096,1,'item',[]);
-    // Issuer cleanup is independent of operations. Even an empty-operations
-    // grant can revoke its space; ancestors do not protect matching objects.
     await expect(port,200,'DELETE','/grants/'+E.id+'?namespace=audit',
       null,auth(E.issuerToken));
-    await expect(port,404,'GET','/store/audit/item');
-    await expect(port,201,'POST','/store/audit/item','recreated',grant(root.userToken));
-    // A grant with just 'delegate' has exactly the same cleanup power.
-    await expect(port,200,'DELETE','/grants/'+D.id+'/space?namespace=audit',
+    assert.equal((await expect(port,200,'GET','/store/audit/item')).text,'survives');
+    await expect(port,200,'DELETE','/grants/'+D.id+'?namespace=audit',
       null,auth(D.issuerToken));
-    await expect(port,404,'GET','/store/audit/item');
-    assert.equal(g.inspect('audit',D.id,D.userToken).id,D.id,
-      'issuer clean reissues the same grant without changing credentials');
-
-    // Revocation with 'release' behaves identically; the operation is
-    // relevant to voting, not to issuer cleanup.
-    await expect(port,201,'POST','/store/audit/temp','throwaway',grant(root.userToken));
-    const releasing=g.createChild('audit',root.userToken,4096,1,'temp',['release']);
-    await expect(port,200,'DELETE','/grants/'+releasing.id+'?namespace=audit',
-      null,auth(releasing.issuerToken));
-    await expect(port,404,'GET','/store/audit/temp');
-
-    // A release vote also triggers cleanup without granting ordinary write.
-    await expect(port,201,'POST','/store/audit/voteonly','voted',grant(root.userToken));
-    const voting=g.createChild('audit',root.userToken,4096,1,'voteonly',['release']);
-    const voter=g.createUser('audit',voting.id,voting.issuerToken).userToken;
-    await expect(port,200,'POST','/grants/'+voting.id+'/confirmation?namespace=audit',
-      {need:false},auth(voter));
-    const recordPath=path.join(dir,'state','audit','grants',voting.id+'.json');
-    const record=JSON.parse(fs.readFileSync(recordPath,'utf8'));
-    record.nextCheckAt=Math.max(Date.now()+4,record.releaseAt+4);
-    fs.writeFileSync(recordPath,JSON.stringify(record));
-    g.reloadGrants('audit');
-    await new Promise(resolve=>setTimeout(resolve,12));
-    g.sweep();
-    await expect(port,404,'GET','/store/audit/voteonly');
-    assert.equal(g.inspect('audit',voting.id,voter).id,voting.id);
+    assert.equal((await expect(port,200,'GET','/store/audit/item')).text,'survives');
+    await expect(port,404,'POST','/grants/'+D.id+'/users?namespace=audit',
+      null,auth(D.issuerToken));
 
     // Use and mutate the incremental index without rescanning the object dir.
     g.usage('audit',root.id);
@@ -175,7 +148,7 @@ async function run() {
       await expect(port,200,'DELETE','/store/audit/key04',null,
         grant(root.userToken));
       const usage=g.usage('audit',root.id);
-      assert.equal(usage.objects,29);
+      assert.equal(usage.objects,30);
     } finally {fs.readdirSync=originalReaddir;}
     const keys=await expect(port,200,'GET','/ns/keys?namespace=audit&prefix=key&limit=5',
       null,auth('admin'));
@@ -215,7 +188,7 @@ async function run() {
     assert.equal(fs.readdirSync(markerDir).filter(x=>x.endsWith('.json')).length,0);
     assert.equal(server.skrynia.push.listOutbox().length,1);
     assert.equal((await expect(port,200,'GET','/store/audit/event')).text,'updated');
-    assert.equal(server.skrynia.grants.usage('audit',root.id).objects,30);
+    assert.equal(server.skrynia.grants.usage('audit',root.id).objects,31);
 
     // Undeploy must remove pending namespace events and commit intents too.
     server.skrynia.push.enqueue('audit','event','create');
@@ -227,7 +200,7 @@ async function run() {
     assert.equal(server.skrynia.push.listOutbox().length,0);
     const fresh=server.skrynia.grants.createRoot('audit',4096,2);
     assert.equal(server.skrynia.grants.usage('audit',fresh.id).objects,0);
-    console.log('P0/P1 lifecycle, authority, indexed usage, discovery, crash replay: OK');
+    console.log('token revocation, data persistence, indexed usage, discovery, crash replay: OK');
   } finally {
     if(server)await close(server);
     fs.rmSync(dir,{recursive:true,force:true});

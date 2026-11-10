@@ -181,7 +181,6 @@ function createServer(opts) {
 
   function handleCreate(ns, key, body, req, res) {
     if (!requireNs(ns, res)) return;
-    grants.maybeSweep();
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
     const op=shared.nsObjPath(ns,key);
     if (existsSync(op)) return json(res, 409, {error:'already_exists'});
@@ -203,7 +202,6 @@ function createServer(opts) {
 
   function handlePut(ns, key, body, req, res) {
     if (!requireNs(ns, res)) return;
-    grants.maybeSweep();
     const op=shared.nsObjPath(ns,key);
     if (!existsSync(op)) return json(res,404,{error:'not_found'});
     const ifMatch=req.headers['if-match'];
@@ -225,7 +223,6 @@ function createServer(opts) {
 
   function handleDelete(ns, key, req, res) {
     if (!requireNs(ns, res)) return;
-    grants.maybeSweep();
     const op=shared.nsObjPath(ns,key);
     if(!existsSync(op)) return json(res,404,{error:'not_found'});
     grants.authorizeWrite(ns,req.headers['x-skrynia-grant'],key,null);
@@ -505,7 +502,7 @@ function createServer(opts) {
         return out;
       }));
     }
-    const grantMatch = p === null ? null : p.match(/^\/grants\/([a-f0-9]{32})(?:\/(confirmation|users|space))?$/);
+    const grantMatch = p === null ? null : p.match(/^\/grants\/([a-f0-9]{32})(?:\/(users))?$/);
     if (grantMatch) {
       const id = grantMatch[1], action = grantMatch[2], ns = url.searchParams.get('namespace');
       if (req.method === 'GET' && !action) {
@@ -519,13 +516,8 @@ function createServer(opts) {
         }
         return grantResult(res, () => grants.createUser(ns, id, bearer(req)));
       }
-      if (req.method === 'POST' && action === 'confirmation') {
-        return readPushJson(req, res, body =>
-          grantResult(res, () => grants.confirmation(ns, id, bearer(req), body.need)));
-      }
-      if (req.method === 'DELETE' && (!action || action === 'space')) {
-        return grantResult(res, () => grants.issuerAction(ns, id, bearer(req),
-          action === 'space' ? 'clean' : 'revoke'));
+      if (req.method === 'DELETE' && !action) {
+        return grantResult(res, () => grants.revokeGrant(ns, id, bearer(req)));
       }
       return json(res, 405, {error: 'method_not_allowed'});
     }
@@ -578,7 +570,6 @@ function createServer(opts) {
       if (!validNs(ns)) return json(res, 400, {error:'invalid_namespace'});
       if (!key) return json(res, 400, {error:'invalid_key'});
       if (req.method === 'GET') {
-        if (!requireNs(ns, res)) return;
         return handleGet(ns, key, res);
       }
       if (req.method === 'DELETE') {
@@ -625,17 +616,17 @@ function createServer(opts) {
   shared.ensureStoreRoots();
   ensureDir(STATE_DIR);
   push.start();
-  const grantsTimer = setInterval(() => {
-    try { grants.recoverPending(); grants.sweep(); }
-    catch (e) { console.error('grant cleanup error:', e); }
+  const recoveryTimer = setInterval(() => {
+    try { grants.recoverRevocations(); }
+    catch(e) { console.error('grant revocation recovery pending:',e); }
     try { storeJournal.recover(); }
     catch(e) { console.error('store journal recovery pending:',e); }
   }, 60000);
-  grantsTimer.unref();
+  recoveryTimer.unref();
 
   const server = http.createServer(route);
   server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), buildInfo, push, grants, storeJournal };
-  server.on('close', () => { clearInterval(grantsTimer); push.close(); });
+  server.on('close', () => { clearInterval(recoveryTimer); push.close(); });
   return server;
 }
 

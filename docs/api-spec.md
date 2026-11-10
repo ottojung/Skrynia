@@ -14,7 +14,6 @@ after building and validating the static application. Parameters:
 - commit: full verified commit SHA
 - subdir: app directory within the repository
 - namespace: namespace name
-- token: deployment management token
 - quota: optional root maxBytes, default 10485760
 - maxObjects: optional root maxObjects, default 10000
 - locations: optional root location matcher, default "*"
@@ -22,7 +21,7 @@ after building and validating the static application. Parameters:
 - builder: optional builder image override
 
 The first successful deployment returns rootGrant.id, rootGrant.issuerToken,
-rootGrant.locations, rootGrant.operations, the budget limits and nextCheckAt.
+rootGrant.locations, rootGrant.operations, and the budget limits.
 The issuer token is returned once. No user tokens are created during
 deployment. Re-deployment retains the root grant without revealing its
 issuer credential again.
@@ -59,8 +58,7 @@ No escaping, separators, alternative patterns, or arbitrary expressions exist.
 
 A grant has an immutable namespace, ID, parent ID (null for root),
 locations, operations, maxBytes, maxObjects, issuer-token verifier and
-zero or more user-token verifiers. A new grant has no users. Grant state
-also contains voting timestamps.
+zero or more user-token verifiers. A new grant has no users.
 
 Valid operations:
 
@@ -68,8 +66,6 @@ Valid operations:
 |---|---|
 | write | Create, replace, or delete objects at permitted locations |
 | delegate | Create subgrants through this grant's user tokens |
-| keep | Submit need:true |
-| release | Submit need:false |
 | subscribe | Create a browser push subscription |
 
 Reads always require no operation and no token.
@@ -95,10 +91,9 @@ Content-Type: application/json
 }
 ~~~
 
-Returns an ID, **issuerToken**, locations, operations, resource maxima
-and nextCheckAt. No user token is generated or returned. The issuer token
-must be retained securely; it authorizes issuance of user tokens and
-unconditional cleaning/revocation.
+Returns an ID, **issuerToken**, locations, operations and resource maxima.
+No user token is generated or returned. The issuer token must be retained
+securely; it authorizes issuance of user tokens and grant revocation.
 
 maxBytes/maxObjects must be positive safe integers. Neither limit reserves
 capacity in the parent. Grant metadata itself consumes the parent's budget.
@@ -202,61 +197,22 @@ objects at its authorized locations.
 No value is associated with a grant. Grant sponsorship remains recorded only
 for non-object resources such as subscriptions.
 
-## Cleanup and revocation
-
-### POST /grants/{id}/confirmation?namespace=forum
-
-~~~http
-Authorization: Bearer <user-token>
-Content-Type: application/json
-
-{"need":true}
-~~~
-
-true requires keep, false requires release. At every 24-hour checkpoint, any
-release signal for that grant triggers cleanup unless there was a keep signal
-for that grant or any descendant in the same window. Total silence preserves
-the state. A keep signal protects ancestors, not siblings.
-
-### DELETE /grants/{id}/space?namespace=forum
-
-Requires the grant's issuer token. Unconditionally cleans its space, by
-revoking the grant and reissuing the exact same grant with identical ID,
-parent, locations, operations, resource ceilings and user/issuer credentials,
-but a new confirmation window and no descendants.
+## Grant revocation
 
 ### DELETE /grants/{id}?namespace=forum
 
-Requires the grant's issuer token. Revokes the grant without reissuance.
+Requires the grant's issuer token. Revokes the grant and all descendants,
+invalidating their issuer and user credentials and removing subscriptions
+sponsored by that subtree. **Object values are never deleted by grant
+revocation**, even when the revoked grant is the namespace root. Independent
+grants remain valid.
 
-**Cleanup is independent of user operations.** An issuer can clean or
-revoke its grant regardless of its operations, including when the grant
-has no operations at all. The same rule applies at every depth. The
-`write` operation controls ordinary object mutation, `release`
-controls a negative retention vote, and `delegate` controls issuing
-subgrants; none is a prerequisite for issuer cleanup.
+Objects continue to occupy location-based quota usage for surviving grants.
+Values can be removed using authorized `DELETE /store/{namespace}/{key}`,
+and namespace undeployment removes the namespace's stored values.
 
-Both operations remove the grant's descendants and their credentials, and
-push subscriptions sponsored by the revoked subtree. An object is deleted
-only if (1) its key matches the target grant's locations and (2) **no
-surviving independent grant** covers its key. Independent means neither
-ancestor nor descendant of the target grant.
-
-An ancestor does not protect its descendant's keys from that descendant's
-cleanup. Descendants and the grant reissued during cleaning do not count as
-independent protectors either. A sibling or another independent branch
-protects matching keys even if it has no users, no `write` operation,
-and no remaining quota.
-
-This protection applies to cleanup/revocation, not to ordinary
-`DELETE /store/{namespace}/{key}`, which remains authorized through `write`.
-A surviving grant can still measure its preserved keys as occupied usage,
-so cleanup need not restore an empty budget.
-
-An independent-protection snapshot is persisted before any deletion, so
-interrupted cleanup resumes with its original decisions. The deletion is
-atomic at the HTTP interface; interrupted deletion is recovered before a
-server can accept new requests.
+If a root grant is revoked, public reads continue to work. A subsequent
+deployment can establish a new root grant over the existing objects.
 
 ## Browser push subscriptions
 
@@ -306,7 +262,7 @@ A single Skrynia server process owns one data directory.
 
 Location-scoped object sizes are held in a per-namespace incremental index,
 loaded from stored object files at startup or on first use. Successful
-create/replace/delete and grant cleanup update it synchronously. The durable
+create/replace/delete update it synchronously. The durable
 filesystem remains authoritative; the index is reconstructed after restart.
 
 Object mutations write an fsynced intent record before committing a
@@ -317,10 +273,8 @@ the intent is replayed after restart or by the recovery timer. Duplicate
 notifications are possible (at-least-once delivery). Failed preflight
 outbox-capacity checks reject the write before changing the object.
 
-Grant cleanup also records an fsynced intent and recovery resumes the
-original independent-protection decision. Skrynia serializes mutations
-inside one Node.js process; its public API cannot observe intermediate
-operations. A separate process serving raw object files (such as nginx)
-may observe intermediate states during multi-object cleanup. The system
-does not provide cross-key ACID transactions or simultaneous multi-process
+Recursive grant revocation records an fsynced intent. Recovery finishes
+removing grant credentials and their subscriptions without touching object
+files. One Skrynia process owns the state directory; it does not provide
+cross-key ACID transactions or simultaneous multi-process
 writers.
