@@ -8,7 +8,6 @@ const { ensureDir, validNs } = require('./shared.js');
 const { createResourceIndex } = require('./resource-index.js');
 const { syncDir } = require('./store-journal.js');
 
-const DAY = 24 * 60 * 60 * 1000;
 const GRANT_COST = 2048;
 const OBJECT_COST = 512;
 const PUSH_SUB_COST = 4096;
@@ -16,7 +15,7 @@ const EXTRA_USER_COST = 128;
 const ID_RE = /^[a-f0-9]{32}$/;
 const KEY_RE = /^[A-Za-z0-9_]+$/;
 const LOCATION_RE = /^[A-Za-z0-9_]*\*?$/;
-const OPERATIONS = Object.freeze(['write', 'delegate', 'keep', 'release', 'subscribe']);
+const OPERATIONS = Object.freeze(['write', 'delegate', 'subscribe']);
 
 function fault(status, code) {
   const e = new Error(code);
@@ -63,7 +62,7 @@ function createGrants(shared) {
   const objectsIndex = createResourceIndex(shared, validKey, matches);
   const grantsCache=new Map(), subscriptionsCache=new Map();
   const stateDir = path.join(dataDir, 'state');
-  const pendingDir = path.join(stateDir, '_grant-deletions');
+  const pendingDir = path.join(stateDir, '_grant-revocations');
   function dir(ns) { return path.join(stateDir, ns, 'grants'); }
   function recordPath(ns, id) { return path.join(dir(ns), id + '.json'); }
 
@@ -257,7 +256,6 @@ function createGrants(shared) {
     }
   }
   function authorizeWrite(ns, secret, key, newBytes, oldBytes) {
-    maybeSweep();
     const g = requireWrite(ns, secret, key);
     if (newBytes !== null) {
       if (!Number.isSafeInteger(newBytes) || newBytes < 0) throw fault(400, 'invalid_object_size');
@@ -281,17 +279,15 @@ function createGrants(shared) {
   }
 
   function makeRecord(ns, parent, maxBytes, maxObjects, locations, operations) {
-    const issuerToken = token(), now = Date.now();
+    const issuerToken = token();
     const id = crypto.randomBytes(16).toString('hex');
     const record = {id, namespace:ns, parent, maxBytes, maxObjects, locations,
-      operations, issuerHash:digest(issuerToken), users:[],
-      windowStart:now, nextCheckAt:now + DAY, keepAt:null, releaseAt:null};
+      operations, issuerHash:digest(issuerToken), users:[]};
     if (Buffer.byteLength(JSON.stringify(record)) > GRANT_COST) {
       throw new Error('grant record exceeds charged bytes');
     }
     writeGrant(ns,record);
-    return {id, issuerToken, maxBytes, maxObjects, locations,
-      operations, nextCheckAt:record.nextCheckAt};
+    return {id, issuerToken, maxBytes, maxObjects, locations, operations};
   }
   function limits(maxBytes, maxObjects) {
     if (!boundedInteger(maxBytes) || !boundedInteger(maxObjects) ||
@@ -303,13 +299,12 @@ function createGrants(shared) {
     if (!validLocations(locations)) throw fault(400, 'invalid_locations');
     const ops = normalizeOperations(operations);
     if (root(ns)) return {created:false, id:root(ns).id};
-    if (all(ns).length || objectEntries(ns).length || subscriptionEntries(ns).length) {
-      throw new Error('namespace already contains resources without root grant');
+    if (all(ns).length || subscriptionEntries(ns).length) {
+      throw new Error('namespace contains grant metadata without a root grant');
     }
     return {...makeRecord(ns, null, maxBytes, maxObjects, locations, ops), created:true};
   }
   function createChild(ns, secret, maxBytes, maxObjects, locations, operations) {
-    maybeSweep();
     const parent = requireUser(ns, secret);
     requireOperation(parent, 'delegate');
     limits(maxBytes, maxObjects);
@@ -322,7 +317,6 @@ function createGrants(shared) {
     return makeRecord(ns, parent.id, maxBytes, maxObjects, loc, ops);
   }
   function createUser(ns, id, secret) {
-    maybeSweep();
     const g = requireIssuer(ns, id, secret);
     if (g.users.length !== 0) assertCapacity(ns, g.id, EXTRA_USER_COST, 0);
     const userToken = token();
@@ -334,7 +328,6 @@ function createGrants(shared) {
     return {grantId:id, userId, userToken};
   }
   function revokeUser(ns, id, issuerSecret, userId) {
-    maybeSweep();
     const g = requireIssuer(ns, id, issuerSecret);
     if (!ID_RE.test(userId || '')) throw fault(400, 'invalid_user_id');
     const next = g.users.filter(u => u.id !== userId);
@@ -344,7 +337,6 @@ function createGrants(shared) {
     return {ok:true, grantId:id, userId};
   }
   function rotateRootIssuer(ns) {
-    maybeSweep();
     const g = root(ns);
     if (!g) throw fault(404, 'namespace_not_found');
     const issuerToken = token();
@@ -353,144 +345,56 @@ function createGrants(shared) {
     return {grantId:g.id, issuerToken};
   }
   function accountSubscription(ns, secret) {
-    maybeSweep();
     const g = requireUser(ns, secret);
     requireOperation(g, 'subscribe');
     assertCapacity(ns, g.id, PUSH_SUB_COST, 1);
     return g.id;
   }
-  function confirmation(ns, id, secret, need) {
-    maybeSweep();
-    const g = requireUser(ns, secret, id);
-    if (typeof need !== 'boolean') throw fault(400, 'invalid_confirmation');
-    requireOperation(g, need ? 'keep' : 'release');
-    const now = Date.now();
-    if (need) g.keepAt = now;
-    else g.releaseAt = now;
-    writeGrant(ns,g);
-    return {ok:true, grantId:id, need, nextCheckAt:g.nextCheckAt};
-  }
-
-  function deleteData(ns, locations, protectedLocations, ids) {
-    // Objects survive when an independent grant covers their location.
-    // Save the protection snapshot in the deletion marker so crash recovery
-    // completes the same decision, even after descendant records are removed.
-    const d = shared.nsStoreDir(ns);
-    for (const o of objectEntries(ns)) {
-      if (matches(locations, o.key) &&
-          !protectedLocations.some(loc => matches(loc, o.key))) {
-        fs.unlinkSync(path.join(d, o.key));
-        recordObject(ns, o.key, null);
-      }
-    }
-    const owned = new Set(ids);
-    for (const sub of subscriptionEntries(ns)) {
-      if (owned.has(sub.data.grantId)) fs.unlinkSync(sub.file);
-    }
-    if (fs.existsSync(d)) syncDir(d);
-    const subdir=path.join(stateDir,ns,'push-subs');
-    if (fs.existsSync(subdir)) syncDir(subdir);
-    subscriptionChanged(ns);
-  }
-  function runDeletion(ns, id, action, ids, locations, protectedLocations) {
+  function runRevocation(ns, id, ids) {
     const marker = path.join(pendingDir, ns + '-' + id + '.json');
-    if (!fs.existsSync(marker)) {
-      atomicJson(marker, {ns, id, action, ids, locations, protectedLocations});
-    }
+    if (!fs.existsSync(marker)) atomicJson(marker, {ns, id, ids});
     const work = JSON.parse(fs.readFileSync(marker, 'utf8'));
-    deleteData(work.ns, work.locations, work.protectedLocations, work.ids);
-    for (const descendantId of work.ids) {
-      if (descendantId === work.id && work.action === 'clean') continue;
-      try { fs.unlinkSync(recordPath(work.ns, descendantId)); }
+    const revoked = new Set(work.ids);
+    const subdir = path.join(stateDir, ns, 'push-subs');
+    for (const sub of subscriptionEntries(work.ns)) {
+      if (!revoked.has(sub.data.grantId)) continue;
+      try { fs.unlinkSync(sub.file); }
       catch (e) { if (e.code !== 'ENOENT') throw e; }
-      grantMap(work.ns).delete(descendantId);
     }
-    if (fs.existsSync(dir(ns))) syncDir(dir(ns));
-    if (work.action === 'clean' && fs.existsSync(recordPath(work.ns, work.id))) {
-      const g = find(work.ns, work.id), now = Date.now();
-      g.windowStart = now;
-      g.nextCheckAt = now + DAY;
-      g.keepAt = null;
-      g.releaseAt = null;
-      writeGrant(work.ns,g);
+    if (fs.existsSync(subdir)) syncDir(subdir);
+    subscriptionChanged(work.ns);
+    for (const grantId of work.ids) {
+      try { fs.unlinkSync(recordPath(work.ns, grantId)); }
+      catch (e) { if (e.code !== 'ENOENT') throw e; }
+      grantMap(work.ns).delete(grantId);
     }
+    if (fs.existsSync(dir(work.ns))) syncDir(dir(work.ns));
     fs.unlinkSync(marker);
     syncDir(pendingDir);
   }
-  function removeSubtree(ns, id, action) {
-    const map = validateTree(all(ns)), g = map.get(id);
-    if (!g) throw fault(404, 'grant_not_found');
-    const ids = [...map.values()].filter(h => isDescendant(map, h.id, id)).map(h => h.id);
-    // Ancestors and descendants are not independent retention claims.
-    // The target grant's reissued copy (for clean) does not protect data either.
-    const protectedLocations = [...new Set([...map.values()]
-      .filter(h => !isDescendant(map, h.id, id) && !isDescendant(map, id, h.id))
-      .map(h => h.locations))];
-    // Cleanup is issuer authority, independent of the grant's operations.
-    // It treats every grant identically, including the namespace root.
-    runDeletion(ns, id, action, ids, g.locations, protectedLocations);
-  }
-  function issuerAction(ns, id, secret, action) {
-    maybeSweep();
+  function revokeGrant(ns, id, secret) {
     requireIssuer(ns, id, secret);
-    if (!['clean', 'revoke'].includes(action)) throw fault(400, 'invalid_action');
-    removeSubtree(ns, id, action);
-    return {ok:true, grantId:id, action};
+    const map = validateTree(all(ns));
+    const ids = [...map.values()]
+      .filter(g => isDescendant(map, g.id, id)).map(g => g.id);
+    runRevocation(ns, id, ids);
+    return {ok:true, grantId:id};
   }
-  let nextAutoSweepAt=0;
-  function maybeSweep() {
-    const now=Date.now();
-    if(now<nextAutoSweepAt) return;
-    nextAutoSweepAt=now+60000;
-    sweep(now);
-  }
-  function sweep(now = Date.now()) {
-    if (!fs.existsSync(stateDir)) return;
-    for (const ns of fs.readdirSync(stateDir).filter(validNs)) {
-      const grants = all(ns);
-      if (!grants.length) continue;
-      const map = validateTree(grants);
-      const due = grants.filter(g => g.nextCheckAt <= now)
-        .sort((a,b) => map.depth.get(a.id) - map.depth.get(b.id));
-      const mostRecentKeep = new Map(grants.map(g => [g.id, g.keepAt]));
-      for (const g of [...map.order].reverse()) {
-        if (g.parent === null) continue;
-        const v = mostRecentKeep.get(g.id), old = mostRecentKeep.get(g.parent);
-        if (v !== null && (old === null || v > old)) mostRecentKeep.set(g.parent, v);
-      }
-      for (const g of due) {
-        if (!fs.existsSync(recordPath(ns, g.id))) continue;
-        const latest = mostRecentKeep.get(g.id);
-        const keep = latest !== null && latest >= g.windowStart && latest < g.nextCheckAt;
-        const release = g.releaseAt !== null && g.releaseAt >= g.windowStart && g.releaseAt < g.nextCheckAt;
-        if (release && !keep) {
-          removeSubtree(ns, g.id, 'clean');
-          continue;
-        }
-        const fresh = find(ns, g.id);
-        fresh.windowStart = now;
-        fresh.nextCheckAt = now + DAY;
-        fresh.releaseAt = null;
-        writeGrant(ns,fresh);
-      }
-    }
-  }
-  function recoverPending() {
+  function recoverRevocations() {
     ensureDir(pendingDir, 0o700);
     for (const name of fs.readdirSync(pendingDir).filter(x => x.endsWith('.json'))) {
       const op = JSON.parse(fs.readFileSync(path.join(pendingDir, name), 'utf8'));
-      if (!validNs(op.ns) || !ID_RE.test(op.id) || !validLocations(op.locations) ||
+      if (!validNs(op.ns) || !ID_RE.test(op.id) ||
           !Array.isArray(op.ids) || op.ids.some(id => !ID_RE.test(id)) ||
-          !Array.isArray(op.protectedLocations) ||
-          op.protectedLocations.some(loc => !validLocations(loc)) ||
-          !['clean','revoke'].includes(op.action)) {
-        throw new Error('invalid pending grant deletion');
+          !op.ids.includes(op.id) || op.ids.length !== new Set(op.ids).size ||
+          name !== op.ns + '-' + op.id + '.json') {
+        throw new Error('invalid pending grant revocation');
       }
-      runDeletion(op.ns, op.id, op.action, op.ids, op.locations, op.protectedLocations);
+      runRevocation(op.ns, op.id, op.ids);
     }
   }
   function recover() {
-    recoverPending();
+    recoverRevocations();
     if (!fs.existsSync(stateDir)) return;
     const namespaces = new Set();
     for (const rootDir of [stateDir, shared.STORE_DIR]) {
@@ -501,10 +405,9 @@ function createGrants(shared) {
     for (const ns of namespaces) {
       const grants = all(ns);
       const map = validateTree(grants);
-      const keys = objectEntries(ns);
       const subs = subscriptionEntries(ns);
-      if (!grants.length && (keys.length || subs.length)) {
-        throw new Error('namespace resources require a root grant: ' + ns);
+      if (!grants.length && subs.length) {
+        throw new Error('subscriptions require a root grant: ' + ns);
       }
       for (const sub of subs) if (!map.has(sub.data.grantId)) {
         throw new Error('subscription requires a live funding grant');
@@ -513,18 +416,16 @@ function createGrants(shared) {
   }
   // Administrative discovery reveals no credential hashes.
   function listGrants(ns) {
-    maybeSweep();
     const records=all(ns), map=validateTree(records);
     const objects=objectEntries(ns), subs=subscriptionEntries(ns);
     return {namespace:ns, grants:records.map(g => ({
       id:g.id, parent:g.parent, locations:g.locations,
       operations:g.operations, maxBytes:g.maxBytes, maxObjects:g.maxObjects,
-      userCount:g.users.length, nextCheckAt:g.nextCheckAt,
+      userCount:g.users.length,
       usage:usageWith(ns,g,map,objects,subs),
     }))};
   }
   function listKeys(ns, prefix='', after='', limit=100) {
-    maybeSweep();
     if (!validNs(ns)) throw fault(400, 'invalid_namespace');
     if (typeof prefix!=='string' || (prefix && !KEY_RE.test(prefix)) ||
         typeof after!=='string' || (after && !KEY_RE.test(after))) {
@@ -544,18 +445,17 @@ function createGrants(shared) {
       page[page.length-1].key:null};
   }
   function inspect(ns, id, secret) {
-    maybeSweep();
     requireUser(ns, secret, id);
     const g = find(ns, id), {issuerHash, users, ...safe} = g;
     return {...safe, userCount:users.length, usage:usage(ns, id)};
   }
 
-  return {DAY, GRANT_COST, OBJECT_COST, PUSH_SUB_COST, OPERATIONS,
+  return {GRANT_COST, OBJECT_COST, PUSH_SUB_COST, OPERATIONS,
     root, createRoot, createChild, createUser, revokeUser,
     rotateRootIssuer, requireUser, requireWrite, recordObject, dropNamespace,
     subscriptionChanged, reloadGrants,
-    accountSubscription, authorizeWrite, confirmation, issuerAction, inspect,
-    usage, recover, recoverPending, sweep, maybeSweep, listGrants, listKeys,
+    accountSubscription, authorizeWrite, revokeGrant, inspect,
+    usage, recover, recoverRevocations, listGrants, listKeys,
     matches, subset, validKey, validLocations};
 }
 module.exports = {createGrants, KEY_RE, LOCATION_RE, OPERATIONS, matches, subset};

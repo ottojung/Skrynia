@@ -375,7 +375,7 @@ function createManagement(opts) {
       const permIssues = validateTreePermissions(stageDir);
       if (permIssues.length) fail(500, 'tree_permissions_invalid', permIssues.join('; '));
 
-      // Root grants default to full namespace write/delegate/retention authority.
+      // Root grants default to all user operations.
       const rootGrant = grants.createRoot(ns,
         params.quota == null ? shared.DEFAULT_QUOTA_BYTES : Number(params.quota),
         params.maxObjects == null ? shared.DEFAULT_MAX_OBJECTS : Number(params.maxObjects),

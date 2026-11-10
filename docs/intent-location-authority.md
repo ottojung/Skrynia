@@ -24,16 +24,15 @@ Status: normative. This document defines Skrynia's storage model.
 
 ## Operations
 
-- Valid grant-user operations: `write`, `delegate`, `keep`, `release`,
-  `subscribe`. A grant has an immutable set of these operations.
+- Valid grant-user operations: `write`, `delegate`, `subscribe`.
+  A grant has an immutable set of these operations.
 - A namespace root defaults to all operations.
 - A child with no `operations` field inherits its parent's operations. An
   explicit child set must be a subset of its parent's. A user token can create
   subgrants only when its grant has `delegate`.
 - `write` authorizes create, replace, and delete of matching object keys,
   and is always checked for all three mutations.
-- `keep` permits `need:true` retention confirmation; `release` permits
-  `need:false`. `subscribe` permits browser PushSubscription creation.
+- `subscribe` permits browser PushSubscription creation.
 - Object reads are public and have no required operation; nginx may serve
   objects directly. No object-specific write authority exists.
 - Grant creation, including issuance of a namespace root, generates an
@@ -42,11 +41,10 @@ Status: normative. This document defines Skrynia's storage model.
 - An issuer token can generate independent user tokens for exactly its own
   grant through POST /grants/{id}/users. Only issuers may mint these tokens,
   regardless of a grant's delegate operation. A grant may have zero users.
-- Grant issuer tokens authorize cleaning or revocation, independent of
-  the grant's `operations`. This rule is identical for every grant,
-  including the root. User tokens never have issuer authority.
-  `delegate` lets a user create a child grant and receive its issuer
-  token; cleaning that child has the same semantics as cleaning any grant.
+- Grant issuer tokens authorize revocation of their own grant subtree,
+  independently of the grant's `operations`. User tokens never have
+  issuer authority. `delegate` lets a user create a child grant and
+  receive its issuer token.
 - The issuer may revoke an individual user token by the opaque ID returned
   when it was issued, without deleting objects. Skrynia stores no labels,
   creation timestamps or user-token index that clients could maintain.
@@ -110,52 +108,22 @@ Status: normative. This document defines Skrynia's storage model.
   Subscription channels are not object keys and are not interpreted through
   `locations`.
 
-## Revocation and retention
+## Grant revocation
 
-- For any grant g being revoked or cleaned, define an *independent survivor*
-  h as a grant that is neither an ancestor nor a descendant of g. All such h
-  survive revocation of g; a descendant, ancestor, or the reissued copy of g
-  does not count as an independent survivor for this cleanup.
-- The objects deleted are precisely the currently existing keys k that match
-  g's `locations` and are NOT covered by any independent survivor:
-  ```
-  deleted(g) = { k : matches(g.locations, k)
-                     and not exists h incomparable with g:
-                       matches(h.locations, k) }
-  ```
-  Whether h has a user token, `write` permission, unused quota, or any
-  retention confirmations is irrelevant: its location coverage suffices.
-  Objects have no grant owner or creator identity.
-- Grant revocation destroys g and its descendants, invalidates their user
-  and issuer tokens, removes subscriptions sponsored by the subtree, and
-  deletes exactly deleted(g). Independent grants and their credentials
-  survive, including those protecting matching keys.
-- A's ancestors cannot prevent A's cleanup merely because their locations
-  contain A's. A's descendants cannot prevent it either. Root cleanup and
-  root revocation therefore delete all objects under the root's locations,
-  regardless of children.
-- Voting-triggered cleanup is the semantic operation
-  `revoke(g); issueSame(g)`, with the cleanup decision evaluated against
-  the independent grants existing before revocation. The same grant ID,
-  parent, `locations`, `operations`, resource limits, user-token verifiers
-  and issuer-token verifier are preserved. Descendants and subtree-sponsored
-  subscriptions disappear, while independently protected keys survive.
-  The reissued grant starts with a fresh confirmation window.
-- For restart safety, the independent survivors' location-pattern snapshot
-  is persisted in the deletion intent record before deleting any objects or
-  grant records. Recovery completes the original cleanup decision.
-- Explicit issuer-triggered cleaning has the same semantics as voting-triggered
-  cleaning, except that it is immediate and does not depend on votes.
-- At each grant's 24-hour checkpoint, cleanup occurs only if the grant
-  received at least one release confirmation in the window and neither it
-  nor any descendant had a keep confirmation in that window.
-  Silence preserves data. Descendant keep protects ancestors, not siblings.
-  Issuer revocation/cleaning overrides confirmations.
-- The intermediate revoked state is never observable to Skrynia API users.
-  Interrupted filesystem deletion is resumed before serving requests.
-  Implementations may optimize physical deletion while preserving these
-  semantics. Filesystem sync and durable intent records support recovery,
-  but external file servers may observe intermediate per-file deletions.
+- A grant issuer can revoke its grant and all descendants. Their user
+  and issuer credentials become invalid, and subscriptions sponsored by
+  the subtree are removed.
+- Revocation leaves **all object keys and values unchanged**. Objects have
+  no grant ownership; neither the grant hierarchy nor location coverage
+  determines their lifetime.
+- Revoking the root removes its grant hierarchy and credentials as usual.
+  Existing object values remain publicly readable. A new root may be
+  issued for the namespace while preserving those values.
+- Persistent, fsynced revocation intents make multi-record revocation
+  recoverable after interruption. Recovery runs at startup and periodically.
+- Values are removed by an authorized object deletion or by namespace
+  undeployment. Ordinary grant revocation cannot delete data.
+
 - Committed object mutations and durable push enqueue are linked by a
   recoverable intent record. Notifications are delivered at least once,
   not exactly once. Crashes between enqueue and intent finalization can
@@ -165,9 +133,3 @@ Status: normative. This document defines Skrynia's storage model.
   POST/DELETE with JSON bodies rather than credentials in query strings.
   Administrative listing/inspection of keys, grants and quotas must not
   reveal credential verifiers.
-
-## Out-of-scope assumptions
-
-- There is no historical data reader, compatibility API, alternate write mode,
-  per-object write token, or data migration in the server.
-- All namespace storage and grant rules are defined by this specification.

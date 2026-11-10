@@ -7,7 +7,7 @@ Skrynia deploys web apps from Git and gives them a small, durable key–value st
 - **Deploy from Git.** Build a specific commit with `make build` in Docker, publish it atomically, and roll back to an earlier release.
 - **Store ordinary files.** Binary-safe values live at named keys. Reads are public (and can be served directly by nginx); conditional writes use ETags.
 - **Delegate authority.** Issue restricted grants for individual keys or prefixes, with independent operations and resource budgets.
-- **Manage lifetimes.** Grants can be cleaned or revoked recursively, including through periodic retention confirmations.
+- **Revoke authority.** A grant and its descendants can be revoked without affecting stored values.
 - **Notify clients.** Web Push subscriptions and rules connect storage events to browser notifications.
 
 Skrynia runs as a single Node.js service. Application code remains static HTML, JavaScript, and CSS.
@@ -50,7 +50,7 @@ subsequent deployments do not reveal it. The
 [GitHub deployment action](action/deploy/action.yml) exports the one-time
 issuer token as a masked output.
 
-An issuer token can **mint user tokens**, **clean** the grant, or **revoke** it.
+An issuer token can **mint user tokens** or **revoke** the grant and its descendants.
 User tokens exercise the grant's permitted operations; they cannot issue
 other user tokens. To mint the first root user token:
 
@@ -105,7 +105,7 @@ curl -sS -X PUT "$SKRYNIA_URL/store/hello/notes1" \
   --data-binary 'Updated'
 ```
 
-The same token can delete `notes1`, but it cannot write `settings`, create subgrants, vote on retention, or register push subscriptions. A token with only `write` at one exact key is also a way to offer public writing at that key. **Anyone with that token can replace or delete its contents**, so share it deliberately.
+The same token can delete `notes1`, but it cannot write `settings`, create subgrants, or register push subscriptions. A token with only `write` at one exact key is also a way to offer public writing at that key. **Anyone with that token can replace or delete its contents**, so share it deliberately.
 
 ### How grants work
 
@@ -114,25 +114,23 @@ Every grant combines:
 | Field | Meaning |
 | --- | --- |
 | `locations` | `"*"` (all keys), `"notes*"` (prefix), `"notes1"` (exact), or `""` (none) |
-| `operations` | Any subset of `write`, `delegate`, `keep`, `release`, `subscribe` |
+| `operations` | Any subset of `write`, `delegate`, `subscribe` |
 | `maxBytes`, `maxObjects` | Limits on mutations performed through the grant and its ancestors |
 
 Keys use only ASCII letters, digits, and underscores (`[A-Za-z0-9_]+`). A child grant can narrow its parent's locations and operations but can never expand them. Reading needs no grant and is always public—do not store private data expecting access control on `GET`.
 
 Grants authorize **actions**, not ownership of values. A write must fit the resulting usage of the writing grant and its ancestors; unrelated grants never veto it. A replacement is logically an atomic delete followed by a creation, so the *entire replacement value* must fit. Objects don't carry creator or grant identities.
 
-### Retention and revocation
+### Revocation and data lifetime
 
-Every 24 hours, a grant checks its retention confirmations. A `release` confirmation proposes cleaning its space; a `keep` confirmation from that grant **or any descendant** prevents it. Silence leaves everything intact.
+Revoking a grant invalidates its issuer and user tokens, revokes its
+descendants, and removes their push subscriptions. **Stored objects remain
+unchanged**, regardless of which grant wrote them or which locations match.
 
-- **Clean:** Remove descendant grants and unprotected matching keys, then reissue the same grant with unchanged credentials and fresh voting state.
-- **Revoke:** Perform the same cleanup without reissuing the grant; its credentials cease to work.
-
-An issuer can perform either action immediately. A key survives when an
-**independent surviving grant** also covers it, even if that grant has no
-user tokens. Ancestors, descendants, and the grant being reissued do not
-protect keys during cleanup. The rule applies uniformly throughout the
-grant hierarchy. Ordinary authorized object deletion is unchanged.
+An authorized `DELETE /store/{namespace}/{key}` removes a value. Namespace
+undeployment removes all namespace data. Revoking even the root grant
+leaves existing objects publicly readable; a new root grant can administer
+those objects.
 
 ### Recovering credentials and inspecting state
 
@@ -151,11 +149,6 @@ one without changing existing users or objects. An issuer can issue
 user tokens and **individually revoke** them using their returned IDs;
 the client maintains any token labels or lists. Revoking a user token
 does not delete its data.
-
-Cleanup belongs to **issuer authority**, independently of `write`,
-`release`, or other grant operations. The same rules apply to every
-grant in the hierarchy: unprotected matching keys are deleted, while
-independent grants protect their shared keys.
 
 ## Integration and operations
 
