@@ -6,7 +6,7 @@ what the server enforces, what cooperating clients can coordinate, and what
 untrusted clients can verify. All domain-specific computation happens in clients.
 
 Skrynia is an unusually small shared-memory substrate: durable public values,
-single-key conditional mutation, and delegable resource-bounded write authority.
+single-key conditional mutation, and delegable resource-bounded mutation authority.
 These primitives can support applications conventionally associated with
 databases and application servers.
 
@@ -19,7 +19,7 @@ databases and application servers.
 | Atomic single-key replacement | `PUT` of an existing key | Versioned state, publication pointers |
 | Compare-and-swap (CAS) | `GET` ETag, then `PUT` with `If-Match` (200 or 412) | Optimistic concurrency, one-key linearization points |
 | Conditional deletion | `DELETE` with optional `If-Match` | Reclamation coordinated with a key version |
-| Scoped, delegable grants | Key/prefix matcher, subset of `write` / `list` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
+| Scoped, delegable grants | Key/prefix matcher, subset of `create` / `modify` / `delete` / `list` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
 | Notifications | Grant-scoped Web Push subscriptions | Wake interested clients without running application code on Skrynia |
 
 Keys match `[A-Za-z0-9_][A-Za-z0-9_.]*`, permitting consecutive dots but
@@ -110,8 +110,10 @@ a previously published immutable record.
   by the same root's immutable reachable state. Direct writes to account
   files outside this protocol bypass the transaction model.
 - Published versioned files **remain unchanged and readable** while referenced
-  by readers. Random key names alone do not enforce immutability: the `write`
-  operation also permits `PUT` and `DELETE`. Use authority separation and/or
+  by readers. Random key names alone do not enforce immutability: grants
+  with `modify` or `delete` can still change them. Delegate `create` only
+  when contributions should be immutable to their contributors; use authority
+  separation and/or
   digest verification, and plan version retention.
 - Use an authoritative, suitably fresh root read if promising linearizability.
   Third-party HTTP caches or replicas may return a stale root. Reading a stale
@@ -121,7 +123,8 @@ a previously published immutable record.
   fetch versioned, digest-verified records from ordinary static/CDN servers.
 - The root must fit a single object. Larger databases use a small manifest
   pointer into a persistent B-tree, Merkle DAG or similar structure.
-- Clients need write authority for staging keys and the root, and enough
+- Clients need `create` authority for staging keys and `modify` for the
+  root's conditional publication, along with enough
   quota for temporarily retained versions.
 
 **Exact claim:** This yields serializable transactions and atomic snapshot
@@ -156,7 +159,7 @@ second shared index.
 
 One event can be one object named `events.<unique-id>`; its bytes hold
 the event or a pointer to a payload. Each contributor creates an entry
-with `POST` (create-if-absent), so independent contributions need not
+with `POST` (`create` authority; create-if-absent), so independent contributions need not
 rewrite a growing shared file. Clients with `list` discover entries by
 range and read their contents publicly. Keys do not inherently define
 a chronological order: an application can encode sequence identifiers,
@@ -164,8 +167,8 @@ follow predecessor links, or impose an order in a signed manifest.
 
 When clients require a canonical ordered history, a CAS-linked log or
 committed manifest supplies its ordering. `list` alone is key discovery,
-not a tamper-resistance guarantee: another authorized writer can replace or
-delete entries. A maintainer can list a delegated key range
+not a tamper-resistance guarantee against holders of `modify` or `delete`
+authority: those can still replace or remove entries. A maintainer can list a delegated key range
 and explicitly delete unwanted contributions with an appropriate write
 token. Subspace isolation, cryptographic validation, and client protocols
 control what histories participants accept.
@@ -213,7 +216,7 @@ A **public discussion board** is one example, not a built-in data type.
 One possible protocol:
 
 1. Give each author a grant for `author_<id>_*` with limited bytes and objects.
-   A user's token cannot write another author's prefix. An author can
+   A user's token cannot mutate another author's prefix. An author can
    publish, revise, or remove their own contributions according to that
    grant's authority.
 2. Authors publish signed posts or a signed index of their own posts. A
@@ -234,7 +237,7 @@ moderator-controlled canonical index, several independently signed views,
 or agreed client-side rules for selecting valid contributions. It is a
 protocol design choice, not a Skrynia feature requirement.
 
-A publicly distributed `write` token for a shared prefix authorizes its
+A publicly distributed `modify` or `delete` token for a shared prefix authorizes its
 holder to overwrite or delete *any* matching key, including others' posts.
 `POST` is create-only as a request **but there is no create-only grant
 operation**. For adversarial participants, use separate scopes/credentials
@@ -260,8 +263,8 @@ depending on the desired protocol.
 **Signed records.** A signed object can assert authorship. Content hashes can
 bind a manifest to exact payload bytes. Clients can verify a transition and
 ignore data not justified by their application rules. For a canonical
-accepted head, restrict who can write that head, or define a verifiable
-accepted history. A malicious client with head-write authority can still
+accepted head, restrict who can modify that head, or define a verifiable
+accepted history. A malicious client with head-modification authority can still
 replace/delete it or repeatedly win races, so cryptographic validity and
 service availability are distinct claims.
 
@@ -274,12 +277,61 @@ erase copies already downloaded.
 
 **Quotas are scope-based, not reservations.** Usage of a grant counts
 matching objects, *including objects another grant created*, plus descendant
-metadata/subscriptions. Only the writing grant and its ancestors have their
-limits checked for the particular write. Overlapping grants can therefore
+metadata/subscriptions. Only the acting grant and its ancestors have their
+limits checked for a creation or modification. Overlapping grants can therefore
 observe usage above their own limits. When participants need independent
 capacity accounting, choose disjoint key prefixes, not overlapping ones.
 Grant revocation preserves objects and consequently may preserve their
 measured quota cost.
+
+### Guaranteeing a participant's usable capacity without a reservation API
+
+There is a straightforward *grant-allocation protocol* for quota headroom.
+
+The simplest case is to give Alice a grant directly beneath the **unlimited
+root**, restricted to an exclusive prefix such as `alice.*` and with a
+20 MiB `maxBytes` limit. There is no finite ancestor quota that other users
+can exhaust, and other clients cannot consume Alice's counted space
+provided they have no authority over her prefix. The grant's fixed
+metadata and any subscriptions count against its own 20 MiB limit.
+
+For a **finite parent** with several children, allocate *disjoint* key
+ranges (for example `users.alice.*`, `users.bob.*`) and choose finite
+child limits in advance. For the parent's byte and object limits require:
+
+\[
+egin{aligned}
+C_{bytes}+\sum_i B_i &\leq B_{parent},\
+C_{objects}+\sum_i N_i &\leq N_{parent}.
+\end{aligned}
+\]
+
+Here `B_i` and `N_i` are child `maxBytes` and `maxObjects`, including
+their own descendant usage and metadata. `C` covers *everything charged to
+the parent but not charged within one of those child budgets* (for example,
+the parent's own grant record, its extra user tokens, directly sponsored
+subscriptions, or objects outside child prefixes). Bound `C` as well.
+
+**Why this guarantees headroom:** Other children may consume their
+*entire* budgets, but their combined usage cannot exceed the sum of those
+limits. Therefore Alice may grow to her budget without any other child's
+legitimate operations exhausting the parent's limit first. The same
+inequalities can be maintained recursively at any finite ancestor.
+No new Skrynia reservation counter or administration operation is needed:
+the commitments are expressed using ordinary scoped grants and budget
+arithmetic.
+
+**Required discipline:** Don't issue overlapping mutation grants or
+unbudgeted new siblings, and don't distribute a parent's broader mutation
+credentials to participants who could bypass their child quotas. Include
+already-existing objects and retained values from revoked grants in `C`.
+The issuer must maintain the budget inequalities whenever it changes the
+delegation tree. Such promises are conditional on the allocator's honest
+policy; Skrynia currently checks *actual usage*, not the sum of child maxima.
+
+This gives **quota-level guaranteed headroom**, not guaranteed free disk
+blocks. Actual physical capacity, server-wide resource costs, root-level
+writers and server availability remain separate concerns.
 
 ## 5. Work, liveness and durability
 

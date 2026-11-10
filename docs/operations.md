@@ -37,6 +37,14 @@ The record's plaintext issuer secret is stored only on the host in
 0700. Root revocation removes this file. On the next startup, Skrynia
 creates a new root over all surviving object data.
 
+The grant operation schema is strict. An existing installation using an
+obsolete grant operation set cannot start with incompatible grant records.
+For a clean authority reset while retaining object values, back up the data
+first, revoke the old root using the old running version, stop that server,
+and then start the new version. Root revocation invalidates subordinate
+tokens and removes their Web Push subscriptions; the next start creates a
+new root. Grant records are not silently converted or migrated.
+
 A single Skrynia server must own the data directory. Do not run multiple
 writer processes against the same directory, including across containers
 sharing the same volume. Persist the directory across container restarts.

@@ -10,7 +10,7 @@ async function run() {
     let started=await open(dir);server=started.server;
     let port=started.port;
     const root=server.skrynia.grants.root();
-    assert.deepEqual(root.operations,['write','list','delegate','subscribe']);
+    assert.deepEqual(root.operations,['create','modify','delete','list','delegate','subscribe']);
     const rootToken=(await expect(port,200,'POST','/grants/'+root.id+'/users',
       null,auth(root.rootIssuerToken))).json.userToken;
     const scoped=(await expect(port,200,'POST','/grants',{
@@ -24,7 +24,7 @@ async function run() {
     const plainToken=(await expect(port,200,'POST','/grants/'+readOnly.id+'/users',
       null,auth(readOnly.issuerToken))).json.userToken;
     const writer=(await expect(port,200,'POST','/grants',{
-      locations:'board.*',operations:['write'],maxBytes:10000,maxObjects:5
+      locations:'board.*',operations:['create','modify','delete'],maxBytes:10000,maxObjects:5
     },auth(rootToken))).json;
     const writerToken=(await expect(port,200,'POST','/grants/'+writer.id+'/users',
       null,auth(writer.issuerToken))).json.userToken;
@@ -74,7 +74,7 @@ async function run() {
       ['board.deep.three']);
     await listing('board.*',childToken,403);
     await expect(port,403,'POST','/grants',{
-      locations:'board.deep.*',operations:['write'],
+      locations:'board.deep.*',operations:['create','modify','delete'],
       maxBytes:4096,maxObjects:1},auth(scopedToken));
     await expect(port,403,'POST','/store/board.four','forbidden',grant(scopedToken));
 

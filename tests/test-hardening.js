@@ -15,7 +15,7 @@ async function run() {
       null,auth(root.rootIssuerToken))).json;
     const child=(await expect(p,200,'POST','/grants',{
       locations:'valid.*',maxBytes:8000,maxObjects:3,
-      operations:['write','delegate']},auth(user.userToken))).json;
+      operations:['create','modify','delete','delegate']},auth(user.userToken))).json;
     const childToken=(await expect(p,200,'POST','/grants/'+child.id+'/users',
       null,auth(child.issuerToken))).json;
     await expect(p,401,'POST','/store/valid.first','no');
