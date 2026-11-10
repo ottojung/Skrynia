@@ -85,6 +85,7 @@ function createPush(opts) {
   opts = opts || {};
   const dataDir = opts.dataDir || process.env.SKRYNIA_DATA_DIR || '/var/lib/skrynia';
   const authorizeNewSubscription = opts.onSubscriptionCreate || (() => { throw new Error('grant accounting required'); });
+  const onSubscriptionMutation = opts.onSubscriptionMutation || (() => {});
   const stateDir = path.join(dataDir, 'state');
   const pushDir = path.join(stateDir, '_push');
   const outboxDir = path.join(pushDir, 'outbox');
@@ -315,6 +316,7 @@ function createPush(opts) {
     };
     ensureDir(subsDir(ns));
     atomicWrite(subPath(ns, id), JSON.stringify(record, null, 2));
+    onSubscriptionMutation(ns);
     return { id, capability, deduped: false };
   }
 
@@ -325,6 +327,7 @@ function createPush(opts) {
 
   function removeSubRecord(ns, id) {
     try { fs.unlinkSync(subPath(ns, id)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+    onSubscriptionMutation(ns);
   }
 
   function removeSubRecordIfUnchanged(ns, snapshot) {
@@ -390,8 +393,18 @@ function createPush(opts) {
     catch (e) { if (e.code === 'ENOENT') return 0; throw e; }
   }
 
-  function enqueue(ns, key, kind) {
+  function preflight(ns, key, kind) {
     const channels = matchChannels(ns, key, kind);
+    if (outboxCount() + channels.length > maxOutboxItems) {
+      const err = new Error('outbox_full');
+      err.code = 'outbox_full';
+      throw err;
+    }
+    return channels;
+  }
+
+  function enqueue(ns, key, kind) {
+    const channels = preflight(ns, key, kind);
     if (!channels.length) return [];
     ensureDir(outboxDir);
     // Backpressure before commit: capacity for ALL matching channels is
@@ -412,6 +425,16 @@ function createPush(opts) {
     }
     schedule();
     return ids;
+  }
+
+  function dropNamespace(ns) {
+    if(!fs.existsSync(outboxDir)) return;
+    for(const name of fs.readdirSync(outboxDir).filter(x=>x.endsWith('.json'))) {
+      const file=path.join(outboxDir,name);
+      const entry=JSON.parse(fs.readFileSync(file,'utf8'));
+      if(entry.ns===ns) fs.unlinkSync(file);
+    }
+    fsyncDir(outboxDir);
   }
 
   function listOutbox() {
@@ -567,8 +590,10 @@ function createPush(opts) {
     findSub,
     findSubAnywhere,
     allSubs,
+    preflight,
     enqueue,
     listOutbox,
+    dropNamespace,
     outboxCount,
     pumpOnce,
     start,

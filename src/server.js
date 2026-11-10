@@ -17,6 +17,7 @@ const { normalizeBasePath } = require('./base-path.js');
 const { createManagement, ManagementError } = require('./management.js');
 const { createPush } = require('./push.js');
 const { createGrants } = require('./grants.js');
+const { createStoreJournal } = require('./store-journal.js');
 const { validNs, ensureDir, createShared } = require('./shared.js');
 
 const DEFAULT_BUILD_INFO = Object.freeze({ version: 'development', commit: 'development' });
@@ -85,9 +86,13 @@ function createServer(opts) {
     pushSendTimeoutMs: opts.pushSendTimeoutMs,
     maxKeyLength: MAX_KEY_LENGTH,
     onSubscriptionCreate: (ns, secret) => grants.accountSubscription(ns, secret),
+    onSubscriptionMutation: ns => grants.subscriptionChanged(ns),
     maxSubsPerNamespace: opts.pushMaxSubsPerNamespace,
     maxOutboxItems: opts.pushMaxOutboxItems,
   });
+
+  const storeJournal = createStoreJournal(shared, push, grants);
+  storeJournal.recover();
 
   const management = createManagement({
     dataDir: shared.dataDir,
@@ -98,6 +103,10 @@ function createServer(opts) {
     gitTimeoutMs: opts.gitTimeoutMs,
     buildTimeoutMs: opts.buildTimeoutMs,
     push,
+    onNamespaceUndeploy: ns => {
+      storeJournal.forgetNamespace(ns);
+      push.dropNamespace(ns);
+    },
   });
 
   function json(res, status, body) {
@@ -148,6 +157,9 @@ function createServer(opts) {
     writeFileSync(tmp, body, { mode: 0o600 });
     setObjectVersion(tmp, versionSeconds);
     chmodSync(tmp, 0o644);
+    const fd = fs.openSync(tmp, 'r');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    storeJournal.syncDir(shared.STORE_TMP_DIR);
     return tmp;
   }
 
@@ -169,73 +181,64 @@ function createServer(opts) {
 
   function handleCreate(ns, key, body, req, res) {
     if (!requireNs(ns, res)) return;
-    grants.sweep();
+    grants.maybeSweep();
     if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
-    const op = shared.nsObjPath(ns, key);
+    const op=shared.nsObjPath(ns,key);
     if (existsSync(op)) return json(res, 409, {error:'already_exists'});
-    grants.authorizeWrite(ns, req.headers['x-skrynia-grant'], key, body.length);
+    grants.authorizeWrite(ns,req.headers['x-skrynia-grant'],key,body.length);
     shared.ensureStoreNamespace(ns);
-    const tmp = prepareObjectTemp(ns, body, shared.nextVersion(ns));
+    const version=shared.nextVersion(ns);
+    const tmp=prepareObjectTemp(ns,body,version);
     try {
-      try { push.enqueue(ns, key, 'create'); }
-      catch (e) {
-        if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full'});
-        throw e;
-      }
-      try { linkSync(tmp, op); }
-      catch (e) {
-        if (e.code === 'EEXIST') return json(res, 409, {error:'already_exists'});
-        throw e;
-      }
-    } finally {
-      discardTemp(tmp);
-    }
-    json(res, 201, {ok:true});
+      const outcome=storeJournal.commit(ns,key,'create',version,()=>{
+        linkSync(tmp,op);
+        grants.recordObject(ns,key,body.length);
+      });
+      return json(res,201,{ok:true,...outcome});
+    } catch(e) {
+      if (e.code==='EEXIST') return json(res,409,{error:'already_exists'});
+      throw e;
+    } finally { discardTemp(tmp); }
   }
 
   function handlePut(ns, key, body, req, res) {
     if (!requireNs(ns, res)) return;
-    grants.sweep();
-    const op = shared.nsObjPath(ns, key);
-    if (!existsSync(op)) return json(res, 404, {error:'not_found'});
-    const ifMatch = req.headers['if-match'];
-    if (ifMatch !== undefined && ifMatch !== staticFileEtag(op)) {
-      return json(res, 412, {error:'etag_mismatch'});
+    grants.maybeSweep();
+    const op=shared.nsObjPath(ns,key);
+    if (!existsSync(op)) return json(res,404,{error:'not_found'});
+    const ifMatch=req.headers['if-match'];
+    if(ifMatch!==undefined && ifMatch!==staticFileEtag(op)) {
+      return json(res,412,{error:'etag_mismatch'});
     }
-    if (body.length > MAX_OBJECT_SIZE) return json(res, 413, {error:'object_too_large'});
-    // Semantics: logical delete, then full-cost create in one transaction.
-    grants.authorizeWrite(ns, req.headers['x-skrynia-grant'], key, body.length);
-    const tmp = prepareObjectTemp(ns, body, shared.nextVersion(ns));
+    if(body.length>MAX_OBJECT_SIZE) return json(res,413,{error:'object_too_large'});
+    grants.authorizeWrite(ns,req.headers['x-skrynia-grant'],key,body.length);
+    const version=shared.nextVersion(ns);
+    const tmp=prepareObjectTemp(ns,body,version);
     try {
-      try { push.enqueue(ns, key, 'replace'); }
-      catch (e) {
-        if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full'});
-        throw e;
-      }
-      renameSync(tmp, op);
-    } finally {
-      discardTemp(tmp);
-    }
-    json(res, 200, {ok:true});
+      const outcome=storeJournal.commit(ns,key,'replace',version,()=>{
+        renameSync(tmp,op);
+        grants.recordObject(ns,key,body.length);
+      });
+      return json(res,200,{ok:true,...outcome});
+    } finally { discardTemp(tmp); }
   }
 
   function handleDelete(ns, key, req, res) {
     if (!requireNs(ns, res)) return;
-    grants.sweep();
-    const op = shared.nsObjPath(ns, key);
-    if (!existsSync(op)) return json(res, 404, {error:'not_found'});
-    grants.authorizeWrite(ns, req.headers['x-skrynia-grant'], key, null);
-    const ifMatch = req.headers['if-match'];
-    if (ifMatch !== undefined && ifMatch !== staticFileEtag(op)) {
-      return json(res, 412, {error:'etag_mismatch'});
+    grants.maybeSweep();
+    const op=shared.nsObjPath(ns,key);
+    if(!existsSync(op)) return json(res,404,{error:'not_found'});
+    grants.authorizeWrite(ns,req.headers['x-skrynia-grant'],key,null);
+    const ifMatch=req.headers['if-match'];
+    if(ifMatch!==undefined && ifMatch!==staticFileEtag(op)) {
+      return json(res,412,{error:'etag_mismatch'});
     }
-    try { push.enqueue(ns, key, 'delete'); }
-    catch (e) {
-      if (e.code === 'outbox_full') return json(res, 507, {error:'push_outbox_full'});
-      throw e;
-    }
-    unlinkSync(op);
-    json(res, 200, {ok:true});
+    const version=shared.nextVersion(ns);
+    const outcome=storeJournal.commit(ns,key,'delete',version,()=>{
+      unlinkSync(op);
+      grants.recordObject(ns,key,null);
+    });
+    return json(res,200,{ok:true,...outcome});
   }
 
   function activeLink(ns) { return APP_DIR ? path.join(APP_DIR, ns) : shared.nsCurrentLink(ns); }
@@ -303,31 +306,38 @@ function createServer(opts) {
     req.on('end', () => { if (!oversized) cb(Buffer.concat(chunks)); });
   }
 
-  function requireManagementToken(url, res) {
+  function requireManagementToken(req, res) {
     if (!TOKEN) {
-      json(res, 503, {error:'management_api_disabled', detail:'SKRYNIA_TOKEN is not configured'});
+      json(res, 503, {error:'management_api_disabled'});
       return false;
     }
-    const supplied = url.searchParams.get('token');
-    if (!supplied || !timingSafeEqualString(supplied, TOKEN)) {
-      json(res, 401, {error:'invalid_token'});
+    const supplied = req.headers.authorization;
+    const m = typeof supplied === 'string' && /^Bearer (.+)$/.exec(supplied);
+    if (!m || !timingSafeEqualString(m[1], TOKEN)) {
+      json(res, 401, {error:'invalid_management_token'});
       return false;
     }
     return true;
   }
 
+  // Management mutations use JSON bodies; never secrets in URL parameters.
   const managementRoutes = {
-    '/deploy': params => management.deploy(params),
-    '/undeploy': params => management.undeploy(params),
-    '/rollback': params => management.rollback(params),
-    '/releases': params => management.releases(params),
-    '/inspect': params => management.inspect(params),
-    '/ns/inspect': params => management.namespaceInspect(params),
-    '/ns/list': () => management.namespaceList(),
-    '/push/rules/set': params => management.pushRuleSet(params),
-    '/push/rules/get': params => management.pushRuleGet(params),
-    '/push/rules/list': params => management.pushRuleList(params),
-    '/push/rules/remove': params => management.pushRuleRemove(params),
+    '/deploy': {method:'POST', run:params => management.deploy(params)},
+    '/undeploy': {method:'DELETE', run:params => management.undeploy(params)},
+    '/rollback': {method:'POST', run:params => management.rollback(params)},
+    '/releases': {method:'GET', run:params => management.releases(params)},
+    '/inspect': {method:'GET', run:params => management.inspect(params)},
+    '/ns/inspect': {method:'GET', run:params => management.namespaceInspect(params)},
+    '/ns/list': {method:'GET', run:() => management.namespaceList()},
+    '/ns/issuer/rotate': {method:'POST', run:params =>
+      grants.rotateRootIssuer(params.namespace)},
+    '/ns/grants': {method:'GET', run:params => grants.listGrants(params.namespace)},
+    '/ns/keys': {method:'GET', run:params =>
+      grants.listKeys(params.namespace, params.prefix, params.after, params.limit)},
+    '/push/rules/set': {method:'POST', run:params => management.pushRuleSet(params)},
+    '/push/rules/get': {method:'GET', run:params => management.pushRuleGet(params)},
+    '/push/rules/list': {method:'GET', run:params => management.pushRuleList(params)},
+    '/push/rules/remove': {method:'DELETE', run:params => management.pushRuleRemove(params)},
   };
 
   // --- Web Push public API ---
@@ -381,8 +391,8 @@ function createServer(opts) {
   }
 
   function pushCapability(req) {
-    // Like store object capabilities: bearer secret in a header, never in
-    // the URL, so it does not leak into proxy logs or history.
+    // Subscription-specific credential, kept out of URLs and proxy logs.
+    // Stored objects use grant user tokens rather than per-object secrets.
     const cap = req.headers['x-skrynia-capability'];
     return typeof cap === 'string' && cap ? cap : null;
   }
@@ -502,7 +512,16 @@ function createServer(opts) {
         return grantResult(res, () => grants.inspect(ns, id, bearer(req)));
       }
       if (req.method === 'POST' && action === 'users') {
-        return grantResult(res, () => grants.createUser(ns, id, bearer(req)));
+        if (Number(req.headers['content-length'] || 0) === 0 &&
+            !req.headers['transfer-encoding']) {
+          return grantResult(res, () => grants.createUser(ns, id, bearer(req)));
+        }
+        return readPushJson(req, res, body =>
+          grantResult(res, () => grants.createUser(ns, id, bearer(req),
+            body && body.label)));
+      }
+      if (req.method === 'GET' && action === 'users') {
+        return grantResult(res, () => grants.listUsers(ns, id, bearer(req)));
       }
       if (req.method === 'POST' && action === 'confirmation') {
         return readPushJson(req, res, body =>
@@ -515,21 +534,39 @@ function createServer(opts) {
       return json(res, 405, {error: 'method_not_allowed'});
     }
 
+    const grantUserMatch = p === null ? null :
+      p.match(/^\/grants\/([a-f0-9]{32})\/users\/([a-f0-9]{32})$/);
+    if (grantUserMatch) {
+      if (req.method !== 'DELETE') return json(res, 405, {error:'method_not_allowed'});
+      return grantResult(res, () => grants.revokeUser(
+        url.searchParams.get('namespace'), grantUserMatch[1], bearer(req), grantUserMatch[2]));
+    }
+
     const managementHandler = p === null ? undefined : managementRoutes[p];
     if (managementHandler) {
-      if (req.method !== 'GET') { res.writeHead(405); res.end('Method not allowed'); return; }
-      if (!requireManagementToken(url, res)) return;
-      const params = Object.fromEntries(url.searchParams.entries());
-      delete params.token;
-      Promise.resolve()
-        .then(() => managementHandler(params))
+      if (req.method !== managementHandler.method) {
+        return json(res, 405, {error:'method_not_allowed'});
+      }
+      if (!requireManagementToken(req, res)) return;
+      const respond = params => Promise.resolve()
+        .then(() => managementHandler.run(params))
         .then(result => json(res, 200, result))
         .catch(e => {
-          if (e instanceof ManagementError) return json(res, e.status, {error:e.code, detail:e.detail});
+          if (e.status || e instanceof ManagementError) {
+            return json(res, e.status, {error:e.code, detail:e.detail});
+          }
           console.error('skrynia management error:', e && e.stack ? e.stack : e);
           return json(res, 500, {error:'internal_error'});
         });
-      return;
+      if (req.method === 'GET') {
+        return respond(Object.fromEntries(url.searchParams.entries()));
+      }
+      return readPushJson(req, res, body => {
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+          return json(res, 400, {error:'invalid_management_body'});
+        }
+        return respond(body);
+      });
     }
 
     const storeMatch = p === null ? null : p.match(/^\/store\/([^/]+)\/(.+)$/);
@@ -552,6 +589,7 @@ function createServer(opts) {
         if (req.headers['x-skrynia-mode'] || req.headers['x-skrynia-capability']) return json(res, 400, {error:'invalid_storage_header'});
         try { return handleDelete(ns, key, req, res); }
         catch (e) { if (e.status) return json(res, e.status, {error:e.code});
+          if(e.code==='outbox_full') return json(res,507,{error:e.code});
           console.error('skrynia store error:', e); return json(res, 500, {error:'internal_error'}); }
       }
       if (req.method === 'PUT' || req.method === 'POST') {
@@ -562,6 +600,7 @@ function createServer(opts) {
             else handlePut(ns, key, body, req, res);
           } catch (e) {
             if (e.status) return json(res, e.status, {error:e.code});
+            if (e.code==='outbox_full') return json(res,507,{error:e.code});
             console.error('skrynia store error:', e && e.stack ? e.stack : e);
             json(res, 500, {error:'internal_error'});
           }
@@ -591,12 +630,15 @@ function createServer(opts) {
   ensureDir(STATE_DIR);
   push.start();
   const grantsTimer = setInterval(() => {
-    try { grants.sweep(); } catch (e) { console.error('grant cleanup error:', e); }
+    try { grants.recoverPending(); grants.sweep(); }
+    catch (e) { console.error('grant cleanup error:', e); }
+    try { storeJournal.recover(); }
+    catch(e) { console.error('store journal recovery pending:',e); }
   }, 60000);
   grantsTimer.unref();
 
   const server = http.createServer(route);
-  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), buildInfo, push, grants };
+  server.skrynia = { HTTP_BASE_PATH, SKRYNIA_URL, APP_BASE_PATH, APP_DIR, DATA_DIR: shared.dataDir, managementEnabled: Boolean(TOKEN), buildInfo, push, grants, storeJournal };
   server.on('close', () => { clearInterval(grantsTimer); push.close(); });
   return server;
 }

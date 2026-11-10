@@ -422,6 +422,8 @@ function createManagement(opts) {
     rmrfDir(path.join(RELEASES_DIR, ns));
     rmrfDir(shared.nsStoreDir(ns));
     rmrfDir(path.join(STATE_DIR, ns));
+    grants.dropNamespace(ns);
+    if (opts.onNamespaceUndeploy) opts.onNamespaceUndeploy(ns);
     return { ok: true, namespace: ns };
   }
 

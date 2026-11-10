@@ -43,7 +43,7 @@ function parseTimeoutSeconds() {
   return value;
 }
 
-function requestText(url, timeoutSeconds) {
+function requestText(url, timeoutSeconds, token, params) {
   return new Promise(function (resolve, reject) {
     const transport = url.protocol === 'https:' ? https : url.protocol === 'http:' ? http : null;
     if (!transport) {
@@ -53,7 +53,16 @@ function requestText(url, timeoutSeconds) {
 
     let settled = false;
     let timer;
-    const req = transport.get(url, { headers: { Accept: 'application/json' } }, function (res) {
+    const payload = JSON.stringify(params);
+    const req = transport.request(url, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, function (res) {
       const chunks = [];
       res.setEncoding('utf8');
       res.on('data', function (chunk) { chunks.push(chunk); });
@@ -75,6 +84,7 @@ function requestText(url, timeoutSeconds) {
       clearTimeout(timer);
       reject(err);
     });
+    req.end(payload);
   });
 }
 
@@ -100,15 +110,12 @@ function deriveCommit() {
   return sha;
 }
 
-function buildUrl(baseUrl, params) {
+function buildUrl(baseUrl) {
   const url = new URL(baseUrl);
   const basePath = url.pathname.replace(/\/+$/, '');
   url.pathname = basePath + '/deploy';
   url.search = '';
   url.hash = '';
-  for (const [key, value] of Object.entries(params)) {
-    if (value) url.searchParams.set(key, value);
-  }
   return url;
 }
 
@@ -127,7 +134,7 @@ async function deploy() {
   const builder = input('builder');
   const timeoutSeconds = parseTimeoutSeconds();
 
-  const params = { repo, commit, subdir, namespace, token };
+  const params = { repo, commit, subdir, namespace };
   if (builder) params.builder = builder;
   for (const [key, option] of [
     ['quota', 'quota'], ['maxObjects', 'max-objects'],
@@ -137,13 +144,13 @@ async function deploy() {
     if (value) params[key] = value;
   }
 
-  const url = buildUrl(skryniaUrl, params);
+  const url = buildUrl(skryniaUrl);
 
   console.log('Deploying ' + repo + '@' + commit.substring(0, 8) + ' (subdir: ' + subdir + ') to ' + skryniaUrl + ' namespace ' + namespace);
 
   let response;
   try {
-    response = await requestText(url, timeoutSeconds);
+    response = await requestText(url, timeoutSeconds, token, params);
   } catch (err) {
     fail('Network error connecting to Skrynia: ' + redact(err.message, token));
   }

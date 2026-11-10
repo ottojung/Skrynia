@@ -135,6 +135,27 @@ protect keys during cleanup. Consequently, cleaning a child can reclaim its
 exclusive keys while preserving shared ones; cleaning the root removes
 everything under its scope. Ordinary authorized object deletion is unchanged.
 
+### Recovering credentials and inspecting state
+
+Management requests use `Authorization: Bearer $SKRYNIA_TOKEN`.
+Their mutations use POST/DELETE with JSON bodies, so management secrets
+never need to appear in URLs. Use the CLI to inspect live objects and
+grant budgets:
+
+~~~sh
+python3 scripts/cli.py ns grants --namespace hello
+python3 scripts/cli.py ns keys --namespace hello --prefix notes
+~~~
+
+If the root issuer token is lost, `ns rotate-issuer` creates a new
+one without changing existing users or objects. An issuer can also list,
+label, issue, and **individually revoke** user tokens; revoking a user
+token does not delete its data.
+
+Grants with only `delegate` cannot indirectly delete objects by
+revoking children. Object cleanup through a non-root grant requires
+`write` or `release`; the root issuer is administrative.
+
 ## Integration and operations
 
 The browser helper is served at `/client/skrynia.js`. For example, after loading it:

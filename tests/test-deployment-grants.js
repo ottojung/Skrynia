@@ -62,12 +62,19 @@ async function verify() {
   try {
     const opened=await start(path.join(dir,'data'));
     server=opened.server;const port=opened.port;
-    const route='/deploy?'+new URLSearchParams({
+    const route='/deploy';
+    const payload=JSON.stringify({
       repo:'git@github.com:example/deploy-grants.git',
-      commit:sha,subdir:'.',namespace:'demo',token:'management-secret',
-      quota:'16000',maxObjects:'5',locations:'demo*',operations:'write,delegate',
-    }).toString();
+      commit:sha,subdir:'.',namespace:'demo',
+      quota:16000,maxObjects:5,locations:'demo*',operations:'write,delegate',
+    });
+    const admin={'Authorization':'Bearer management-secret',
+      'Content-Type':'application/json'};
     let r=await get(port,route);
+    assert.equal(r.status,405,'deployment must not mutate via GET');
+    r=await get(port,route,'POST',payload);
+    assert.equal(r.status,401,'deployment requires management bearer header');
+    r=await get(port,route,'POST',payload,admin);
     assert.equal(r.status,200,'deploy: '+r.raw);
     const initial=r.json.rootGrant;
     assert(initial && initial.created);
@@ -90,14 +97,14 @@ async function verify() {
     r=await get(port,'/store/demo/demo1');
     assert.equal(r.status,200);
     assert.equal(r.raw,'first');
-    r=await get(port,route);
+    r=await get(port,route,'POST',payload,admin);
     assert.equal(r.status,200,'repeat deployment: '+r.raw);
     assert.equal(r.json.rootGrant.created,false);
     assert.equal(r.json.rootGrant.id,initial.id);
     assert.equal(r.json.rootGrant.userToken,undefined);
     assert.equal(r.json.rootGrant.issuerToken,undefined);
     assert.equal((await get(port,'/store/demo/demo1')).raw,'first');
-    r=await get(port,'/ns/inspect?namespace=demo&token=management-secret');
+    r=await get(port,'/ns/inspect?namespace=demo', 'GET', null, admin);
     assert.equal(r.status,200);
     assert.equal(r.json.rootGrant.id,initial.id);
     assert.equal(r.json.rootGrant.usage.objects,1);

@@ -5,6 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { ensureDir, validNs } = require('./shared.js');
+const { createResourceIndex } = require('./resource-index.js');
+const { syncDir } = require('./store-journal.js');
 
 const DAY = 24 * 60 * 60 * 1000;
 const GRANT_COST = 2048;
@@ -58,6 +60,8 @@ function subsetOperations(child, parent) {
 
 function createGrants(shared) {
   const { dataDir } = shared;
+  const objectsIndex = createResourceIndex(shared, validKey, matches);
+  const grantsCache=new Map(), subscriptionsCache=new Map();
   const stateDir = path.join(dataDir, 'state');
   const pendingDir = path.join(stateDir, '_grant-deletions');
   function dir(ns) { return path.join(stateDir, ns, 'grants'); }
@@ -67,19 +71,42 @@ function createGrants(shared) {
     ensureDir(path.dirname(p), 0o700);
     const tmp = p + '.' + crypto.randomBytes(12).toString('hex') + '.tmp';
     try {
-      fs.writeFileSync(tmp, JSON.stringify(obj), {mode: 0o600});
-      fs.renameSync(tmp, p);
+      const fd=fs.openSync(tmp,'wx',0o600);
+      try {
+        fs.writeSync(fd,JSON.stringify(obj));
+        fs.fsyncSync(fd);
+      } finally { fs.closeSync(fd); }
+      fs.renameSync(tmp,p);
+      syncDir(path.dirname(p));
     } finally {
       try { fs.unlinkSync(tmp); } catch (e) { if (e.code !== 'ENOENT') throw e; }
     }
   }
 
-  function all(ns) {
+  function grantMap(ns) {
     if (!validNs(ns)) throw fault(400, 'invalid_namespace');
-    if (!fs.existsSync(dir(ns))) return [];
-    return fs.readdirSync(dir(ns)).filter(x => ID_RE.test(x.slice(0, -5)) && x.endsWith('.json'))
-      .map(x => JSON.parse(fs.readFileSync(path.join(dir(ns), x), 'utf8')));
+    if(grantsCache.has(ns)) return grantsCache.get(ns);
+    const result=new Map();
+    if(fs.existsSync(dir(ns))) {
+      for(const filename of fs.readdirSync(dir(ns))) {
+        if (!filename.endsWith('.json') || !ID_RE.test(filename.slice(0,-5))) continue;
+        const g=JSON.parse(fs.readFileSync(path.join(dir(ns),filename),'utf8'));
+        result.set(g.id,g);
+      }
+    }
+    grantsCache.set(ns,result);
+    return result;
   }
+  function cloneGrant(g) {
+    return {...g, operations:[...g.operations],
+      users:g.users.map(u=>({...u}))};
+  }
+  function all(ns) { return [...grantMap(ns).values()].map(cloneGrant); }
+  function writeGrant(ns,g) {
+    atomicJson(recordPath(ns,g.id),g);
+    grantMap(ns).set(g.id,cloneGrant(g));
+  }
+  function reloadGrants(ns) { grantsCache.delete(ns); }
   function find(ns, id) {
     if (!ID_RE.test(id || '')) throw fault(400, 'invalid_grant');
     const g = all(ns).find(x => x.id === id);
@@ -98,7 +125,8 @@ function createGrants(shared) {
           !Array.isArray(g.operations) ||
           g.operations.some(op => !OPERATIONS.includes(op)) ||
           !boundedInteger(g.maxBytes) || !boundedInteger(g.maxObjects) ||
-          !Array.isArray(g.userHashes)) {
+          !Array.isArray(g.users) ||
+          g.users.some(u => !ID_RE.test(u.id) || !/^[a-f0-9]{64}$/.test(u.hash))) {
         throw new Error('invalid grant record');
       }
       if (g.parent === null) roots.push(g);
@@ -139,7 +167,7 @@ function createGrants(shared) {
     if (typeof secret !== 'string') throw fault(401, 'grant_user_token_required');
     const hash = digest(secret);
     const g = all(ns).find(x =>
-      x.userHashes.some(u => same(u, hash)) && (!id || x.id === id));
+      x.users.some(u => same(u.hash, hash)) && (!id || x.id === id));
     if (!g) throw fault(403, 'invalid_grant_user_token');
     return g;
   }
@@ -161,31 +189,35 @@ function createGrants(shared) {
   }
 
   function objectEntries(ns) {
-    const d = shared.nsStoreDir(ns);
-    if (!fs.existsSync(d)) return [];
-    return fs.readdirSync(d, {withFileTypes:true}).map(e => {
-      if (!e.isFile() || !validKey(e.name)) throw new Error('invalid stored object key: ' + ns);
-      return {key:e.name, bytes:fs.statSync(path.join(d, e.name)).size};
-    });
+    return objectsIndex.entries(ns);
+  }
+  function recordObject(ns, key, bytes) {
+    objectsIndex.replace(ns,key,bytes);
+  }
+  function dropNamespace(ns) {
+    objectsIndex.forget(ns);
+    grantsCache.delete(ns);
+    subscriptionsCache.delete(ns);
   }
   function subscriptionEntries(ns) {
+    if(subscriptionsCache.has(ns)) return subscriptionsCache.get(ns);
     const p = path.join(stateDir, ns, 'push-subs');
-    if (!fs.existsSync(p)) return [];
-    return fs.readdirSync(p).filter(x => x.endsWith('.json')).map(x => ({
-      file:path.join(p, x),
-      data:JSON.parse(fs.readFileSync(path.join(p, x), 'utf8')),
-    }));
+    const result = fs.existsSync(p) ? fs.readdirSync(p)
+      .filter(x=>x.endsWith('.json')).map(x=>({
+        file:path.join(p,x),
+        data:JSON.parse(fs.readFileSync(path.join(p,x),'utf8')),
+      })) : [];
+    subscriptionsCache.set(ns,result);
+    return result;
   }
+  function subscriptionChanged(ns) { subscriptionsCache.delete(ns); }
   function usageWith(ns, g, map, objects, subscriptions) {
-    let bytes = 0, objectCount = 0;
-    for (const o of objects) {
-      if (!matches(g.locations, o.key)) continue;
-      bytes += o.bytes + OBJECT_COST;
-      objectCount++;
-    }
+    const objectStats = objectsIndex.stats(ns, g.locations);
+    let bytes = objectStats.bytes + objectStats.objects * OBJECT_COST;
+    let objectCount = objectStats.objects;
     for (const h of map.values()) {
       if (!isDescendant(map, h.id, g.id)) continue;
-      bytes += GRANT_COST + Math.max(0, h.userHashes.length - 1) * EXTRA_USER_COST;
+      bytes += GRANT_COST + Math.max(0, h.users.length - 1) * EXTRA_USER_COST;
     }
     for (const sub of subscriptions) {
       if (!sub.data.grantId || !map.has(sub.data.grantId)) {
@@ -225,18 +257,22 @@ function createGrants(shared) {
     }
   }
   function authorizeWrite(ns, secret, key, newBytes, oldBytes) {
-    sweep();
+    maybeSweep();
     const g = requireWrite(ns, secret, key);
     if (newBytes !== null) {
       if (!Number.isSafeInteger(newBytes) || newBytes < 0) throw fault(400, 'invalid_object_size');
       const map = validateTree(all(ns));
-      const objects = objectEntries(ns), subs = subscriptionEntries(ns);
-      // The current object is logically deleted before creation is tested.
-      const post = objects.filter(o => o.key !== key);
-      post.push({key,bytes:newBytes});
+      const subs = subscriptionEntries(ns);
+      const old = objectsIndex.value(ns, key);
+      const changedBytes = newBytes - (old===null ? 0 : old) +
+        (old===null ? OBJECT_COST : 0);
+      const changedObjects = old===null ? 1 : 0;
+      // The old object is logically removed before creation is checked.
+      // Equivalent to evaluating the full post-edit state, but O(ancestors).
       for (const a of ancestors(map, g.id)) {
-        const result = usageWith(ns, a, map, post, subs);
-        if (result.bytes > a.maxBytes || result.objects > a.maxObjects) {
+        const current = usageWith(ns, a, map, null, subs);
+        if (current.bytes + changedBytes > a.maxBytes ||
+            current.objects + changedObjects > a.maxObjects) {
           throw fault(507, 'grant_quota_exceeded');
         }
       }
@@ -248,12 +284,12 @@ function createGrants(shared) {
     const issuerToken = token(), now = Date.now();
     const id = crypto.randomBytes(16).toString('hex');
     const record = {id, namespace:ns, parent, maxBytes, maxObjects, locations,
-      operations, issuerHash:digest(issuerToken), userHashes:[],
+      operations, issuerHash:digest(issuerToken), users:[],
       windowStart:now, nextCheckAt:now + DAY, keepAt:null, releaseAt:null};
     if (Buffer.byteLength(JSON.stringify(record)) > GRANT_COST) {
       throw new Error('grant record exceeds charged bytes');
     }
-    atomicJson(recordPath(ns, id), record);
+    writeGrant(ns,record);
     return {id, issuerToken, maxBytes, maxObjects, locations,
       operations, nextCheckAt:record.nextCheckAt};
   }
@@ -273,7 +309,7 @@ function createGrants(shared) {
     return {...makeRecord(ns, null, maxBytes, maxObjects, locations, ops), created:true};
   }
   function createChild(ns, secret, maxBytes, maxObjects, locations, operations) {
-    sweep();
+    maybeSweep();
     const parent = requireUser(ns, secret);
     requireOperation(parent, 'delegate');
     limits(maxBytes, maxObjects);
@@ -285,35 +321,66 @@ function createGrants(shared) {
     assertCapacity(ns, parent.id, GRANT_COST, 0);
     return makeRecord(ns, parent.id, maxBytes, maxObjects, loc, ops);
   }
-  function createUser(ns, id, secret) {
-    sweep();
+  function userLabel(label) {
+    if (label === undefined) return '';
+    if (typeof label !== 'string' || label.length > 80 ||
+        /[\x00-\x1f\x7f]/.test(label)) throw fault(400, 'invalid_user_label');
+    return label;
+  }
+  function createUser(ns, id, secret, label) {
+    maybeSweep();
     const g = requireIssuer(ns, id, secret);
-    // A grant is issued with no users. The base grant cost reserves room for
-    // its first user token; subsequent users consume additional allowance.
-    if (g.userHashes.length !== 0) assertCapacity(ns, g.id, EXTRA_USER_COST, 0);
+    const title = userLabel(label);
+    if (g.users.length !== 0) assertCapacity(ns, g.id, EXTRA_USER_COST, 0);
     const userToken = token();
-    g.userHashes.push(digest(userToken));
-    const cost = GRANT_COST + Math.max(0, g.userHashes.length - 1) * EXTRA_USER_COST;
-    if (Buffer.byteLength(JSON.stringify(g)) > cost) throw new Error('grant metadata exceeds charged bytes');
-    atomicJson(recordPath(ns, id), g);
-    return {grantId:id, userToken};
+    const userId = crypto.randomBytes(16).toString('hex');
+    g.users.push({id:userId, hash:digest(userToken), label:title, createdAt:Date.now()});
+    const cost = GRANT_COST + Math.max(0, g.users.length - 1) * EXTRA_USER_COST;
+    if (Buffer.byteLength(JSON.stringify(g)) > cost) throw fault(507, 'grant_quota_exceeded');
+    writeGrant(ns,g);
+    return {grantId:id, userId, userToken};
+  }
+  function listUsers(ns, id, issuerSecret) {
+    maybeSweep();
+    const g = requireIssuer(ns, id, issuerSecret);
+    return {grantId:id, users:g.users.map(({id, label, createdAt}) =>
+      ({id, label, createdAt}))};
+  }
+  function revokeUser(ns, id, issuerSecret, userId) {
+    maybeSweep();
+    const g = requireIssuer(ns, id, issuerSecret);
+    if (!ID_RE.test(userId || '')) throw fault(400, 'invalid_user_id');
+    const next = g.users.filter(u => u.id !== userId);
+    if (next.length === g.users.length) throw fault(404, 'user_not_found');
+    g.users = next;
+    writeGrant(ns,g);
+    return {ok:true, grantId:id, userId};
+  }
+  function rotateRootIssuer(ns) {
+    maybeSweep();
+    const g = root(ns);
+    if (!g) throw fault(404, 'namespace_not_found');
+    const issuerToken = token();
+    g.issuerHash = digest(issuerToken);
+    writeGrant(ns,g);
+    return {grantId:g.id, issuerToken};
   }
   function accountSubscription(ns, secret) {
-    sweep();
+    maybeSweep();
     const g = requireUser(ns, secret);
     requireOperation(g, 'subscribe');
     assertCapacity(ns, g.id, PUSH_SUB_COST, 1);
     return g.id;
   }
   function confirmation(ns, id, secret, need) {
-    sweep();
+    maybeSweep();
     const g = requireUser(ns, secret, id);
     if (typeof need !== 'boolean') throw fault(400, 'invalid_confirmation');
     requireOperation(g, need ? 'keep' : 'release');
     const now = Date.now();
     if (need) g.keepAt = now;
     else g.releaseAt = now;
-    atomicJson(recordPath(ns, id), g);
+    writeGrant(ns,g);
     return {ok:true, grantId:id, need, nextCheckAt:g.nextCheckAt};
   }
 
@@ -326,12 +393,17 @@ function createGrants(shared) {
       if (matches(locations, o.key) &&
           !protectedLocations.some(loc => matches(loc, o.key))) {
         fs.unlinkSync(path.join(d, o.key));
+        recordObject(ns, o.key, null);
       }
     }
     const owned = new Set(ids);
     for (const sub of subscriptionEntries(ns)) {
       if (owned.has(sub.data.grantId)) fs.unlinkSync(sub.file);
     }
+    if (fs.existsSync(d)) syncDir(d);
+    const subdir=path.join(stateDir,ns,'push-subs');
+    if (fs.existsSync(subdir)) syncDir(subdir);
+    subscriptionChanged(ns);
   }
   function runDeletion(ns, id, action, ids, locations, protectedLocations) {
     const marker = path.join(pendingDir, ns + '-' + id + '.json');
@@ -344,16 +416,19 @@ function createGrants(shared) {
       if (descendantId === work.id && work.action === 'clean') continue;
       try { fs.unlinkSync(recordPath(work.ns, descendantId)); }
       catch (e) { if (e.code !== 'ENOENT') throw e; }
+      grantMap(work.ns).delete(descendantId);
     }
+    if (fs.existsSync(dir(ns))) syncDir(dir(ns));
     if (work.action === 'clean' && fs.existsSync(recordPath(work.ns, work.id))) {
       const g = find(work.ns, work.id), now = Date.now();
       g.windowStart = now;
       g.nextCheckAt = now + DAY;
       g.keepAt = null;
       g.releaseAt = null;
-      atomicJson(recordPath(work.ns, work.id), g);
+      writeGrant(work.ns,g);
     }
     fs.unlinkSync(marker);
+    syncDir(pendingDir);
   }
   function removeSubtree(ns, id, action) {
     const map = validateTree(all(ns)), g = map.get(id);
@@ -364,14 +439,27 @@ function createGrants(shared) {
     const protectedLocations = [...new Set([...map.values()]
       .filter(h => !isDescendant(map, h.id, id) && !isDescendant(map, id, h.id))
       .map(h => h.locations))];
-    runDeletion(ns, id, action, ids, g.locations, protectedLocations);
+    // A delegate-only user may create grants, but cannot obtain destructive
+    // object authority by revoking their children. Release and write are
+    // explicitly destructive operations; the root issuer remains administrative.
+    const canDeleteObjects = g.parent === null ||
+      g.operations.includes('write') || g.operations.includes('release');
+    runDeletion(ns, id, action, ids, canDeleteObjects ? g.locations : '',
+      protectedLocations);
   }
   function issuerAction(ns, id, secret, action) {
-    sweep();
+    maybeSweep();
     requireIssuer(ns, id, secret);
     if (!['clean', 'revoke'].includes(action)) throw fault(400, 'invalid_action');
     removeSubtree(ns, id, action);
     return {ok:true, grantId:id, action};
+  }
+  let nextAutoSweepAt=0;
+  function maybeSweep() {
+    const now=Date.now();
+    if(now<nextAutoSweepAt) return;
+    nextAutoSweepAt=now+60000;
+    sweep(now);
   }
   function sweep(now = Date.now()) {
     if (!fs.existsSync(stateDir)) return;
@@ -400,11 +488,11 @@ function createGrants(shared) {
         fresh.windowStart = now;
         fresh.nextCheckAt = now + DAY;
         fresh.releaseAt = null;
-        atomicJson(recordPath(ns, g.id), fresh);
+        writeGrant(ns,fresh);
       }
     }
   }
-  function recover() {
+  function recoverPending() {
     ensureDir(pendingDir, 0o700);
     for (const name of fs.readdirSync(pendingDir).filter(x => x.endsWith('.json'))) {
       const op = JSON.parse(fs.readFileSync(path.join(pendingDir, name), 'utf8'));
@@ -417,6 +505,9 @@ function createGrants(shared) {
       }
       runDeletion(op.ns, op.id, op.action, op.ids, op.locations, op.protectedLocations);
     }
+  }
+  function recover() {
+    recoverPending();
     if (!fs.existsSync(stateDir)) return;
     const namespaces = new Set();
     for (const rootDir of [stateDir, shared.STORE_DIR]) {
@@ -437,16 +528,51 @@ function createGrants(shared) {
       }
     }
   }
+  // Administrative discovery reveals no credential hashes.
+  function listGrants(ns) {
+    maybeSweep();
+    const records=all(ns), map=validateTree(records);
+    const objects=objectEntries(ns), subs=subscriptionEntries(ns);
+    return {namespace:ns, grants:records.map(g => ({
+      id:g.id, parent:g.parent, locations:g.locations,
+      operations:g.operations, maxBytes:g.maxBytes, maxObjects:g.maxObjects,
+      userCount:g.users.length, nextCheckAt:g.nextCheckAt,
+      usage:usageWith(ns,g,map,objects,subs),
+    }))};
+  }
+  function listKeys(ns, prefix='', after='', limit=100) {
+    maybeSweep();
+    if (!validNs(ns)) throw fault(400, 'invalid_namespace');
+    if (typeof prefix!=='string' || (prefix && !KEY_RE.test(prefix)) ||
+        typeof after!=='string' || (after && !KEY_RE.test(after))) {
+      throw fault(400, 'invalid_key_filter');
+    }
+    const pageSize=Number(limit);
+    if (!Number.isSafeInteger(pageSize) || pageSize<1 || pageSize>200) {
+      throw fault(400, 'invalid_page_limit');
+    }
+    const keys=objectEntries(ns).filter(o =>
+      o.key.startsWith(prefix) && o.key>after)
+      .sort((a,b)=>a.key.localeCompare(b.key,'en'));
+    // Key alphabet is ASCII; use deterministic codepoint comparison for cursors.
+    keys.sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0);
+    const page=keys.slice(0,pageSize);
+    return {namespace:ns, keys:page, nextAfter:keys.length>pageSize?
+      page[page.length-1].key:null};
+  }
   function inspect(ns, id, secret) {
-    sweep();
+    maybeSweep();
     requireUser(ns, secret, id);
-    const g = find(ns, id), {issuerHash, userHashes, ...safe} = g;
-    return {...safe, userCount:userHashes.length, usage:usage(ns, id)};
+    const g = find(ns, id), {issuerHash, users, ...safe} = g;
+    return {...safe, userCount:users.length, usage:usage(ns, id)};
   }
 
   return {DAY, GRANT_COST, OBJECT_COST, PUSH_SUB_COST, OPERATIONS,
-    root, createRoot, createChild, createUser, requireUser, requireWrite,
+    root, createRoot, createChild, createUser, listUsers, revokeUser,
+    rotateRootIssuer, requireUser, requireWrite, recordObject, dropNamespace,
+    subscriptionChanged, reloadGrants,
     accountSubscription, authorizeWrite, confirmation, issuerAction, inspect,
-    usage, recover, sweep, matches, subset, validKey, validLocations};
+    usage, recover, recoverPending, sweep, maybeSweep, listGrants, listKeys,
+    matches, subset, validKey, validLocations};
 }
 module.exports = {createGrants, KEY_RE, LOCATION_RE, OPERATIONS, matches, subset};
