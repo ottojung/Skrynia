@@ -73,7 +73,7 @@ async function run() {
     assert.equal(oldRoot.locations,'*');
     assert.equal(oldRoot.maxBytes,null);
     assert.equal(oldRoot.maxObjects,null);
-    assert.deepEqual(oldRoot.operations,['write','list','delegate','subscribe']);
+    assert.deepEqual(oldRoot.operations,['create','modify','delete','list','delegate','subscribe']);
     assert.match(oldRoot.rootIssuerToken,/^[a-f0-9]{64}$/);
     const recordPath=path.join(dir,'state','grants',oldRoot.id+'.json');
     assert.equal(fs.statSync(recordPath).mode & 0o777,0o600);
@@ -89,20 +89,20 @@ async function run() {
       auth(oldRoot.rootIssuerToken));
     const rootToken=a.json.userToken;
     const alice=await expect(port,200,'POST','/grants',{
-      locations:'alice.*',operations:['write','delegate','subscribe'],
+      locations:'alice.*',operations:['create','modify','delete','delegate','subscribe'],
       maxBytes:20000,maxObjects:5},auth(rootToken));
     const aliceId=alice.json.id;
     const aliceUser=(await expect(port,200,'POST','/grants/'+aliceId+'/users',
       null,auth(alice.json.issuerToken))).json.userToken;
     const bob=await expect(port,200,'POST','/grants',{
-      locations:'bob.*',operations:['write'],maxBytes:6000,maxObjects:2
+      locations:'bob.*',operations:['create','modify','delete'],maxBytes:6000,maxObjects:2
     },auth(rootToken));
     const bobToken=(await expect(port,200,'POST','/grants/'+bob.json.id+'/users',
       null,auth(bob.json.issuerToken))).json.userToken;
     await expect(port,403,'POST','/store/bob.secret','forbidden',grant(aliceUser));
     await expect(port,400,'POST','/store/.hidden','not allowed',grant(rootToken));
     await expect(port,400,'POST','/grants',{
-      locations:'.hidden*',operations:['write'],maxBytes:4096,maxObjects:2
+      locations:'.hidden*',operations:['create','modify','delete'],maxBytes:4096,maxObjects:2
     },auth(rootToken));
     await expect(port,201,'POST','/store/alice.index.html','<h1>Hello</h1>',grant(aliceUser));
     const html=await expect(port,200,'GET','/store/alice.index.html');
@@ -116,13 +116,13 @@ async function run() {
     await expect(port,201,'POST','/store/bob.file.json','{}',grant(bobToken));
     assert.equal((await expect(port,200,'GET','/store/bob.file.json')).type,'application/json');
     await expect(port,403,'POST','/grants',{
-      locations:'bob.*',operations:['write'],maxBytes:4096,maxObjects:2
+      locations:'bob.*',operations:['create','modify','delete'],maxBytes:4096,maxObjects:2
     },auth(aliceUser));
     await expect(port,403,'POST','/grants',{
-      locations:'alice.*',operations:['write'],maxBytes:4096,maxObjects:2
+      locations:'alice.*',operations:['create','modify','delete'],maxBytes:4096,maxObjects:2
     },auth(bobToken));
     const subgrant=await expect(port,200,'POST','/grants',{
-      locations:'alice.child.*',operations:['write'],
+      locations:'alice.child.*',operations:['create','modify','delete'],
       maxBytes:4096,maxObjects:1
     },auth(aliceUser));
     assert.equal(subgrant.json.locations,'alice.child.*');
@@ -136,10 +136,10 @@ async function run() {
     assert.equal(usage.json.maxObjects,1);
     assert.equal(usage.json.rootIssuerToken,undefined);
     const tight=await expect(port,200,'POST','/grants',{
-      locations:'shared.*',operations:['write'],maxBytes:2500,maxObjects:1
+      locations:'shared.*',operations:['create','modify','delete'],maxBytes:2500,maxObjects:1
     },auth(rootToken));
     const wide=await expect(port,200,'POST','/grants',{
-      locations:'shared.*',operations:['write'],maxBytes:10000,maxObjects:3
+      locations:'shared.*',operations:['create','modify','delete'],maxBytes:10000,maxObjects:3
     },auth(rootToken));
     const tightToken=(await expect(port,200,'POST','/grants/'+tight.json.id+
       '/users',null,auth(tight.json.issuerToken))).json.userToken;

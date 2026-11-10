@@ -3,8 +3,8 @@
 **A durable public object store with delegable, resource-bounded authority.**
 
 Skrynia stores opaque bytes at named keys. Every object is publicly readable.
-Bearer-token grants determine where clients may create, replace, and delete
-objects, list keys in authorized ranges, delegate authority, and subscribe to changes. A single global root grant
+Bearer-token grants separately authorize object creation, modification, and
+deletion, as well as key listing, delegation and subscriptions. A single global root grant
 provides all authority. Applications, websites, indexes, logs, and versioned
 releases are **client-side protocols** built on ordinary stored objects.
 
@@ -62,8 +62,12 @@ curl -fsS -X POST "$SKRYNIA_URL/store/alice.index.html" \
 curl -i "$SKRYNIA_URL/store/alice.index.html"
 ```
 
-`POST` creates only if absent; `PUT` replaces an existing object.
+`POST` creates only if absent and requires `create`; `PUT` replaces an
+existing object and requires `modify`; `DELETE` requires `delete`.
 `PUT` and `DELETE` support `If-Match` for compare-and-swap.
+Grants can delegate these permissions independently—for example, `create`
+without `modify` or `delete` lets a contributor add new keys but not
+rewrite or remove existing entries.
 
 A grant with `list` can enumerate all objects in any matching subrange:
 
@@ -74,7 +78,7 @@ curl -fsS "$SKRYNIA_URL/store?locations=alice.*" \
 
 Results are sorted keys, regardless of who created them. A listing needs
 a user token with `list` and its matcher must be a subset of that grant's
-`locations`. It can be delegated without granting write access. For
+`locations`. It can be delegated without granting mutation access. For
 participant cleanup, give each participant a separate prefix: listing
 by prefix does not establish who created a key.
 
@@ -91,7 +95,7 @@ origins using separate hostnames; key prefixes aren't browser sandboxes.
 curl -fsS -X POST "$SKRYNIA_URL/grants" \
   -H "Authorization: Bearer $ROOT_USER_TOKEN" \
   -H 'Content-Type: application/json' \
-  --data '{"locations":"alice.*","operations":["write","list","delegate","subscribe"],
+  --data '{"locations":"alice.*","operations":["create","modify","delete","list","delegate","subscribe"],
            "maxBytes":1048576,"maxObjects":100}'
 ```
 

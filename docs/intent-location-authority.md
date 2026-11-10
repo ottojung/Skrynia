@@ -25,9 +25,13 @@ until the next startup.
 
 ## Authority
 
-Valid operations are `write`, `list`, `delegate`, and `subscribe`.
-Reading a known object's bytes requires no grant. `write` enables create,
-replace, and delete at matching locations. `list` enables enumeration of
+Valid operations are `create`, `modify`, `delete`, `list`, `delegate`,
+and `subscribe`. Reading a known object's bytes requires no grant.
+`create` permits creating a nonexistent key and supplying its initial bytes.
+`modify` permits replacing an existing key's bytes. `delete` permits
+deletion of an existing key. No mutation permission implies another:
+`create` alone does not authorize replacement or removal. `list`
+enables enumeration of
 all live keys matching a requested location matcher that is a non-strict
 subset of the calling grant's locations. Listings are independent of
 which grant created each object. `delegate` enables issuing a child
@@ -55,8 +59,8 @@ matching object, 2048 bytes per grant in its inclusive descendant tree,
 and 4096 bytes per sponsored push subscription. Object count is the count
 of matching objects plus sponsored descendant subscriptions.
 
-Before a write, Skrynia checks the resulting usage against the writing
-grant and all its ancestors. The previous object is logically removed
+Before creation or modification, Skrynia checks the resulting usage against
+the acting grant and all its ancestors. The previous object is logically removed
 before a replacement is checked. An unrelated grant with overlapping
 locations is never consulted. A grant can therefore observe usage
 higher than its own maximum after an unrelated grant's mutation.

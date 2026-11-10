@@ -24,9 +24,9 @@ A child grant's locations must select a subset of its parent's matched keys.
 | --- | --- | --- |
 | GET | /store/{key} | Public raw bytes and a strong ETag; 404 if absent |
 | GET | /store?locations={matcher} | List matching keys, requires a user token with `list` |
-| POST | /store/{key} | Create if absent, requires authorized user token; 201 or 409 |
-| PUT | /store/{key} | Replace if present, requires authorized user token; 200 or 404 |
-| DELETE | /store/{key} | Delete if present, requires authorized user token; 200 or 404 |
+| POST | /store/{key} | Create if absent; requires `create` and authorized user token; 201 or 409 |
+| PUT | /store/{key} | Replace if present; requires `modify` and authorized user token; 200 or 404 |
+| DELETE | /store/{key} | Delete if present; requires `delete` and authorized user token; 200 or 404 |
 
 Mutations and listings use `X-Skrynia-Grant: <user-token>`. Both PUT and DELETE accept an
 optional `If-Match: "<etag>"` and return HTTP 412 if the current ETag
@@ -77,17 +77,23 @@ All grants form one rooted tree. Each grant has:
 - `maxBytes` and `maxObjects` (positive safe integers for child grants)
 - an issuer credential and zero or more independently revocable user credentials
 
-Operations: `write`, `list`, `delegate`, and `subscribe`.
+Operations: `create`, `modify`, `delete`, `list`, `delegate`, and `subscribe`.
 
-- `write` permits creation, arbitrary replacement, and deletion.
+- `create` authorizes `POST` to a key that does not exist, including its
+  initial binary payload. It does not authorize `PUT` or `DELETE`.
+- `modify` authorizes `PUT` to an existing key, including changing its
+  bytes arbitrarily (subject to quota and optional `If-Match`). It does
+  not authorize creation or deletion.
+- `delete` authorizes `DELETE` of an existing key; deletion does not
+  require `create` or `modify`.
 - `list` permits enumerating existing keys in a requested location range
   that is a non-strict subset of the calling grant's `locations`.
 - `delegate` permits child grants; `subscribe` permits Web Push subscriptions.
 - Reading a known object's bytes remains public and unauthenticated.
 
 Listing is authorized by a **grant user token**, not an issuer token.
-A grant with `list` but not `write` can discover keys without changing data.
-The two operations can be delegated independently.
+A grant with `list` but without mutation operations can discover keys
+without changing data. All six operations can be delegated independently.
 
 On each server start, after completing recovery, if the tree has no root,
 Skrynia creates one with `locations:"*"`, all operations and
@@ -110,7 +116,7 @@ POST /grants
 Authorization: Bearer <parent-user-token>
 Content-Type: application/json
 
-{"locations":"alice.*","operations":["write","delegate"],
+{"locations":"alice.*","operations":["create","modify","delete","delegate"],
  "maxBytes":65536,"maxObjects":10}
 ```
 
@@ -142,8 +148,8 @@ objectsUsed(g) =
   + count of sponsored push subscriptions in its descendant tree
 ```
 
-Only the grant through which a mutation occurs and all its ancestors have
-their resulting limits checked. Unrelated grants cannot veto the action.
+Only the grant through which a creation or modification occurs and all its
+ancestors have their resulting limits checked. Unrelated grants cannot veto the action.
 An overlapping grant can measure usage beyond its limit because writes
 through independent grants are not constrained by its budget. Objects
 have no writer, grant owner, or expiration.

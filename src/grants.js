@@ -11,7 +11,7 @@ const GRANT_COST=2048,OBJECT_COST=512,PUSH_SUB_COST=4096,EXTRA_USER_COST=128;
 const ID_RE=/^[a-f0-9]{32}$/;
 const KEY_RE=/^[A-Za-z0-9_][A-Za-z0-9_.]*$/;
 const LOCATION_RE=/^(?:[A-Za-z0-9_][A-Za-z0-9_.]*\*?|\*)?$/;
-const OPERATIONS=Object.freeze(['write','list','delegate','subscribe']);
+const OPERATIONS=Object.freeze(['create','modify','delete','list','delegate','subscribe']);
 
 function validKey(key) {return typeof key==='string'&&KEY_RE.test(key);}
 function validLocations(loc) {return typeof loc==='string'&&LOCATION_RE.test(loc);}
@@ -202,9 +202,10 @@ function createGrants(shared) {
   }
   function authorizeMutation(secret,key,kind,newBytes) {
     const g=requireUser(secret);
-    requireOperation(g,'write');
+    const operation={create:'create',replace:'modify',delete:'delete'}[kind];
+    if(!operation) throw fault(400,'invalid_mutation');
+    requireOperation(g,operation);
     if(!matches(g.locations,key)) throw fault(403,'location_not_authorized');
-    if(!['create','replace','delete'].includes(kind)) throw fault(400,'invalid_mutation');
     if(kind==='delete') return g.id;
     if(!Number.isSafeInteger(newBytes)||newBytes<0)
       throw fault(400,'invalid_object_size');

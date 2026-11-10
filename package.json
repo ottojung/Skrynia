@@ -6,6 +6,6 @@
   "engines": {"node": ">=20"},
   "dependencies": {"web-push": "3.6.7"},
   "scripts": {
-    "test": "node tests/test-grants.js && node tests/test-list.js && node tests/test-push.js && node tests/test-push-recovery.js && node tests/test-client-protocols.js && node tests/test-hardening.js"
+    "test": "node tests/test-grants.js && node tests/test-operations.js && node tests/test-list.js && node tests/test-push.js && node tests/test-push-recovery.js && node tests/test-client-protocols.js && node tests/test-hardening.js"
   }
 }
