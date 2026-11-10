@@ -1,147 +1,142 @@
 # Skrynia
 
-A small, self-hosted platform for static web applications, public-readable
-key/value storage, Web Push and delegable resource grants.
+**Static web hosting with persistent storage and delegable permissions.**
 
-Skrynia does not interpret application data. A namespace has a root grant
-issued on its first successful deployment. Grants control which keys may be
-changed, which operations users may perform, and storage allowances.
+Skrynia deploys web apps from Git and gives them a small, durable key–value store. Apps can read and write arbitrary bytes over HTTP without running their own backend. Skrynia doesn't interpret their data or require accounts: **grants** control where clients can write, which operations they can perform, and how much storage they can use.
 
-The normative semantics are in
-[Location authority and resource accounting](docs/intent-location-authority.md).
-See [the HTTP API](docs/api-spec.md) and [deployment guide](docs/deployment.md).
+- **Deploy from Git.** Build a specific commit with `make build` in Docker, publish it atomically, and roll back to an earlier release.
+- **Store ordinary files.** Binary-safe values live at named keys. Reads are public (and can be served directly by nginx); conditional writes use ETags.
+- **Delegate authority.** Issue restricted grants for individual keys or prefixes, with independent operations and resource budgets.
+- **Manage lifetimes.** Grants can be cleaned or revoked recursively, including through periodic retention confirmations.
+- **Notify clients.** Web Push subscriptions and rules connect storage events to browser notifications.
 
-## Keys and location authority
+Skrynia runs as a single Node.js service. Application code remains static HTML, JavaScript, and CSS.
 
-Stored keys are nonempty ASCII strings matching:
+## Quick start
 
-~~~regex
-^[a-zA-Z0-9_]+$
-~~~
+You need **Node.js 20+**, **Docker**, and **Git**. To deploy an app, the Skrynia host also needs SSH access to its Git repository.
 
-A grant's immutable **locations** field uses:
-- "*" for all keys;
-- "report*" for keys beginning with "report";
-- "report_1" for exactly "report_1";
-- "" for no valid keys.
-
-Only a trailing "*" is special. Matching is case-sensitive. Children may
-only restrict their parent's locations. A child inherits its parent's
-locations if omitted.
-
-Operations are: **write**, **delegate**, **keep**, **release**, **subscribe**.
-Read permission is always implicit and public. A child may only inherit or
-remove parent operations; no subgrant may add privileges.
-
-## Bootstrap an application
-
-~~~sh
+```sh
+git clone https://github.com/ottojung/Skrynia.git
+cd Skrynia
+npm ci
 make builder
-SKRYNIA_URL=http://127.0.0.1:17380/platform \
-SKRYNIA_TOKEN=replace-me node src/server.js
-~~~
 
-Deploy a verified commit using the
-[GitHub deployment action](action/deploy/action.yml) or an authenticated
-GET /deploy request. The deployment creates the root grant only once and
-returns a one-time user token and issuer token. Subsequent deployments keep
-the same root grant, credentials and stored values.
+export SKRYNIA_URL=http://127.0.0.1:17380/platform
+export SKRYNIA_TOKEN=replace-with-a-secret
+export SKRYNIA_DATA_DIR="$HOME/.local/share/skrynia"
+node src/server.js
+```
 
-Root grants default to locations "*" and all five operations.
-The quota and maxObjects parameters configure their resource budgets.
+Skrynia listens on `127.0.0.1:17380` by default. Put it behind a reverse proxy when exposing it publicly, and use HTTPS for requests carrying tokens. `SKRYNIA_URL` is the API's canonical external URL; it can include a path such as `/platform`.
 
-Keep private root credentials out of static application bundles. For an
-intentionally public writer, create a narrowly scoped child grant:
+### Deploy an app
 
-~~~http
-POST /grants
-Authorization: Bearer <root-user-token>
-Content-Type: application/json
+An app repository needs a `Makefile` whose `build` target writes its static output to `build/`. From another shell with the same `SKRYNIA_URL` and `SKRYNIA_TOKEN`:
 
-{
-  "namespace": "example",
-  "locations": "comments",
-  "operations": ["write"],
-  "maxBytes": 65536,
-  "maxObjects": 1
-}
-~~~
+```sh
+python3 scripts/cli.py deploy \
+  --namespace hello \
+  --repo git@github.com:your-org/hello.git \
+  --commit "$APP_COMMIT" \
+  --subdir .
+```
 
-The returned **user token** can be published to allow anyone to create,
-replace, or delete "comments". It cannot delegate, vote, or subscribe.
+Set `APP_COMMIT` to the full commit SHA from the app repository (for example, `git rev-parse HEAD` there). The app is published at `/apps/hello/` by default. Later deployments replace the active release without discarding its storage; earlier releases remain available for rollback.
 
-## Store values
+**On the first deployment**, Skrynia also issues the namespace's **root grant**, returning its ID and two secrets:
 
-~~~http
-POST /store/example/comments
-X-Skrynia-Grant: <grant-user-token>
+| Credential | What it allows |
+| --- | --- |
+| **User token** | Use the grant's permitted operations, including writing and delegating |
+| **Issuer token** | Clean or revoke the grant and its descendants |
 
-Hello
-~~~
+Save these secrets securely when they first appear; they are not returned on subsequent deployments. The [GitHub deployment action](action/deploy/action.yml) can deploy a commit and exposes the one-time root credentials as masked outputs.
 
-Reads are public:
+## Give an app permission to write
 
-~~~http
-GET /store/example/comments
-~~~
+Instead of handing a browser the root token, create a narrowly scoped grant. For example, authorize writes only to keys beginning with `notes`:
 
-To edit the value (an atomic delete + create):
+```sh
+curl -sS -X POST "$SKRYNIA_URL/grants" \
+  -H "Authorization: Bearer $ROOT_USER_TOKEN" \
+  -H "Content-Type: application/json" \
+  --data '{
+    "namespace": "hello",
+    "locations": "notes*",
+    "operations": ["write"],
+    "maxBytes": 65536,
+    "maxObjects": 10
+  }'
+```
 
-~~~http
-PUT /store/example/comments
-X-Skrynia-Grant: <grant-user-token>
-If-Match: "<current-etag>"
+The response contains the new grant's `userToken` and `issuerToken`. Using that **user token**:
 
-Updated message
-~~~
+```sh
+# Create a value.
+curl -sS -X POST "$SKRYNIA_URL/store/hello/notes1" \
+  -H "X-Skrynia-Grant: $NOTES_USER_TOKEN" \
+  --data-binary 'Hello'
 
-A successful edit uses the new object's full cost, not merely the size
-difference. The grant and its ancestors must be able to afford the entire
-resulting state. Unrelated grants are not consulted. Deleting a matching key
-requires the write operation but no spare capacity.
+# Anyone can read it; the response includes an ETag.
+curl -i "$SKRYNIA_URL/store/hello/notes1"
 
-Values have no owner or grant association. Revocation removes **all** values
-at keys matching the revoked grant's locations, including values written
-through other grants.
+# Replace it, optionally using the ETag to prevent lost updates.
+curl -sS -X PUT "$SKRYNIA_URL/store/hello/notes1" \
+  -H "X-Skrynia-Grant: $NOTES_USER_TOKEN" \
+  -H 'If-Match: "<etag-from-GET>"' \
+  --data-binary 'Updated'
+```
 
-## Cleanup and lifetime
+The same token can delete `notes1`, but it cannot write `settings`, create subgrants, vote on retention, or register push subscriptions. A token with only `write` at one exact key is also a way to offer public writing at that key. **Anyone with that token can replace or delete its contents**, so share it deliberately.
 
-A grant user may affirm a need to keep its space (need:true) when granted
-keep, or propose cleanup (need:false) when granted release.
+### How grants work
 
-At a 24-hour checkpoint, a release vote triggers cleanup if no keep vote was
-recorded for the grant or any descendant in that interval. No votes means
-keep. A descendant's keep protects ancestors.
+Every grant combines:
 
-Cleaning is atomic grant revocation followed by reissuance of the same grant,
-with the same ID and credentials. Its descendants, matching values and their
-subscribed resources are gone; it remains reusable.
+| Field | Meaning |
+| --- | --- |
+| `locations` | `"*"` (all keys), `"notes*"` (prefix), `"notes1"` (exact), or `""` (none) |
+| `operations` | Any subset of `write`, `delegate`, `keep`, `release`, `subscribe` |
+| `maxBytes`, `maxObjects` | Limits on mutations performed through the grant and its ancestors |
 
-The issuer token can clean or revoke immediately. Revocation does not
-reissue the grant.
+Keys use only ASCII letters, digits, and underscores (`[A-Za-z0-9_]+`). A child grant can narrow its parent's locations and operations but can never expand them. Reading needs no grant and is always public—do not store private data expecting access control on `GET`.
 
-## Resource accounting
+Grants authorize **actions**, not ownership of values. A write must fit the resulting usage of the writing grant and its ancestors; unrelated grants never veto it. A replacement is logically an atomic delete followed by a creation, so the *entire replacement value* must fit. Objects don't carry creator or grant identities.
 
-Every grant has independent limits on bytes and object count. When a write
-uses grant G, check its resulting location-scoped usage and the corresponding
-usage of its ancestors only. Overlapping sibling grant limits never constrain
-one another's writes.
+### Retention and revocation
 
-Object payloads contribute their byte lengths plus a fixed 512-byte
-resource overhead per key. Grant metadata, additional user tokens, and Web
-Push subscriptions also consume resource allowances.
+Every 24 hours, a grant checks its retention confirmations. A `release` confirmation proposes cleaning its space; a `keep` confirmation from that grant **or any descendant** prevents it. Silence leaves everything intact.
 
-Storage objects are plain files under store/{namespace}/{key} and may be
-served directly by nginx. Strong ETags use an increasing namespace-wide
-version sequence; compare-and-replace requests may use If-Match.
+- **Clean:** Delete all keys matching the grant's locations and all descendant grants, then reissue the same grant with unchanged credentials and fresh voting state.
+- **Revoke:** Do the same without reissuing the grant; its credentials cease to work.
 
-## Testing
+An issuer can perform either action immediately. Because cleanup follows **locations**, it can remove matching values written through an unrelated grant with overlapping scope. This is intentional.
 
-~~~sh
+## Integration and operations
+
+The browser helper is served at `/client/skrynia.js`. For example, after loading it:
+
+```js
+(async () => {
+  const store = Skrynia.store('hello', notesUserToken);
+  await store.create('notes2', 'A note');
+  const result = await store.get('notes2');
+  await store.put('notes2', 'Revised', { etag: result.meta.etag });
+})();
+```
+
+Web Push subscriptions can be registered with a grant that has `subscribe`; configurable rules route object changes to notification channels. Skrynia keeps subscription state and delivery work durable.
+
+Persistent state lives in `SKRYNIA_DATA_DIR` (default `/var/lib/skrynia`). Run **one Skrynia server per data directory**. Object files under `store/{namespace}/{key}` can be served directly by nginx; keep grant records and other private state inaccessible.
+
+For details, see the [HTTP API](docs/api-spec.md), [deployment guide](docs/deployment.md), and [normative grant semantics](docs/intent-location-authority.md).
+
+## Development
+
+```sh
 npm ci
 make test
-~~~
+```
 
-Use a fresh data directory for a new installation.
-
-Licensed under the GNU Affero General Public License v3.0 or later.
+Skrynia is Free Software, licensed under **AGPL-3.0-or-later**.
