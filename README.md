@@ -125,10 +125,15 @@ Grants authorize **actions**, not ownership of values. A write must fit the resu
 
 Every 24 hours, a grant checks its retention confirmations. A `release` confirmation proposes cleaning its space; a `keep` confirmation from that grant **or any descendant** prevents it. Silence leaves everything intact.
 
-- **Clean:** Delete all keys matching the grant's locations and all descendant grants, then reissue the same grant with unchanged credentials and fresh voting state.
-- **Revoke:** Do the same without reissuing the grant; its credentials cease to work.
+- **Clean:** Remove descendant grants and unprotected matching keys, then reissue the same grant with unchanged credentials and fresh voting state.
+- **Revoke:** Perform the same cleanup without reissuing the grant; its credentials cease to work.
 
-An issuer can perform either action immediately. Because cleanup follows **locations**, it can remove matching values written through an unrelated grant with overlapping scope. This is intentional.
+An issuer can perform either action immediately. A key survives when an
+**independent surviving grant** also covers it, even if that grant has no
+user tokens. Ancestors, descendants, and the grant being reissued do not
+protect keys during cleanup. Consequently, cleaning a child can reclaim its
+exclusive keys while preserving shared ones; cleaning the root removes
+everything under its scope. Ordinary authorized object deletion is unchanged.
 
 ## Integration and operations
 

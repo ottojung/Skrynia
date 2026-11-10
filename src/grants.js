@@ -317,22 +317,29 @@ function createGrants(shared) {
     return {ok:true, grantId:id, need, nextCheckAt:g.nextCheckAt};
   }
 
-  function deleteData(ns, locations, ids) {
-    // Re-entrant and idempotent across interrupted filesystem deletions.
+  function deleteData(ns, locations, protectedLocations, ids) {
+    // Objects survive when an independent grant covers their location.
+    // Save the protection snapshot in the deletion marker so crash recovery
+    // completes the same decision, even after descendant records are removed.
     const d = shared.nsStoreDir(ns);
     for (const o of objectEntries(ns)) {
-      if (matches(locations, o.key)) fs.unlinkSync(path.join(d, o.key));
+      if (matches(locations, o.key) &&
+          !protectedLocations.some(loc => matches(loc, o.key))) {
+        fs.unlinkSync(path.join(d, o.key));
+      }
     }
     const owned = new Set(ids);
     for (const sub of subscriptionEntries(ns)) {
       if (owned.has(sub.data.grantId)) fs.unlinkSync(sub.file);
     }
   }
-  function runDeletion(ns, id, action, ids, locations) {
+  function runDeletion(ns, id, action, ids, locations, protectedLocations) {
     const marker = path.join(pendingDir, ns + '-' + id + '.json');
-    if (!fs.existsSync(marker)) atomicJson(marker, {ns, id, action, ids, locations});
+    if (!fs.existsSync(marker)) {
+      atomicJson(marker, {ns, id, action, ids, locations, protectedLocations});
+    }
     const work = JSON.parse(fs.readFileSync(marker, 'utf8'));
-    deleteData(work.ns, work.locations, work.ids);
+    deleteData(work.ns, work.locations, work.protectedLocations, work.ids);
     for (const descendantId of work.ids) {
       if (descendantId === work.id && work.action === 'clean') continue;
       try { fs.unlinkSync(recordPath(work.ns, descendantId)); }
@@ -352,7 +359,12 @@ function createGrants(shared) {
     const map = validateTree(all(ns)), g = map.get(id);
     if (!g) throw fault(404, 'grant_not_found');
     const ids = [...map.values()].filter(h => isDescendant(map, h.id, id)).map(h => h.id);
-    runDeletion(ns, id, action, ids, g.locations);
+    // Ancestors and descendants are not independent retention claims.
+    // The target grant's reissued copy (for clean) does not protect data either.
+    const protectedLocations = [...new Set([...map.values()]
+      .filter(h => !isDescendant(map, h.id, id) && !isDescendant(map, id, h.id))
+      .map(h => h.locations))];
+    runDeletion(ns, id, action, ids, g.locations, protectedLocations);
   }
   function issuerAction(ns, id, secret, action) {
     sweep();
@@ -397,10 +409,13 @@ function createGrants(shared) {
     for (const name of fs.readdirSync(pendingDir).filter(x => x.endsWith('.json'))) {
       const op = JSON.parse(fs.readFileSync(path.join(pendingDir, name), 'utf8'));
       if (!validNs(op.ns) || !ID_RE.test(op.id) || !validLocations(op.locations) ||
-          !Array.isArray(op.ids) || !['clean','revoke'].includes(op.action)) {
+          !Array.isArray(op.ids) || op.ids.some(id => !ID_RE.test(id)) ||
+          !Array.isArray(op.protectedLocations) ||
+          op.protectedLocations.some(loc => !validLocations(loc)) ||
+          !['clean','revoke'].includes(op.action)) {
         throw new Error('invalid pending grant deletion');
       }
-      runDeletion(op.ns, op.id, op.action, op.ids, op.locations);
+      runDeletion(op.ns, op.id, op.action, op.ids, op.locations, op.protectedLocations);
     }
     if (!fs.existsSync(stateDir)) return;
     const namespaces = new Set();

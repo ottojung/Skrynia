@@ -173,7 +173,7 @@ async function testHttp() {
     assert.equal(C.locations,'secret1');
     assert.deepEqual(C.operations,X.operations);
     const N=(await newGrant(port,root.userToken,
-      {maxBytes:8000,maxObjects:10,locations:'secret*',
+      {maxBytes:8000,maxObjects:10,locations:'secret1',
        operations:['write']})).json;
     await demand(port,201,'POST','/store/forum/secret1','sibling',grant(N.userToken));
     await demand(port,201,'POST','/store/forum/secret2','local',grant(X.userToken));
@@ -194,14 +194,16 @@ async function testHttp() {
     await demand(port,200,'GET','/store/forum/secret1');
     assert.equal(engine.inspect('forum',C.id,C.userToken).id,C.id);
 
-    // A new release without keep triggers revoke + reissue using identical tokens.
+    // Release without keep cleans X but retains keys independently covered by N.
     await demand(port,200,'POST','/grants/'+X.id+'/confirmation?namespace=forum',
       {need:false},user(X.userToken));
     await new Promise(ok=>setTimeout(ok,12));
     due(dir,'forum',X.id);
     engine.sweep();
-    await demand(port,404,'GET','/store/forum/secret1');
+    const preserved = await demand(port,200,'GET','/store/forum/secret1');
+    assert.equal(preserved.body,'sibling');
     await demand(port,404,'GET','/store/forum/secret2');
+    assert.equal(engine.inspect('forum',N.id,N.userToken).usage.objects,1);
     assert.equal(engine.inspect('forum',X.id,X.userToken).id,X.id);
     assert.equal(engine.inspect('forum',X.id,X.userToken).locations,'secret*');
     assert.deepEqual(engine.inspect('forum',X.id,X.userToken).operations,X.operations);
@@ -209,12 +211,14 @@ async function testHttp() {
     assert.equal(engine.inspect('forum',N.id,N.userToken).id,N.id,'unrelated grant survives');
     const pushDir=path.join(dir,'state','forum','push-subs');
     assert.equal(fs.readdirSync(pushDir).filter(x=>x.endsWith('.json')).length,0);
-    await demand(port,201,'POST','/store/forum/secret1','reused',grant(X.userToken));
+    await demand(port,201,'POST','/store/forum/secret2','reused',grant(X.userToken));
     await demand(port,200,'DELETE','/grants/'+X.id+'/space?namespace=forum',null,user(X.issuerToken));
-    await demand(port,404,'GET','/store/forum/secret1');
-    await demand(port,201,'POST','/store/forum/secret1','reused-again',grant(X.userToken));
+    await demand(port,200,'GET','/store/forum/secret1');
+    await demand(port,404,'GET','/store/forum/secret2');
+    await demand(port,201,'POST','/store/forum/secret2','reused-again',grant(X.userToken));
     await demand(port,200,'DELETE','/grants/'+X.id+'?namespace=forum',null,user(X.issuerToken));
-    await demand(port,404,'GET','/store/forum/secret1');
+    await demand(port,200,'GET','/store/forum/secret1');
+    await demand(port,404,'GET','/store/forum/secret2');
     assert.throws(()=>engine.inspect('forum',X.id,X.userToken),/invalid_grant_user_token/);
     assert.equal(engine.inspect('forum',N.id,N.userToken).id,N.id);
 
@@ -238,6 +242,82 @@ async function testHttp() {
     fs.rmSync(dir,{recursive:true,force:true});
   }
 }
+async function testIndependentBranches() {
+  const dir=mk();let server,port;
+  try {
+    ({server,port}=await open(dir));
+    const grants=server.skrynia.grants, ns='branches';
+    const root=grants.createRoot(ns,60000,50);
+    root.userToken=grants.createUser(ns,root.id,root.issuerToken).userToken;
+    const A=grants.createChild(ns,root.userToken,20000,20,'item*',
+      ['write','delegate','keep','release']);
+    A.userToken=grants.createUser(ns,A.id,A.issuerToken).userToken;
+    // B has no users, operations, or headroom to store the shared value.
+    // Its mere independent location coverage protects the matching key.
+    const B=grants.createChild(ns,root.userToken,2048,1,'item_shared',[]);
+    assert.equal(grants.usage(ns,B.id).objects,0);
+    const descendant=grants.createChild(ns,A.userToken,4096,1,'item_shared',
+      ['write']);
+    await demand(port,201,'POST','/store/branches/item_shared','protected',
+      grant(A.userToken));
+    await demand(port,201,'POST','/store/branches/item_sole','unprotected',
+      grant(A.userToken));
+    assert(grants.usage(ns,B.id).bytes>B.maxBytes,
+      'independent writes can exceed B measured quota');
+
+    // Revoking A's descendant cannot rely on A's ancestor authority
+    // to protect the object; only B, an independent branch, protects it.
+    await demand(port,200,'DELETE','/grants/'+descendant.id+'?namespace=branches',
+      null,user(descendant.issuerToken));
+    assert.equal((await demand(port,200,'GET','/store/branches/item_shared')).body,
+      'protected');
+
+    // A cleanup is revoke + reissue, and excludes the reissued grant
+    // from the survival criterion.
+    await demand(port,200,'DELETE','/grants/'+A.id+'/space?namespace=branches',
+      null,user(A.issuerToken));
+    await demand(port,200,'GET','/store/branches/item_shared');
+    await demand(port,404,'GET','/store/branches/item_sole');
+    assert.equal(grants.usage(ns,A.id).objects,1,
+      'A still measures independent surviving data');
+    assert.equal(grants.inspect(ns,A.id,A.userToken).id,A.id,
+      'clean retains the original user token');
+    assert.equal(grants.usage(ns,B.id).objects,1,
+      'B protects a key it cannot modify');
+
+    // Cleaning A again does not delete a key protected by B.
+    await demand(port,200,'DELETE','/grants/'+A.id+'/space?namespace=branches',
+      null,user(A.issuerToken));
+    await demand(port,200,'GET','/store/branches/item_shared');
+
+    // Revoking B also preserves the key: A is now an independent survivor.
+    await demand(port,200,'DELETE','/grants/'+B.id+'?namespace=branches',
+      null,user(B.issuerToken));
+    await demand(port,200,'GET','/store/branches/item_shared');
+
+    // Only the root now covers the key; it is A's ancestor, not an
+    // independent grant, so revoking A really deletes the key.
+    await demand(port,200,'DELETE','/grants/'+A.id+'?namespace=branches',
+      null,user(A.issuerToken));
+    await demand(port,404,'GET','/store/branches/item_shared');
+
+    // Root cleanup cannot be protected by itself or its descendants.
+    await demand(port,201,'POST','/store/branches/item_root','root-data',
+      grant(root.userToken));
+    const C=grants.createChild(ns,root.userToken,2048,1,'item_root',[]);
+    await demand(port,200,'DELETE','/grants/'+root.id+'/space?namespace=branches',
+      null,user(root.issuerToken));
+    await demand(port,404,'GET','/store/branches/item_root');
+    assert.equal(grants.inspect(ns,root.id,root.userToken).id,root.id);
+    assert.throws(()=>grants.usage(ns,C.id),/grant_not_found/);
+    await demand(port,201,'POST','/store/branches/item_root','reusable',
+      grant(root.userToken));
+    console.log('independent-branch protection and root cleanup: OK');
+  } finally {
+    if(server)await close(server);
+    fs.rmSync(dir,{recursive:true,force:true});
+  }
+}
 async function testRecovery() {
   const dir=mk();let server,port;
   try{
@@ -248,22 +328,49 @@ async function testRecovery() {
     const child=g.createChild('recovery',root.userToken,9000,10,'logs*',['write','keep']);
     assert.equal(child.userToken,undefined);
     child.userToken=g.createUser('recovery',child.id,child.issuerToken).userToken;
+    // Even a grant with zero users and no write authority is a coverage claim.
+    const shield=g.createChild('recovery',root.userToken,2048,1,'logs1',[]);
+    assert.equal(shield.userToken,undefined);
     await demand(port,201,'POST','/store/recovery/logs1','data',grant(child.userToken));
+    await demand(port,201,'POST','/store/recovery/logs2','ephemeral',grant(child.userToken));
+    // Inject a failure into a *real* cleanup, after one file is removed
+    // but before grant records are changed. Recovery must keep the
+    // independent-protection snapshot and finish the interrupted operation.
     const marker=path.join(dir,'state','_grant-deletions','recovery-'+child.id+'.json');
-    fs.mkdirSync(path.dirname(marker),{recursive:true});
-    fs.writeFileSync(marker,JSON.stringify({ns:'recovery',id:child.id,
-      action:'clean',ids:[child.id],locations:'logs*'}));
+    const unlink=fs.unlinkSync;
+    try {
+      let injected=false;
+      fs.unlinkSync=function(file) {
+        const result=unlink.call(fs,file);
+        if(!injected && file===path.join(dir,'store','recovery','logs2')) {
+          injected=true;
+          throw new Error('injected_cleanup_crash');
+        }
+        return result;
+      };
+      assert.throws(()=>g.issuerAction('recovery',child.id,child.issuerToken,'clean'),
+        /injected_cleanup_crash/);
+      assert(injected,'fault injection reached the unprotected object');
+    } finally {
+      fs.unlinkSync=unlink;
+    }
+    assert(fs.existsSync(marker));
+    const pending=JSON.parse(fs.readFileSync(marker,'utf8'));
+    assert.deepEqual(pending.protectedLocations,['logs1']);
+    assert.deepEqual(pending.ids,[child.id]);
     await close(server);server=null;
     ({server,port}=await open(dir));
-    await demand(port,404,'GET','/store/recovery/logs1');
+    assert.equal((await demand(port,200,'GET','/store/recovery/logs1')).body,'data');
+    await demand(port,404,'GET','/store/recovery/logs2');
     assert.equal(fs.existsSync(marker),false);
     assert.equal(server.skrynia.grants.inspect('recovery',child.id,child.userToken).id,child.id);
-    await demand(port,201,'POST','/store/recovery/logs1','new',grant(child.userToken));
+    assert(server.skrynia.grants.usage('recovery',shield.id).objects===1);
+    await demand(port,201,'POST','/store/recovery/logs2','new',grant(child.userToken));
     console.log('interrupted cleanup recovery: OK');
   }finally{
     if(server)await close(server);
     fs.rmSync(dir,{recursive:true,force:true});
   }
 }
-(async()=>{checkGrammar();await testHttp();await testRecovery();})()
+(async()=>{checkGrammar();await testHttp();await testIndependentBranches();await testRecovery();})()
   .catch(e=>{console.error(e);process.exitCode=1;});

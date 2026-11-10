@@ -100,21 +100,38 @@ Status: normative. This document defines Skrynia's storage model.
 
 ## Revocation and retention
 
-- Revoking grant g recursively destroys g and its descendants, invalidates
-  all their user and issuer tokens, removes subscriptions sponsored by the
-  subtree, and deletes **every live object matching locations(g)**. No
-  object-to-grant link is needed.
-- Objects authorized by overlapping unrelated grants may also be removed
-  when the revoked grant matches their keys. Unrelated grant records and
-  credentials survive; their observable usage changes with the object set.
-- Descendant location scopes are subsets of g, so removing g's matching
-  objects also removes all objects matchable by its descendants.
-- Voting-triggered cleanup is semantically the atomic operation
-  `revoke(g); issueSame(g)`: the same grant ID, parent, `locations`,
-  `operations`, budget limits, user-token verifiers and issuer-token
-  verifier are preserved. Descendant grants, their credentials, matching
-  objects and sponsored subscriptions are gone. The replacement grant starts
-  with a fresh confirmation window.
+- For any grant g being revoked or cleaned, define an *independent survivor*
+  h as a grant that is neither an ancestor nor a descendant of g. All such h
+  survive revocation of g; a descendant, ancestor, or the reissued copy of g
+  does not count as an independent survivor for this cleanup.
+- The objects deleted are precisely the currently existing keys k that match
+  g's `locations` and are NOT covered by any independent survivor:
+  ```
+  deleted(g) = { k : matches(g.locations, k)
+                     and not exists h incomparable with g:
+                       matches(h.locations, k) }
+  ```
+  Whether h has a user token, `write` permission, unused quota, or any
+  retention confirmations is irrelevant: its location coverage suffices.
+  Objects have no grant owner or creator identity.
+- Grant revocation destroys g and its descendants, invalidates their user
+  and issuer tokens, removes subscriptions sponsored by the subtree, and
+  deletes exactly deleted(g). Independent grants and their credentials
+  survive, including those protecting matching keys.
+- A's ancestors cannot prevent A's cleanup merely because their locations
+  contain A's. A's descendants cannot prevent it either. Root cleanup and
+  root revocation therefore delete all objects under the root's locations,
+  regardless of children.
+- Voting-triggered cleanup is the semantic operation
+  `revoke(g); issueSame(g)`, with the cleanup decision evaluated against
+  the independent grants existing before revocation. The same grant ID,
+  parent, `locations`, `operations`, resource limits, user-token verifiers
+  and issuer-token verifier are preserved. Descendants and subtree-sponsored
+  subscriptions disappear, while independently protected keys survive.
+  The reissued grant starts with a fresh confirmation window.
+- For restart safety, the independent survivors' location-pattern snapshot
+  is persisted in the deletion intent record before deleting any objects or
+  grant records. Recovery completes the original cleanup decision.
 - Explicit issuer-triggered cleaning has the same semantics as voting-triggered
   cleaning, except that it is immediate and does not depend on votes.
 - At each grant's 24-hour checkpoint, cleanup occurs only if the grant
