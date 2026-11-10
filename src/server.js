@@ -126,7 +126,7 @@ function createServer(opts={}) {
   function create(key,body,req,res) {
     const file=shared.objPath(key);
     if(fs.existsSync(file)) return json(res,409,{error:'already_exists'});
-    grants.authorizeWrite(req.headers['x-skrynia-grant'],key,body.length);
+    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'create',body);
     const version=shared.nextVersion(),tmp=tempObject(body,version);
     try {
       const outcome=journal.commit(key,'create',version,()=>{
@@ -143,7 +143,8 @@ function createServer(opts={}) {
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
     if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
       return json(res,412,{error:'etag_mismatch'});
-    grants.authorizeWrite(req.headers['x-skrynia-grant'],key,body.length);
+    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'replace',
+      body,()=>fs.readFileSync(file));
     const version=shared.nextVersion(),tmp=tempObject(body,version);
     try {
       const outcome=journal.commit(key,'replace',version,()=>{
@@ -155,7 +156,7 @@ function createServer(opts={}) {
   function deleteObject(key,req,res) {
     const file=shared.objPath(key);
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
-    grants.authorizeWrite(req.headers['x-skrynia-grant'],key,null);
+    grants.authorizeMutation(req.headers['x-skrynia-grant'],key,'delete');
     if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
       return json(res,412,{error:'etag_mismatch'});
     const version=shared.nextVersion();

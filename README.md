@@ -3,8 +3,8 @@
 **A durable public object store with delegable, resource-bounded authority.**
 
 Skrynia stores opaque bytes at named keys. Every object is publicly readable.
-Bearer-token grants determine where clients may create, replace, and delete
-objects, delegate authority, and subscribe to changes. A single global root grant
+Bearer-token grants determine where clients may create, replace, append to,
+and delete objects, delegate authority, and subscribe to changes. A single global root grant
 provides all authority. Applications, websites, indexes, logs, and versioned
 releases are **client-side protocols** built on ordinary stored objects.
 
@@ -48,8 +48,9 @@ curl -fsS -X POST "$SKRYNIA_URL/grants/$ROOT_GRANT_ID/users" \
 
 ## Use the store
 
-Store keys may contain ASCII letters, digits, underscores, and dots,
-except for the exact names `.` and `..`. Slashes are not permitted.
+Store keys begin with an ASCII letter, digit, or underscore. Subsequent
+characters may also be dots, with any number of consecutive dots allowed.
+Slashes are not permitted.
 Examples include `index.html`, `alice.app.js`, `alice.settings.json`.
 
 ```sh
@@ -62,7 +63,11 @@ curl -i "$SKRYNIA_URL/store/alice.index.html"
 ```
 
 `POST` creates only if absent; `PUT` replaces an existing object.
-`PUT` and `DELETE` support `If-Match` for compare-and-swap.
+`PUT` and `DELETE` support `If-Match` for compare-and-swap. With an
+`append`-only grant, the same `POST` and `PUT` endpoints work, but a
+replacement must begin with every byte of the previous value. The
+`append` operation cannot delete an object. Use an ETag or retry from
+the latest value when multiple appenders compete.
 
 Skrynia serves standard extensions with their normal HTTP MIME types,
 including HTML, JavaScript, CSS, and JSON. nginx or another configured static
@@ -120,6 +125,7 @@ consumes the sponsoring grant's quotas.
 - **CAS:** Single-key conditional writes can serialize client-authored logical
   multi-object transactions over immutable versions.
 - **Delegation:** Grants constrain operations, location prefixes, and budgets.
+  A holder of `write` can delegate the narrower `append` authority.
 - **Client protocols:** Applications define schemas, indexing, publication,
   cryptographic validation, and computation outside Skrynia.
 - **One writer process:** Only one Skrynia instance may own a data directory.

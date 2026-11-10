@@ -19,11 +19,12 @@ databases and application servers.
 | Atomic single-key replacement | `PUT` of an existing key | Versioned state, publication pointers |
 | Compare-and-swap (CAS) | `GET` ETag, then `PUT` with `If-Match` (200 or 412) | Optimistic concurrency, one-key linearization points |
 | Conditional deletion | `DELETE` with optional `If-Match` | Reclamation coordinated with a key version |
-| Scoped, delegable grants | Key/prefix matcher, subset of `write` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
+| Scoped, delegable grants | Key/prefix matcher, subset of `write` / `append` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
 | Notifications | Grant-scoped Web Push subscriptions | Wake interested clients without running application code on Skrynia |
 
-The key alphabet is `[A-Za-z0-9_.]+` excluding the exact keys `.` and `..`; a location matcher is one exact key,
-a prefix ending in `*`, all keys (`*`), or the empty set. There is **no**
+Keys match `[A-Za-z0-9_][A-Za-z0-9_.]*`, permitting consecutive dots but
+not leading dots. A location matcher is one exact key, a prefix ending in
+`*`, all keys (`*`), or the empty set. There is **no**
 atomic operation across multiple physical keys, general query evaluator,
 application-specific server code, or private read operation.
 
@@ -144,6 +145,30 @@ or use explicitly stated quiescence/retention assumptions. With arbitrary
 anonymous public readers, there is no automatic way to prove that *every*
 reader has finished. Keeping versions indefinitely is the simplest safe
 policy; reclamation trades space for explicit assumptions.
+
+## Direct append-only objects
+
+A location-scoped grant with `append` but not `write` makes a stored
+object a simple append-only byte string. The same `POST` and `PUT`
+operations apply. On `POST`, the previous value is empty. On `PUT`,
+the new bytes must start with the exact current bytes; otherwise the
+mutation is rejected with HTTP 409. `DELETE` is unauthorized.
+
+To append, a client reads the current bytes and ETag, concatenates an
+event encoding, and performs conditional `PUT` with `If-Match`. Competing
+appenders retry against the newest value. This protects the log's
+existing prefix even when a client omits `If-Match`: a stale proposal
+cannot erase a competing append because it would fail the prefix check.
+
+**This is a direct append-only log**, simpler than a CAS-linked list
+when the entire log comfortably fits in one object. It has real limits:
+each update uploads the entire new log, and each value must fit the
+maximum object size. High-volume or long-lived logs can use segmented
+append-only objects and CAS-linked manifests. Authority is scoped to
+the particular grant; another holder of `write` on the same key can
+still modify or delete its value. Append-only authority preserves
+previous bytes but does not validate whether appended events are
+well-formed or correctly signed.
 
 ## 2. Shared logs, queues and state machines
 

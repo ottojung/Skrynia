@@ -55,7 +55,7 @@ Restore private credentials and object files together when recovering state.
 - `state/etag-sequence`: monotonic per-installation object-version sequence.
 
 Only serve `store/` through a public static web server, never `state/`.
-File names have no separators, and `.` / `..` are invalid identifiers.
+File names have no separators and never begin with a dot.
 nginx may directly serve `GET /store/{key}` from the public directory,
 using standard MIME types and nginx's normal mtime-size ETags. Configure
 the cache policy consistently with the Skrynia HTTP implementation,

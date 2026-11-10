@@ -5,8 +5,9 @@ Status: normative.
 ## One root and one keyspace
 
 Every installation has one global object keyspace. Objects are named
-by one ASCII key matching `[A-Za-z0-9_.]+`, except the exact names
-`.` and `..`. Keys are bounded by a configurable maximum length,
+by one ASCII key matching `[A-Za-z0-9_][A-Za-z0-9_.]*`. Keys cannot
+begin with a dot but may contain any number of subsequent dots. They are
+bounded by a configurable maximum length,
 and are not hierarchical filesystem paths.
 
 A grant's location matcher is an exact key, a prefix ending in `*`,
@@ -24,11 +25,18 @@ until the next startup.
 
 ## Authority
 
-Valid operations are `write`, `delegate`, and `subscribe`.
+Valid operations are `write`, `append`, `delegate`, and `subscribe`.
 Reading always requires no grant. `write` enables create, replace,
-and delete at matching locations. `delegate` enables issuing a child
-grant under a parent user token. A child must not enlarge the parent's
-locations or operation set. It may have a smaller set or no operations.
+and delete at matching locations. `append` enables create and
+replacement where the proposed bytes begin with the existing bytes.
+It cannot delete or truncate a value. The byte-prefix check is enforced
+by the server during each mutation, including unconditional PUT.
+`delegate` enables issuing a child grant under a parent user token.
+A child cannot enlarge its parent's matched locations or effective
+operations: `write` includes the narrower `append` capability and can
+be delegated as such even when not spelled out by the parent.
+Conversely, `append` does not authorize delegating `write`.
+A child may have fewer operations or no operations.
 
 An issuer token is independent from user tokens. Each new grant returns
 an issuer token; no user token is issued automatically. The issuer may

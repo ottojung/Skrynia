@@ -47,13 +47,17 @@ async function expect(port,status,method,url,body,headers) {
   return r;
 }
 function grammar() {
-  for(const key of ['index.html','app.js','alice.settings.json','some..name','.hidden','A_0']) {
+  for(const key of ['index.html','app.js','alice.settings.json','some..name','name...','name.','A_0']) {
     assert(validKey(key),key);
   }
-  for(const key of ['','.','..','a/b','a-b','é','a*']) assert(!validKey(key),key);
-  for(const scope of ['','*','app.js','alice.*','alice..*','.hidden*'])
+  for(const key of ['','.','..','...','.hidden','..hidden','a/b','a-b','é','a*']) assert(!validKey(key),key);
+  for(const scope of ['','*','app.js','alice.*','alice..*','alice...*','name.'])
     assert(validLocations(scope));
+  for(const scope of ['.hidden','.hidden*','..*','.','..','...','.*'])
+    assert(!validLocations(scope),scope);
   assert(matches('alice.*','alice.index.html'));
+  assert(matches('alice...*','alice...script.js'));
+  assert(!matches('alice.*','.hidden'));
   assert(!matches('alice.*','bob.index.html'));
   assert(subset('alice.config.json','alice.*'));
   assert(!subset('alice.*','alice.config.json'));
@@ -69,7 +73,7 @@ async function run() {
     assert.equal(oldRoot.locations,'*');
     assert.equal(oldRoot.maxBytes,null);
     assert.equal(oldRoot.maxObjects,null);
-    assert.deepEqual(oldRoot.operations,['write','delegate','subscribe']);
+    assert.deepEqual(oldRoot.operations,['write','append','delegate','subscribe']);
     assert.match(oldRoot.rootIssuerToken,/^[a-f0-9]{64}$/);
     const recordPath=path.join(dir,'state','grants',oldRoot.id+'.json');
     assert.equal(fs.statSync(recordPath).mode & 0o777,0o600);
@@ -96,6 +100,10 @@ async function run() {
     const bobToken=(await expect(port,200,'POST','/grants/'+bob.json.id+'/users',
       null,auth(bob.json.issuerToken))).json.userToken;
     await expect(port,403,'POST','/store/bob.secret','forbidden',grant(aliceUser));
+    await expect(port,400,'POST','/store/.hidden','not allowed',grant(rootToken));
+    await expect(port,400,'POST','/grants',{
+      locations:'.hidden*',operations:['write'],maxBytes:4096,maxObjects:2
+    },auth(rootToken));
     await expect(port,201,'POST','/store/alice.index.html','<h1>Hello</h1>',grant(aliceUser));
     const html=await expect(port,200,'GET','/store/alice.index.html');
     assert.match(html.type,/^text\/html/);
