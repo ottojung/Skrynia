@@ -169,6 +169,10 @@ Persistent state lives in `SKRYNIA_DATA_DIR` (default `/var/lib/skrynia`). Run *
 
 For details, see the [HTTP API](docs/api-spec.md), [deployment guide](docs/deployment.md), and [normative grant semantics](docs/intent-location-authority.md).
 
+For patterns built **entirely by clients**—multi-object logical transactions using
+CAS, indexes, logs, discussion boards, authenticated data structures, and
+resource-safe protocol design—see [Client-side protocols on Skrynia](docs/client-protocols.md).
+
 ## Development
 
 ```sh
