@@ -43,7 +43,7 @@ The **Copy JSON** button is available whenever the feedback panel is open and is
 
 On activation:
 
-1. perform a fresh `GET` of the standard `feedback-v1` object with browser caching disabled;
+1. perform a fresh `GET` of the standard `feedback_v1` object with browser caching disabled;
 2. require a successful response;
 3. copy the exact returned JSON text to the system clipboard;
 4. report success or failure in the separate feedback-status line without changing the stored object.
@@ -55,16 +55,16 @@ Prefer `navigator.clipboard.writeText(...)` in secure contexts. A compatibility 
 All feedback for one Skrynia app namespace is stored as one JSON object at the standard key:
 
 ```text
-feedback-v1
+feedback_v1
 ```
 
 For namespace `example`, the public storage URL is therefore:
 
 ```text
-{SKRYNIA_URL}/store/example/feedback-v1
+{SKRYNIA_URL}/store/example/feedback_v1
 ```
 
-Create the object as `public-write` when the feedback UI is a static browser app with no write credential. Do not put credentials into shipped JavaScript.
+Provision a narrowly scoped grant with locations "feedback_v1" and operations ["write"]. Its user token can intentionally be published to the browser. Never publish a root or delegating grant token.
 
 The canonical object shape is:
 
@@ -137,12 +137,13 @@ The pointer must be draggable with Pointer Events so the same behavior works for
 
 ## Persistence behavior
 
-Before writing, read the current `feedback-v1` object and merge the new entry into it. This reduces accidental overwrites when a page has been open for a long time. Skrynia public-write storage does not provide compare-and-swap, so concurrent writers can still race; do not pretend otherwise.
+Before writing, read the current `feedback_v1` object and merge the new entry into it. This reduces accidental overwrites when a page has been open for a long time. Use the returned ETag in If-Match when replacing the object. On HTTP 412,
+re-read the latest value, merge again and retry.
 
 On a missing object:
 
 - initialize `{ "version": 1, "updatedAt": null, "htmlFragments": {}, "feedback": [] }`;
-- create it with `POST` and `X-Skrynia-Mode: public-write`.
+- create it with `POST` and `X-Skrynia-Grant: <public-write-grant-user-token>`.
 
 On an existing object, replace it with `PUT`.
 
@@ -150,7 +151,7 @@ Never overwrite earlier feedback merely because a new pointer happens to occupy 
 
 ## Retrieval contract
 
-A later reviewer should need only the one `feedback-v1` object to understand all current feedback.
+A later reviewer should need only the one `feedback_v1` object to understand all current feedback.
 
 For each feedback entry:
 
@@ -169,7 +170,7 @@ A deployment that uses this skill should verify at least:
 
 - the production bundle contains the feedback code;
 - the opened feedback panel visibly presents `Copy JSON`, `Cancel`, and `Save` together in that order;
-- the `feedback-v1` object exists and parses as JSON with `version === 1`;
+- the `feedback_v1` object exists and parses as JSON with `version === 1`;
 - `htmlFragments` is an object and `feedback` is an array;
 - the app page and Skrynia health endpoint are reachable.
 

@@ -23,6 +23,18 @@ inputs:
   builder:
     description: Optional builder Docker image override.
     required: false
+  quota:
+    description: Optional root grant byte ceiling on first deployment.
+    required: false
+  max-objects:
+    description: Optional root grant object ceiling on first deployment.
+    required: false
+  locations:
+    description: Optional root grant location matcher on first deployment.
+    required: false
+  operations:
+    description: Optional comma-separated root grant operations on first deployment.
+    required: false
   timeout-seconds:
     description: Maximum time to wait for Skrynia to finish the deployment request.
     required: false

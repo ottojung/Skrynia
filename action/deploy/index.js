@@ -129,6 +129,13 @@ async function deploy() {
 
   const params = { repo, commit, subdir, namespace, token };
   if (builder) params.builder = builder;
+  for (const [key, option] of [
+    ['quota', 'quota'], ['maxObjects', 'max-objects'],
+    ['locations', 'locations'], ['operations', 'operations'],
+  ]) {
+    const value = input(option);
+    if (value) params[key] = value;
+  }
 
   const url = buildUrl(skryniaUrl, params);
 
