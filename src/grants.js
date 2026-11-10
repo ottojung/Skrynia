@@ -241,13 +241,13 @@ function createGrants(shared) {
     return g.id;
   }
   // Listings are constrained by the calling grant, not by creator identity.
-  function listObjects(secret,locations,{after=null,limit=null}={}) {
+  function listObjects(secret,locations,{after=null,limit=1000}={}) {
     const g=requireUser(secret);
     requireOperation(g,'list');
     if(!validLocations(locations)) throw fault(400,'invalid_locations');
     if(!subset(locations,g.locations)) throw fault(403,'locations_outside_grant');
     if(after!==null&&!validKey(after)) throw fault(400,'invalid_cursor');
-    if(limit!==null&&(!Number.isSafeInteger(limit)||limit<1||limit>1000))
+    if(!Number.isSafeInteger(limit)||limit<1||limit>1000)
       throw fault(400,'invalid_limit');
     return index.listKeys(locations,{after,limit});
   }
