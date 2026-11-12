@@ -258,12 +258,14 @@ moderator-controlled canonical index, several independently signed views,
 or agreed client-side rules for selecting valid contributions. It is a
 protocol design choice, not a Skrynia feature requirement.
 
-A publicly distributed `modify` or `delete` token for a shared prefix authorizes its
-holder to overwrite or delete *any* matching key, including others' posts.
-`POST` is create-only as a request **but there is no create-only grant
-operation**. For adversarial participants, use separate scopes/credentials
-or signed content plus a trusted acceptance boundary, and distinguish
-*integrity detection* from guaranteed *availability*.
+A publicly distributed `modify` or `delete` token for a shared prefix authorizes
+its holder to overwrite or delete *any* matching key, including others' posts.
+A grant with **only `create`** lets contributors publish new entries without
+modifying or deleting any existing entries. Delegate disjoint author prefixes
+to bound each participant's authority; trusted curators may maintain a
+separate accepted index. Signatures can detect invalid content but do not
+prevent deletion by a holder of matching delete authority or guarantee
+availability.
 
 More examples follow the same recipe: collaborative documents use a
 versioned state or operation log; directories and registries are CAS

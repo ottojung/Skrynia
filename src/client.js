@@ -27,6 +27,13 @@
         if(xhr.status<200||xhr.status>=300) {
           const e=new Error(method+' '+path+': HTTP '+xhr.status);
           e.status=xhr.status;
+          try {
+            const response=json();
+            if(response&&typeof response==='object'&&!Array.isArray(response)) {
+              e.response=response;
+              if(typeof response.error==='string') e.code=response.error;
+            }
+          } catch {}
           reject(e);return;
         }
         resolve({bytes:data,text,json,status:xhr.status});
