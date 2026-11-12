@@ -1,0 +1,17 @@
+# Preview image only; the production Dockerfile remains Node.js.
+FROM rust:1.93-bookworm AS build
+WORKDIR /work
+COPY Cargo.toml Cargo.lock ./
+COPY rust-server/Cargo.toml rust-server/Cargo.toml
+COPY rust-server/src/ rust-server/src/
+COPY src/client.js src/client.js
+RUN cargo build --locked --release -p skrynia-server
+
+FROM debian:bookworm-slim
+RUN groupadd -g 1000 skrynia && useradd -u 1000 -g 1000 -M skrynia \
+    && mkdir -p /var/lib/skrynia && chown skrynia:skrynia /var/lib/skrynia
+COPY --from=build /work/target/release/skrynia-server /usr/local/bin/skrynia-server
+USER 1000:1000
+ENV SKRYNIA_HOST=0.0.0.0
+EXPOSE 17380
+ENTRYPOINT ["/usr/local/bin/skrynia-server"]

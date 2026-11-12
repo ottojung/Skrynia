@@ -8,13 +8,37 @@ deletion, as well as key listing, delegation and subscriptions. A single global 
 provides all authority. Applications, websites, indexes, logs, and versioned
 releases are **client-side protocols** built on ordinary stored objects.
 
-Skrynia itself runs one Node.js process. It never executes application code.
+Skrynia currently runs one production Node.js process. A Rust rewrite is under development on a separate branch. Neither executes application code.
 It has no application registry or privileged HTTP administration API.
 
 **For public hosting:** mutually untrusted publishers need separate HTTPS
 browser origins. Prefix grants do not isolate JavaScript or browser storage.
 See the [nginx multi-origin example](examples/nginx-origins.conf) and
 [operational guidance](docs/operations.md).
+
+## Experimental Rust server (not production-ready)
+
+The Rust rewrite is tracked by [issue #84](https://github.com/ottojung/Skrynia/issues/84)
+and reviewed in its separate pull request. The existing Node.js implementation
+remains the **supported production server** until every compatibility gate passes.
+Do **not** deploy the experimental Rust binary against production data.
+
+For local development on **throwaway data**, install Rust and Node.js 20+, then:
+
+```sh
+npm ci
+cargo build --locked --package skrynia-server
+make rust-test
+SKRYNIA_DATA_DIR="$(mktemp -d)" SKRYNIA_URL=http://127.0.0.1:17380 \
+    target/debug/skrynia-server
+```
+
+The experimental binary currently implements basic storage, grant APIs, SHA-256
+CAS, and immutable-read responses. Web Push and full failure/recovery parity
+are **not yet implemented**. It refuses startup with unsupported Web Push state.
+Passing its limited interoperability smoke test is **not** release qualification.
+The conventional `Dockerfile` and published image continue to run Node.js.
+`Dockerfile.rust` is an intentionally separate experimental build.
 
 ## Start
 
