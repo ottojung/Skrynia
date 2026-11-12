@@ -3,6 +3,7 @@ use std::path::PathBuf;
 pub struct Config {
     pub dir: PathBuf,
     pub base: String,
+    pub public: String,
     pub max_object: usize,
 }
 pub fn read() -> io::Result<Config> {
@@ -27,6 +28,7 @@ pub fn read() -> io::Result<Config> {
         return Err(io::Error::other("invalid object size"));
     }
     Ok(Config {
+        public,
         dir,
         base: url.path().trim_end_matches('/').into(),
         max_object,

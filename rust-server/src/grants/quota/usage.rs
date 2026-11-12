@@ -10,6 +10,14 @@ impl Snapshot {
         for descendant in self.children_of(id) {
             bytes += GRANT_COST + descendant.users.len().saturating_sub(1) as u64 * EXTRA_USER_COST;
         }
+        let descendants = self.children_of(id);
+        let mut objects = objects;
+        for sub in self.push.subscriptions.values() {
+            if descendants.iter().any(|g| g.id == sub.grant_id) {
+                bytes += 4096;
+                objects += 1;
+            }
+        }
         (bytes, objects)
     }
 }

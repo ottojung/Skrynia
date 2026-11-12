@@ -72,9 +72,11 @@ async function run() {
     const issuer=grant.rootIssuerToken;
     const user=(await request(p,'POST','/grants/'+root+'/users',undefined,issuer)).json.userToken;
     assert.equal((await request(p,'POST','/store/legacy.txt','legacy',user)).status,201);
+    const vapidBefore=JSON.parse(readFileSync(join(dir,'state/push/vapid.json')));
     await cannotStart(binary,dir,await port()); // Node already holds the writer lock.
     await stop(server);server=undefined;
     server=await start(binary,[],dir,p);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir,'state/push/vapid.json'))),vapidBefore);
     assert.equal((await request(p,'GET','/store/legacy.txt')).body.toString(),'legacy');
     const created=await request(p,'POST','/store/new.txt','abc',user);
     assert.equal(created.status,201);

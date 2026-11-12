@@ -23,6 +23,7 @@ fn rejects_invalid_root_and_orphans() {
         objects: BTreeMap::new(),
         grants,
         tokens: HashMap::new(),
+        push: crate::PushState::default(),
     };
     state.validate().unwrap();
     state.grants.get_mut(&g.id).unwrap().issuer_hash = "0".repeat(64);

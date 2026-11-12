@@ -23,3 +23,9 @@ pub use store::disk::{sync_dir, write_json};
 pub use store::{Snapshot, State};
 
 pub use store::journal_recover;
+
+pub use grants::{valid_identifier, valid_sha256};
+pub use push::{
+    Notification, PushConfig, PushKeys, PushState, Subscription, Vapid, endpoint_allowed,
+    load_push, load_vapid, parse_endpoint as parse_push_endpoint, public_address, validate_push,
+};

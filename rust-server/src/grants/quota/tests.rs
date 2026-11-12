@@ -27,6 +27,7 @@ fn scoped_quota_and_metadata() {
         grants,
         objects,
         tokens: HashMap::new(),
+        push: crate::PushState::default(),
     };
     assert_eq!(data.usage(&child, None), (1000 + 512 + 2048, 1));
     assert_eq!(

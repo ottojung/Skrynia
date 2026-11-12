@@ -1,5 +1,6 @@
 mod hash;
 mod scope;
+mod valid;
 pub use hash::{sha, sha_file};
 use rand::RngCore;
 pub use scope::{matches, subset, valid_key, valid_scope};
@@ -16,3 +17,5 @@ pub fn secret() -> String {
 
 #[cfg(test)]
 mod tests;
+
+pub use valid::{identifier as valid_identifier, sha256 as valid_sha256};
