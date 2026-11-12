@@ -29,7 +29,7 @@
           e.status=xhr.status;
           reject(e);return;
         }
-        resolve({bytes:data,text,json,etag:xhr.getResponseHeader('ETag'),status:xhr.status});
+        resolve({bytes:data,text,json,status:xhr.status});
       };
       xhr.onerror=()=>reject(new Error('network error'));
       xhr.send(body==null?null:body);
@@ -40,10 +40,15 @@
   function Store(token) {this.token=token;}
   Store.prototype.url=function(key) {return '/store/'+encodeURIComponent(key);};
   Store.prototype.get=async function(key) {
-    try {const result=await request('GET',this.url(key));return {
-      bytes:result.bytes,text:result.text,json:result.json,
-      meta:{etag:result.etag}
-    };} catch(e){if(e.status===404)return null;throw e;}
+    try {
+      const result=await request('GET',this.url(key));
+      const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',result.bytes));
+      const sha256=Array.from(digest,b=>b.toString(16).padStart(2,'0')).join('');
+      return {
+        bytes:result.bytes,text:result.text,json:result.json,
+        meta:{sha256}
+      };
+    } catch(e){if(e.status===404)return null;throw e;}
   };
   Store.prototype.create=async function(key,value,options) {
     const r=await request('POST',this.url(key),value,
@@ -51,12 +56,12 @@
   };
   Store.prototype.put=async function(key,value,options) {
     const h=userHeader(options?.grantUserToken||this.token);
-    if(options?.etag)h['If-Match']=options.etag;
+    if(options?.sha256!==undefined)h['X-Skrynia-If-SHA256']=options.sha256;
     const r=await request('PUT',this.url(key),value,h);return r.json();
   };
   Store.prototype.delete=async function(key,options) {
     const h=userHeader(options?.grantUserToken||this.token);
-    if(options?.etag)h['If-Match']=options.etag;
+    if(options?.sha256!==undefined)h['X-Skrynia-If-SHA256']=options.sha256;
     const r=await request('DELETE',this.url(key),null,h);return r.json();
   };
   async function grantRequest(method,path,token,data) {

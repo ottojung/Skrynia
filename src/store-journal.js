@@ -5,6 +5,7 @@ const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
 const {ensureDir,syncDir,atomicJson}=require('./shared.js');
+const {sha256File}=require('./content-hash.js');
 function createStoreJournal(shared,push,grants) {
   const dir=path.join(shared.STATE_DIR,'store-transactions');
   ensureDir(dir,0o700);
@@ -13,15 +14,16 @@ function createStoreJournal(shared,push,grants) {
     const target=shared.objPath(record.key);
     if(record.kind==='delete') return !fs.existsSync(target);
     if(!fs.existsSync(target)) return false;
-    return Math.floor(fs.statSync(target).mtimeMs/1000)===record.version;
+    return sha256File(target)===record.sha256;
   }
   function finish(file,record) {
     if(record.committed||applied(record)) push.enqueue(record.key,record.kind);
     finalize(file);
   }
-  function commit(key,kind,version,change) {
+  function commit(key,kind,sha256,change) {
     push.preflight(key,kind);
-    const record={key,kind,version};
+    const record={key,kind};
+    if(kind!=='delete') record.sha256=sha256;
     const file=path.join(dir,crypto.randomBytes(16).toString('hex')+'.json');
     atomicJson(file,record);
     let committed=false;
@@ -54,7 +56,8 @@ function createStoreJournal(shared,push,grants) {
       const file=path.join(dir,name);
       const record=JSON.parse(fs.readFileSync(file,'utf8'));
       if(!grants.validKey(record.key)||!['create','replace','delete'].includes(record.kind)||
-        !Number.isSafeInteger(record.version)||record.version<0) {
+        (record.kind==='delete'?'sha256' in record:
+          !/^[a-f0-9]{64}$/.test(record.sha256||''))) {
         throw new Error('invalid store mutation intent');
       }
       finish(file,record);

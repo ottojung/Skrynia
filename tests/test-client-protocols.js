@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 // A logical transaction touches two distinct objects and a manifest;
-// one ETag CAS on db_head is its only commit point.
+// one content-hash CAS on db_head is its only commit point.
 const assert=require('node:assert/strict');
+const {sha256Bytes:sha256}=require('../src/content-hash.js');
 const fs=require('node:fs');
 const {open,close,expect,auth,grant,tmp}=require('./test-grants.js');
 
@@ -32,25 +33,30 @@ async function run() {
         bob:(await read(m.bob)).balance};
     }
     const initial=await stage('initial',10,10);
-    await expect(p,201,'POST','/store/db_head',{revision:0,manifest:initial},grant(token));
+    await expect(p,201,'POST','/store/db_head',{revision:0,transactionId:'initial',manifest:initial},grant(token));
     const old=await get('db_head');
     const oldHead=JSON.parse(old.bytes.toString());
     assert.deepEqual(await snapshot(oldHead),{alice:10,bob:10});
     const first=await stage('first',8,12);
     const second=await stage('second',7,13);
     assert.deepEqual(await read('db_head'),oldHead);
-    await expect(p,200,'PUT','/store/db_head',{revision:1,manifest:first},
-      {...grant(token),'If-Match':old.etag});
-    await expect(p,412,'PUT','/store/db_head',{revision:1,manifest:second},
-      {...grant(token),'If-Match':old.etag});
+    await expect(p,200,'PUT','/store/db_head',{revision:1,transactionId:'first',manifest:first},
+      {...grant(token),'X-Skrynia-If-SHA256':sha256(old.bytes)});
+    await expect(p,412,'PUT','/store/db_head',{revision:1,transactionId:'second',manifest:second},
+      {...grant(token),'X-Skrynia-If-SHA256':sha256(old.bytes)});
     const committed=await get('db_head');
     const committedHead=JSON.parse(committed.bytes.toString());
+    assert.equal(committedHead.revision,oldHead.revision+1);
+    assert.notEqual(committedHead.transactionId,oldHead.transactionId);
     assert.deepEqual(await snapshot(committedHead),{alice:8,bob:12});
     assert.deepEqual(await snapshot(oldHead),{alice:10,bob:10});
     const retry=await stage('retry',5,15);
-    await expect(p,200,'PUT','/store/db_head',{revision:2,manifest:retry},
-      {...grant(token),'If-Match':committed.etag});
-    assert.deepEqual(await snapshot(await read('db_head')),{alice:5,bob:15});
+    await expect(p,200,'PUT','/store/db_head',{revision:2,transactionId:'retry',manifest:retry},
+      {...grant(token),'X-Skrynia-If-SHA256':sha256(committed.bytes)});
+    const finalHead=await read('db_head');
+    assert.equal(finalHead.revision,committedHead.revision+1);
+    assert.notEqual(finalHead.transactionId,committedHead.transactionId);
+    assert.deepEqual(await snapshot(finalHead),{alice:5,bob:15});
     assert.deepEqual(await snapshot(committedHead),{alice:8,bob:12});
     console.log('client-constructed atomic logical transactions: OK');
   }finally{
