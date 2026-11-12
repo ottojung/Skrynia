@@ -11,6 +11,11 @@ releases are **client-side protocols** built on ordinary stored objects.
 Skrynia itself runs one Node.js process. It never executes application code.
 It has no application registry or privileged HTTP administration API.
 
+**For public hosting:** mutually untrusted publishers need separate HTTPS
+browser origins. Prefix grants do not isolate JavaScript or browser storage.
+See the [nginx multi-origin example](examples/nginx-origins.conf) and
+[operational guidance](docs/operations.md).
+
 ## Start
 
 Requires Node.js 20+ and util-linux `flock` on the server host.

@@ -69,7 +69,9 @@ image binds to `0.0.0.0` inside its container, runs as the unprivileged
 `node` user (UID/GID 1000), and includes the `flock` utility. Give that
 user write access to `SKRYNIA_DATA_DIR`; named volumes inherit the image's
 directory ownership, while bind mounts must be owned or writable by
-UID 1000. The root filesystem can be read-only:
+UID 1000. If a persistent volume is owned by another UID, stop all
+writers and set its ownership to UID/GID 1000 before starting Skrynia.
+The root filesystem can be read-only:
 
 ```sh
 docker run --name skrynia --read-only --tmpfs /tmp \
@@ -142,6 +144,33 @@ Push traffic and public reads are not quota-metered by grants. Grant quotas
 apply to storage objects, grant metadata and push subscriptions. The server
 also has bounded request size, number of subscriptions and notification queue
 capacity as independent resource safeguards.
+
+## Public hosting and origin isolation
+
+**Production requirement:** use a reverse proxy with request rate limits
+for the public API and anonymous object reads. Skrynia uses asynchronous
+file hashing on its own GET/HEAD path, but durable writes still perform
+synchronous filesystem synchronization; excessive traffic can delay
+mutations and push notifications. Prefer a static web server for high-volume
+object reads. Choose rate and connection limits for your storage device.
+
+Independent publishers whose JavaScript is mutually untrusted must use
+distinct HTTPS browser origins, not just different object-key prefixes or
+URL paths. Prefix grants control mutation authority; they do not separate
+DOM access, localStorage, or cookies.
+
+[`examples/nginx-origins.conf`](../examples/nginx-origins.conf) shows nginx
+hosts `alice.apps.example.org` and `bob.apps.example.org` mapping their
+respective flat-key prefixes directly to public store files, plus an
+independent `api.apps.example.org` reverse proxy to the Skrynia HTTP API.
+Supply certificates and hostnames and configure
+`SKRYNIA_URL=https://api.apps.example.org/platform`. The API uses explicit
+bearer tokens; never embed root credentials in untrusted pages. Objects
+remain publicly readable regardless of which publisher serves them.
+The example uses `Cache-Control: no-store` so mutable keys are fetched
+without relying on static-server timestamp validators. Immutable
+content-addressed assets can use longer cache lifetimes in deployments
+that keep their bytes unchanged.
 
 ## Deployment by clients
 
