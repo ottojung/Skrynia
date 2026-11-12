@@ -9,10 +9,11 @@ const path=require('path');
 const crypto=require('crypto');
 const {normalizeBasePath}=require('./base-path.js');
 const {createShared,ensureDir}=require('./shared.js');
+const {acquireWriterLock}=require('./writer-lock.js');
 const {createGrants}=require('./grants.js');
 const {createPush}=require('./push.js');
 const {createStoreJournal}=require('./store-journal.js');
-const {sha256Bytes,sha256Fd,sha256File}=require('./content-hash.js');
+const {sha256Bytes,sha256FdAsync,sha256File}=require('./content-hash.js');
 
 const DEFAULT_BUILD_INFO=Object.freeze({version:'development',commit:'development'});
 function loadBuildInfo(dir) {
@@ -39,6 +40,8 @@ function mimeType(key) {
 }
 function createServer(opts={}) {
   const shared=createShared(opts.dataDir);
+  const releaseWriter=acquireWriterLock(shared.STATE_DIR);
+  try {
   const grants=createGrants(shared);
   const buildInfo=opts.buildInfo||loadBuildInfo(opts.buildInfoDir);
   const external=opts.skryniaUrl??process.env.SKRYNIA_URL;
@@ -118,13 +121,16 @@ function createServer(opts={}) {
   function removeTemp(file) {
     try{fs.unlinkSync(file);}catch(e){if(e.code!=='ENOENT')throw e;}
   }
-  function get(key,req,res) {
+  async function get(key,req,res) {
     const file=shared.objPath(key);
     let fd=null;
     try {
       // Open once: validators and body must describe the same inode.
       fd=fs.openSync(file,'r');
-      const stat=fs.fstatSync(fd),tag='"'+sha256Fd(fd)+'"';
+      const stat=fs.fstatSync(fd);
+      const digest=await sha256FdAsync(fd,()=>res.destroyed);
+      if(digest===null) return;
+      const tag='"'+digest+'"';
       const headers={
         'Content-Type':mimeType(key),
         'ETag':tag,
@@ -179,8 +185,10 @@ function createServer(opts={}) {
         }
       });
     } catch(e) {
+      if(res.destroyed) return;
       if(e.code==='ENOENT') return json(res,404,{error:'not_found'});
-      throw e;
+      if(res.headersSent) return res.destroy(e);
+      return error(res,e);
     } finally {
       if(fd!==null) fs.closeSync(fd);
     }
@@ -467,8 +475,16 @@ function createServer(opts={}) {
   server.skrynia={HTTP_BASE_PATH:base,SKRYNIA_URL:external,DATA_DIR:shared.dataDir,
     grants,push,storeJournal:journal,buildInfo,
     bufferedUploadBytes:()=>bufferedBytes};
-  server.on('close',()=>{clearInterval(recoveryTimer);push.close();});
+  server.on('close',()=>{
+    clearInterval(recoveryTimer);
+    try {push.close(releaseWriter);}
+    catch(e) {releaseWriter();throw e;}
+  });
   return server;
+  } catch(e) {
+    releaseWriter();
+    throw e;
+  }
 }
 if(require.main===module) {
   const port=Number(process.env.SKRYNIA_PORT||17380);

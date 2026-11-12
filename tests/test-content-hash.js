@@ -124,6 +124,17 @@ async function run() {
         URLSearchParams,Uint8Array,ArrayBuffer});
     const store=window.Skrynia.store(token);
     const got=await store.get(key);
+    await assert.rejects(store.put(key,a,{sha256:'0'.repeat(64)}),e=>{
+      assert.equal(e.status,412);
+      assert.equal(e.code,'content_mismatch');
+      assert.equal(e.response.error,'content_mismatch');
+      return true;
+    });
+    await assert.rejects(store.put(key,a,{sha256:'bad'}),e=>{
+      assert.equal(e.status,400);
+      assert.equal(e.code,'invalid_precondition');
+      return true;
+    });
     assert.equal(got.meta.sha256,bh);
     assert.deepEqual(Buffer.from(got.bytes),b);
     await store.put(key,a,{sha256:got.meta.sha256});

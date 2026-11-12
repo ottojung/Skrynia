@@ -251,6 +251,13 @@ For browser applications, the API provides
 `X-Skrynia-If-SHA256`, `If-None-Match`, `If-Range` and `Range`), and exposure
 of the ETag header. Mutations require explicit bearer credentials, not browser cookies.
 
+The bundled browser helper rejects failed HTTP requests with an `Error`
+containing `status` (HTTP status), `code` (the server's JSON `error`
+string, when available), and `response` (the parsed JSON error body, when
+available). For example, a failed content-hash CAS exposes
+`error.code === 'content_mismatch'` so clients can read fresh bytes and
+retry with an updated precondition.
+
 The filesystem is authoritative; object-size indexes are rebuilt on startup.
 Skrynia requires a **single writer process per data directory**, and
 does not offer physical cross-key ACID transactions. See

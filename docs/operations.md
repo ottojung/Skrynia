@@ -22,7 +22,8 @@ The HTTP API does not contain special administrative endpoints.
 | SKRYNIA_PUSH_ALLOWED_HOSTS | empty (unrestricted public HTTPS hosts) | Optional comma-separated exact hostname allowlist for Web Push |
 | SKRYNIA_SOCKET_IDLE_TIMEOUT_MS | 30000 | Close HTTP sockets after this many milliseconds of inactivity |
 
-Start the server after installing Node.js 20+ and dependencies:
+Start the server after installing Node.js 20+, util-linux `flock`, and
+the Node dependencies. The server fails closed if `flock` is unavailable:
 
 ```sh
 npm ci
@@ -50,23 +51,39 @@ delay reads and push deliveries on its event loop. Benchmark on the
 target storage medium and apply request rate limits at the reverse proxy
 before exposing the service to high-volume anonymous traffic.
 
-A single Skrynia server must own the data directory. Do not run multiple
-writer processes against the same directory, including across containers
-sharing the same volume. Persist the directory across container restarts.
+Skrynia acquires an exclusive kernel advisory lock on
+`state/writer.lock` before accessing persistent grants or objects. Another
+instance using the same directory fails startup. The lock releases after
+normal shutdown, or automatically on process death; leave the lock file in
+place, since removing a locked inode invalidates mutual exclusion. All
+instances must share a filesystem with reliable Linux `flock` semantics
+(including when mounted into containers). Store data on a persistent volume
+and never run competing writers.
 Back up the directory consistently, including `state/` and `store/`.
 Restore private credentials and object files together when recovering state.
 
 ## Container and network security
 
 The host process defaults to listening only on `127.0.0.1`. The Docker
-image sets `SKRYNIA_HOST=0.0.0.0` so ordinary Docker port mappings work:
+image binds to `0.0.0.0` inside its container, runs as the unprivileged
+`node` user (UID/GID 1000), and includes the `flock` utility. Give that
+user write access to `SKRYNIA_DATA_DIR`; named volumes inherit the image's
+directory ownership, while bind mounts must be owned or writable by
+UID 1000. If a persistent volume is owned by another UID, stop all
+writers and set its ownership to UID/GID 1000 before starting Skrynia.
+The root filesystem can be read-only:
 
 ```sh
-docker run --name skrynia -p 127.0.0.1:17380:17380 \
+docker run --name skrynia --read-only --tmpfs /tmp \
+  -p 127.0.0.1:17380:17380 \
   -v skrynia-data:/var/lib/skrynia \
   -e SKRYNIA_URL=http://127.0.0.1:17380 \
   ghcr.io/ottojung/skrynia:latest
 ```
+
+Images are built and smoke-tested only after Node 20/22 tests pass.
+Publication to the registry happens after the container smoke test and
+includes an image tag derived from the full source commit SHA.
 
 Use HTTPS and a reverse proxy in public deployments. Never expose private
 grant credentials or `state/`. Authorized API requests use explicit
@@ -127,6 +144,41 @@ Push traffic and public reads are not quota-metered by grants. Grant quotas
 apply to storage objects, grant metadata and push subscriptions. The server
 also has bounded request size, number of subscriptions and notification queue
 capacity as independent resource safeguards.
+
+## Public hosting and origin isolation
+
+**Production requirement:** use a reverse proxy with request rate limits
+for the public API and anonymous object reads. Skrynia uses asynchronous
+file hashing on its own GET/HEAD path, but durable writes still perform
+synchronous filesystem synchronization; excessive traffic can delay
+mutations and push notifications. Prefer a static web server for high-volume
+object reads. Choose rate and connection limits for your storage device.
+
+Independent publishers whose JavaScript is mutually untrusted must use
+distinct HTTPS browser origins, not just different object-key prefixes or
+URL paths. Prefix grants control mutation authority; they do not separate
+DOM access, localStorage, or cookies.
+
+[`examples/nginx-origins.conf`](../examples/nginx-origins.conf) shows nginx
+hosts `alice.apps.example.org` and `bob.apps.example.org` mapping their
+respective flat-key prefixes directly to public store files, plus an
+independent `api.apps.example.org` reverse proxy to the Skrynia HTTP API.
+Supply certificates and hostnames and configure
+`SKRYNIA_URL=https://api.apps.example.org/platform`. The API uses explicit
+bearer tokens; never embed root credentials in untrusted pages. Objects
+remain publicly readable regardless of which publisher serves them.
+The example uses `Cache-Control: no-store` so mutable keys are fetched
+without relying on static-server timestamp validators. Immutable
+content-addressed assets can use longer cache lifetimes in deployments
+that keep their bytes unchanged.
+
+Use `node benchmarks/storage.js` to measure read, write and grant overhead
+on the actual filesystem before choosing production rate limits. The
+benchmark starts an isolated temporary server and deletes its data. Set
+`SKRYNIA_BENCH_OBJECTS`, `SKRYNIA_BENCH_GRANTS`, `SKRYNIA_BENCH_READS`,
+`SKRYNIA_BENCH_WRITES` and `SKRYNIA_BENCH_BYTES` to compare workload
+sizes. Results report throughput, p50/p95 request latency and event-loop
+delay, not universal performance guarantees.
 
 ## Deployment by clients
 

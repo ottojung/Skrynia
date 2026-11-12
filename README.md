@@ -11,9 +11,14 @@ releases are **client-side protocols** built on ordinary stored objects.
 Skrynia itself runs one Node.js process. It never executes application code.
 It has no application registry or privileged HTTP administration API.
 
+**For public hosting:** mutually untrusted publishers need separate HTTPS
+browser origins. Prefix grants do not isolate JavaScript or browser storage.
+See the [nginx multi-origin example](examples/nginx-origins.conf) and
+[operational guidance](docs/operations.md).
+
 ## Start
 
-Requires Node.js 20+.
+Requires Node.js 20+ and util-linux `flock` on the server host.
 
 ```sh
 npm ci
@@ -36,6 +41,8 @@ node scripts/root-credentials.js
 ```
 
 The command reads `SKRYNIA_DATA_DIR`; treat its output as a secret.
+The container image runs as non-root UID 1000; mounted data directories
+must be writable by that user.
 There is no endpoint that reveals or rotates the root issuer token.
 Do not place this credential in browser JavaScript.
 
@@ -152,8 +159,9 @@ Each subscription consumes the sponsoring grant's quotas.
   broader enumeration authority.
 - **Client protocols:** Applications define schemas, indexing, publication,
   cryptographic validation, and computation outside Skrynia.
-- **One writer process:** Only one Skrynia instance may own a data directory.
-  HTTP API mutations are serialized; static readers can be served separately.
+- **One writer process:** An exclusive kernel file lock prevents multiple
+  Skrynia instances from owning a data directory. HTTP API mutations
+  are serialized; static readers can be served separately.
 
 Skrynia supports CORS for bearer-authenticated browser requests from other
 origins. It does not use cookie authentication.
