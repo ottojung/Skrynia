@@ -88,6 +88,7 @@ properties in client protocols and authority distribution. Authentication
 of data is distinct from guaranteed storage availability.
 
 Skrynia sends grant-authorized, location-scoped Web Push wake-ups with
-at-least-once delivery; notification payloads reveal no keys or bytes.
+durable retry attempts; permanently failing endpoints are eventually
+retired, and notification payloads reveal no keys or bytes.
 Storage mutation intents and subtree revocation intents are durable and
 recovered on process startup. One process owns a data directory.

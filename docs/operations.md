@@ -18,6 +18,9 @@ The HTTP API does not contain special administrative endpoints.
 | SKRYNIA_PUSH_SUBJECT | SKRYNIA_URL | Web Push VAPID contact |
 | SKRYNIA_PUSH_SEND_TIMEOUT_MS | 10000 | Delivery timeout in milliseconds |
 | SKRYNIA_PUSH_CONCURRENCY | 8 | Maximum concurrent Web Push deliveries |
+| SKRYNIA_PUSH_MAX_ATTEMPTS | 12 | Failed delivery attempts before retiring a subscription |
+| SKRYNIA_PUSH_ALLOWED_HOSTS | empty (unrestricted public HTTPS hosts) | Optional comma-separated exact hostname allowlist for Web Push |
+| SKRYNIA_SOCKET_IDLE_TIMEOUT_MS | 30000 | Close HTTP sockets after this many milliseconds of inactivity |
 
 Start the server after installing Node.js 20+ and dependencies:
 
@@ -49,6 +52,12 @@ and then start the new version. Root revocation invalidates subordinate
 tokens and removes their Web Push subscriptions; the next start creates a
 new root. Grant records are not silently converted or migrated.
 
+Skrynia's single writer process uses synchronous filesystem fsync
+operations to preserve durability. Consequently, high write rates can
+delay reads and push deliveries on its event loop. Benchmark on the
+target storage medium and apply request rate limits at the reverse proxy
+before exposing the service to high-volume anonymous traffic.
+
 A single Skrynia server must own the data directory. Do not run multiple
 writer processes against the same directory, including across containers
 sharing the same volume. Persist the directory across container restarts.
@@ -76,6 +85,21 @@ time, Skrynia pins DNS resolution to public routable IP addresses, rejecting
 loopback and private services. Enforce an outbound firewall as defense in
 depth. `SKRYNIA_PUSH_SEND_TIMEOUT_MS` sets the delivery timeout, and
 `SKRYNIA_PUSH_CONCURRENCY` (default 8) bounds simultaneous sends.
+
+`SKRYNIA_PUSH_ALLOWED_HOSTS`, when configured, restricts subscription
+endpoints to a comma-separated list of **exact** public HTTPS hostnames,
+for example `updates.push.services.mozilla.com,fcm.googleapis.com`.
+Existing subscriptions outside a newly applied allowlist are retired
+without connecting to their endpoints. Other failures back off
+exponentially (to at most 30 minutes), and after
+`SKRYNIA_PUSH_MAX_ATTEMPTS` failures the subscription is removed.
+The client must register a fresh subscription if it wants notifications
+again. New writes do not reset failure counts or backoff.
+
+A socket inactivity timeout protects against completely idle readers.
+Slow readers that continue making progress and CPU-intensive requests
+still require front-end rate limiting and reverse-proxy controls;
+connection limits alone are not a full denial-of-service defense.
 
 ## Filesystem and static serving
 

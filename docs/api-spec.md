@@ -17,6 +17,9 @@ a prefix followed by `*` (`alice.*`), `*` for all keys, or
 `""` for no keys. Matchers use the same non-dot initial character as keys, with an optional
 trailing `*`; `*` and `""` are also valid matchers.
 A child grant's locations must select a subset of its parent's matched keys.
+Location matcher strings have a fixed maximum length of 257 characters,
+including any final `*`. This prevents oversized grant records and
+unbounded matcher-cache keys.
 
 ## Object endpoints
 
@@ -29,8 +32,9 @@ A child grant's locations must select a subset of its parent's matched keys.
 | DELETE | /store/{key} | Delete if present; requires `delete` and authorized user token; 200 or 404 |
 
 Mutations and listings use `Authorization: Bearer <user-token>`. Both PUT and DELETE accept an
-optional `If-Match: "<etag>"` and return HTTP 412 if the current ETag
-does not match. The strong ETag changes on every successful object mutation,
+optional `If-Match: "<etag>"`, `If-Match: *`, or a comma-separated
+list of strong validators. `*` succeeds only while the object exists.
+Weak ETags do not satisfy `If-Match`; a failed precondition returns 412. The strong ETag changes on every successful object mutation,
 including an identical-byte PUT and deletion followed by recreation.
 Objects are files under `SKRYNIA_DATA_DIR/store/{key}`; the server's ETag
 is in nginx's `"hex-mtime-seconds-hex-size"` format. Storage journals and
@@ -209,11 +213,14 @@ endpoint, scope, and events may be refreshed with its own capability.
 A grant revocation removes subscriptions funded by its subtree.
 
 Subscriptions are private server records. Matching object mutations enqueue
-durable at-least-once wake-ups, **coalescing multiple pending changes into
+durable retryable wake-ups, **coalescing multiple pending changes into
 one notification per subscription**. If an update occurs during delivery,
 its newer notification remains pending. Push messages carry the constant
 `changed` and no object data. Delivery is retryable and duplicate wake-ups
-are possible. A full notification outbox rejects a mutation needing new
+are possible. Non-permanent failures back off exponentially, and after
+12 failures by default the subscription is removed rather than retrying
+forever. An optional exact-host allowlist further restricts push
+destinations. A full notification outbox rejects a mutation needing new
 entries before committing it, with HTTP 507. Deliveries have configurable
 timeouts and bounded concurrency (default eight simultaneous sends).
 Endpoints must use HTTPS; outbound DNS answers are validated and pinned
@@ -224,8 +231,9 @@ to publicly routable addresses.
 `GET /health`, `GET /version`, and `GET /client/skrynia.js` are public.
 
 For browser applications, the API provides
-`Access-Control-Allow-Origin: *`, CORS preflight, and exposure of the ETag
-header. Mutations require explicit bearer credentials, not browser cookies.
+`Access-Control-Allow-Origin: *`, CORS preflight (including
+`If-Match`, `If-None-Match`, `If-Range` and `Range`), and exposure
+of the ETag header. Mutations require explicit bearer credentials, not browser cookies.
 
 The filesystem is authoritative; object-size indexes are rebuilt on startup.
 Skrynia requires a **single writer process per data directory**, and
