@@ -1,3 +1,4 @@
+use axum::serve::ListenerExt;
 mod error;
 mod grants;
 mod http;
@@ -11,6 +12,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let port = std::env::var("SKRYNIA_PORT").unwrap_or_else(|_| "17380".into());
     let listener = tokio::net::TcpListener::bind(format!("{address}:{port}")).await?;
     let router = http::router(server);
+    // Prevent Nagle/delayed-ACK interaction between response headers and body.
+    let listener = listener.tap_io(|socket| {
+        if let Err(error) = socket.set_nodelay(true) {
+            eprintln!("Skrynia failed to set TCP_NODELAY: {error}");
+        }
+    });
     axum::serve(listener, router).await?;
     Ok(())
 }

@@ -33,10 +33,14 @@ SKRYNIA_DATA_DIR="$(mktemp -d)" SKRYNIA_URL=http://127.0.0.1:17380 \
     target/debug/skrynia-server
 ```
 
-The experimental binary currently implements basic storage, grant APIs, SHA-256
-CAS, and immutable-read responses. Web Push and full failure/recovery parity
-are **not yet implemented**. It refuses startup with unsupported Web Push state.
-Passing its limited interoperability smoke test is **not** release qualification.
+The experimental binary implements public storage, grant APIs, SHA-256 CAS,
+Web Push subscriptions, durable notification coalescing, retry delivery and
+recovery. Its VAPID and subscription records interoperate with the existing
+Node.js server; its Push delivery path is not yet qualified against real push
+services, and complete failure/recovery and resource-limit parity remain open.
+Passing its interoperability smoke tests is **not** release qualification.
+[Reproducible Rust/Node performance measurements](docs/rust-benchmarks.md)
+are provided without weakening durability or claiming general superiority.
 The conventional `Dockerfile` and published image continue to run Node.js.
 `Dockerfile.rust` is an intentionally separate experimental build.
 

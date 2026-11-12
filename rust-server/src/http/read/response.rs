@@ -40,7 +40,8 @@ pub fn respond(
             file.seek(SeekFrom::Start(s.start))
                 .map_err(|_| internal())?;
             let stream = tokio::io::AsyncReadExt::take(tokio::fs::File::from_std(file), length);
-            *response.body_mut() = Body::from_stream(ReaderStream::new(stream));
+            *response.body_mut() =
+                Body::from_stream(ReaderStream::with_capacity(stream, 64 * 1024));
         }
     }
     Ok(response)
