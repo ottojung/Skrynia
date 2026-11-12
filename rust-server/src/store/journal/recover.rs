@@ -29,3 +29,6 @@ pub fn recover(root: &Path, mut notify: impl FnMut(&Intent) -> io::Result<()>) -
     }
     sync_dir(&dir)
 }
+
+#[cfg(test)]
+mod tests;
