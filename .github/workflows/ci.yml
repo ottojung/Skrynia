@@ -19,6 +19,7 @@ jobs:
       - run: make test
 
   docker:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -27,13 +28,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Login to GHCR
-        if: github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Derive build version
         id: gitver
         shell: bash
@@ -43,34 +37,29 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
-      - name: Build and push Skrynia
+      - name: Build Skrynia image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile
-          load: ${{ github.ref != 'refs/heads/main' }}
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: |
-            ghcr.io/ottojung/skrynia:${{ steps.gitver.outputs.version }}
-            ghcr.io/ottojung/skrynia:latest
+          load: true
+          push: false
+          tags: skrynia:ci
           build-args: |
             SKRYNIA_VERSION=${{ steps.gitver.outputs.version }}
             SKRYNIA_COMMIT=${{ steps.gitver.outputs.commit }}
           cache-from: type=gha,scope=docker-skrynia
           cache-to: type=gha,mode=max,scope=docker-skrynia
-      - name: Pull image for smoke test
-        if: github.ref == 'refs/heads/main'
-        run: docker pull ghcr.io/ottojung/skrynia:latest
       - name: Smoke test HTTP and root bootstrap
         run: |
           docker rm -f skrynia-smoke >/dev/null 2>&1 || true
           docker run -d --name skrynia-smoke \
             --read-only \
             --tmpfs /tmp \
-            --tmpfs /var/lib/skrynia \
+            --tmpfs /var/lib/skrynia:uid=1000,gid=1000,mode=0700 \
             -p 127.0.0.1:17380:17380 \
             --env SKRYNIA_URL=http://127.0.0.1:17380/platform \
-            ghcr.io/ottojung/skrynia:latest
+            skrynia:ci
           trap 'docker rm -f skrynia-smoke >/dev/null 2>&1 || true' EXIT
           for i in $(seq 1 20); do
             curl -fsS http://127.0.0.1:17380/platform/health && break
@@ -78,8 +67,26 @@ jobs:
           done
           curl -fsS http://127.0.0.1:17380/platform/version | grep -F '"commit":"${{ steps.gitver.outputs.commit }}"'
           docker exec skrynia-smoke node /app/scripts/root-credentials.js >/dev/null
+          docker exec skrynia-smoke id -u | grep -Fx 1000
           docker exec skrynia-smoke node -e '
             const fs=require("fs"),p="/var/lib/skrynia/state/grants";
             const x=fs.readdirSync(p).map(n=>JSON.parse(fs.readFileSync(p+"/"+n)));
             if(x.length!==1||x[0].parent!==null||x[0].maxBytes!==null)process.exit(1);
           '
+
+      - name: Login to GHCR
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish validated image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          docker tag skrynia:ci ghcr.io/ottojung/skrynia:sha-${{ steps.gitver.outputs.commit }}
+          docker push ghcr.io/ottojung/skrynia:sha-${{ steps.gitver.outputs.commit }}
+          docker tag skrynia:ci ghcr.io/ottojung/skrynia:${{ steps.gitver.outputs.version }}
+          docker push ghcr.io/ottojung/skrynia:${{ steps.gitver.outputs.version }}
+          docker tag skrynia:ci ghcr.io/ottojung/skrynia:latest
+          docker push ghcr.io/ottojung/skrynia:latest

@@ -65,14 +65,23 @@ Restore private credentials and object files together when recovering state.
 ## Container and network security
 
 The host process defaults to listening only on `127.0.0.1`. The Docker
-image sets `SKRYNIA_HOST=0.0.0.0` so ordinary Docker port mappings work:
+image binds to `0.0.0.0` inside its container, runs as the unprivileged
+`node` user (UID/GID 1000), and includes the `flock` utility. Give that
+user write access to `SKRYNIA_DATA_DIR`; named volumes inherit the image's
+directory ownership, while bind mounts must be owned or writable by
+UID 1000. The root filesystem can be read-only:
 
 ```sh
-docker run --name skrynia -p 127.0.0.1:17380:17380 \
+docker run --name skrynia --read-only --tmpfs /tmp \
+  -p 127.0.0.1:17380:17380 \
   -v skrynia-data:/var/lib/skrynia \
   -e SKRYNIA_URL=http://127.0.0.1:17380 \
   ghcr.io/ottojung/skrynia:latest
 ```
+
+Images are built and smoke-tested only after Node 20/22 tests pass.
+Publication to the registry happens after the container smoke test and
+includes an image tag derived from the full source commit SHA.
 
 Use HTTPS and a reverse proxy in public deployments. Never expose private
 grant credentials or `state/`. Authorized API requests use explicit

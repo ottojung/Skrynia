@@ -36,6 +36,8 @@ node scripts/root-credentials.js
 ```
 
 The command reads `SKRYNIA_DATA_DIR`; treat its output as a secret.
+The container image runs as non-root UID 1000; mounted data directories
+must be writable by that user.
 There is no endpoint that reveals or rotates the root issuer token.
 Do not place this credential in browser JavaScript.
 
