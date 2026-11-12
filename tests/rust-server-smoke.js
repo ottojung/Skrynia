@@ -21,7 +21,7 @@ function request(port,method,path,body,token,extra={}) {
   const bytes=body===undefined?null:Buffer.isBuffer(body)?body:Buffer.from(body);
   const headers={...extra,...(token?{Authorization:'Bearer '+token}:{}),...(bytes?{'Content-Length':bytes.length}:{})};
   return new Promise((resolve,reject)=>{
-    const req=http.request({host:'127.0.0.1',port,method,path:'/platform'+path,headers},res=>{
+    const req=http.request({host:'127.0.0.1',port,method,path:'/platform'+path,headers,agent:false},res=>{
       const parts=[];
       res.on('data',b=>parts.push(b));
       res.on('end',()=>{
@@ -186,6 +186,16 @@ async function run() {
     await cannotStart(binary,dir,p);
     assert.equal(existsSync(subFile),true);
     rmSync(subFile);
+    server=await start(binary,[],dir,p,{SKRYNIA_MAX_CONNECTIONS:'1',
+      SKRYNIA_SOCKET_IDLE_TIMEOUT_MS:'100'});
+    const idle=net.connect({port:p,host:'127.0.0.1'});
+    idle.on('error',()=>{}); // The server is expected to close this idle socket.
+    await new Promise((resolve,reject)=>{
+      const deadline=setTimeout(()=>{idle.destroy();reject(Error('idle socket not closed'))},1100);
+      idle.once('close',()=>{clearTimeout(deadline);resolve();});
+    });
+    assert.equal((await request(p,'GET','/health')).status,200);
+    await stop(server);server=undefined;
     server=await start(process.execPath,[resolve('src/server.js')],dir,p);
     assert.equal((await request(p,'GET','/store/team.a')).body.toString(),'member');
     console.log('Rust/Node recovery, CAS, grant authority and startup safety: OK');
