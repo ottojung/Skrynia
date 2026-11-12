@@ -27,7 +27,7 @@ pub fn precondition(headers: &HeaderMap, method: &Method) -> Result<Option<Strin
     }
     Ok(Some(value.into()))
 }
-pub fn key(value: &str) -> Result<String> {
+pub fn key(value: &str, max_length: usize) -> Result<String> {
     let raw = value.as_bytes();
     for (index, byte) in raw.iter().copied().enumerate() {
         if byte == b'%'
@@ -41,7 +41,7 @@ pub fn key(value: &str) -> Result<String> {
     let decoded = percent_encoding::percent_decode_str(value)
         .decode_utf8()
         .map_err(|_| bad("invalid_percent_encoding"))?;
-    if !crate::valid_key(&decoded) {
+    if decoded.len() > max_length || !crate::valid_key(&decoded) {
         return Err(bad("invalid_key"));
     }
     Ok(decoded.into_owned())

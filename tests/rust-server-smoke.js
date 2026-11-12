@@ -215,8 +215,19 @@ async function run() {
     });
     assert.equal((await request(p,'GET','/health')).status,200);
     assert.equal(await stop(server),0,'Rust server must exit cleanly on SIGTERM');server=undefined;
+    server=await start(binary,[],dir,p,{SKRYNIA_MAX_KEY_LENGTH:'512'});
+    const longKey='x'.repeat(250);
+    assert.equal((await request(p,'POST','/store/'+longKey,'long',user)).status,201);
+    assert.equal((await request(p,'GET','/store/'+longKey)).body.toString(),'long');
+    await stop(server);server=undefined;
+    server=await start(binary,[],dir,p,{SKRYNIA_MAX_KEY_LENGTH:'4'});
+    assert.equal((await request(p,'POST','/store/abcde','no',user)).status,400);
+    assert.equal((await request(p,'POST','/store/abcd','yes',user)).status,201);
+    assert.equal((await request(p,'GET','/health')).status,200);
+    await stop(server);server=undefined;
     server=await start(process.execPath,[resolve('src/server.js')],dir,p);
     assert.equal((await request(p,'GET','/store/team.a')).body.toString(),'member');
+    assert.equal((await request(p,'GET','/store/'+longKey)).body.toString(),'long');
     console.log('Rust/Node recovery, CAS, grant authority and startup safety: OK');
   } finally {if(server)await stop(server);rmSync(dir,{recursive:true,force:true});}
 }

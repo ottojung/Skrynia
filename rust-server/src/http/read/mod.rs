@@ -9,7 +9,7 @@ use axum::response::Response;
 use std::sync::Arc;
 
 pub async fn read(state: Arc<State>, raw: &str, req: Request) -> Result<Response> {
-    let key = auth::key(raw)?;
+    let key = auth::key(raw, state.max_key_length)?;
     let (file, size, sha) = file::open(state, &key).await?;
     let tag = format!("\"{sha}\"");
     let selection = headers::select(req.headers(), &tag, size);

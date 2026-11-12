@@ -1,3 +1,4 @@
+mod length;
 use std::io;
 use std::path::PathBuf;
 pub struct Config {
@@ -5,6 +6,7 @@ pub struct Config {
     pub base: String,
     pub public: String,
     pub max_object: usize,
+    pub max_key_length: usize,
     pub max_buffered: usize,
 }
 pub fn read() -> io::Result<Config> {
@@ -21,6 +23,7 @@ pub fn read() -> io::Result<Config> {
     {
         return Err(io::Error::other("invalid SKRYNIA_URL"));
     }
+    let max_key_length = length::key()?;
     let max_object = std::env::var("SKRYNIA_MAX_OBJECT_SIZE")
         .ok()
         .map_or(Ok(10485760usize), |v| v.parse())
@@ -40,6 +43,7 @@ pub fn read() -> io::Result<Config> {
         dir,
         base: url.path().trim_end_matches('/').into(),
         max_object,
+        max_key_length,
         max_buffered,
     })
 }

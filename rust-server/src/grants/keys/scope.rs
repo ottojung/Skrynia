@@ -1,6 +1,5 @@
 pub fn valid_key(key: &str) -> bool {
     !key.is_empty()
-        && key.len() <= 256
         && key
             .bytes()
             .enumerate()

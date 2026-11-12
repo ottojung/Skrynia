@@ -7,7 +7,7 @@ use axum::response::Response;
 use std::sync::Arc;
 
 pub async fn mutation(state: Arc<State>, raw_name: String, req: Request) -> Result<Response> {
-    let key = auth::key(&raw_name)?;
+    let key = auth::key(&raw_name, state.max_key_length)?;
     let expected = auth::precondition(req.headers(), req.method())?;
     let token = replies::token(req.headers())?.to_string();
     let method = req.method().clone();

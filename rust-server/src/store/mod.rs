@@ -17,6 +17,7 @@ pub struct State {
     pub dir: PathBuf,
     pub base: String,
     pub max_object: usize,
+    pub max_key_length: usize,
     pub max_buffered: usize,
     pub upload: Arc<tokio::sync::Semaphore>,
     pub push_config: PushConfig,

@@ -7,7 +7,8 @@ fn key_grammar() {
     for key in ["", ".a", "a/b", "a-b", "á", "*", "a b"] {
         assert!(!valid_key(key));
     }
-    assert!(!valid_key(&"x".repeat(257)));
+    assert!(valid_key(&"x".repeat(257)));
+    assert!(!valid_scope(&"x".repeat(258)));
 }
 #[test]
 fn scope_attenuation() {

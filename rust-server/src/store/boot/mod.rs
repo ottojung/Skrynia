@@ -12,6 +12,7 @@ impl State {
         let dir = config.dir;
         let base = config.base;
         let max_object = config.max_object;
+        let max_key_length = config.max_key_length;
         let max_buffered = config.max_buffered;
         let push_config = crate::PushConfig::load(&config.public)?;
         paths::dirs(&dir)?;
@@ -28,6 +29,7 @@ impl State {
             dir,
             base,
             max_object,
+            max_key_length,
             max_buffered,
             upload: std::sync::Arc::new(tokio::sync::Semaphore::new(max_buffered)),
             push_config,
