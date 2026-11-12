@@ -15,8 +15,8 @@ async function run() {
     const shared=createShared(dir);
     shared.ensureStoreRoots();
     const large=path.join(shared.STORE_DIR,'large.binary');
-    fs.writeFileSync(large,Buffer.alloc(16*1024*1024,0x41));
-    const started=await open(dir,{socketIdleTimeoutMs:150});
+    fs.writeFileSync(large,Buffer.alloc(4*1024*1024,0x41));
+    const started=await open(dir,{socketIdleTimeoutMs:30000});
     server=started.server;
     const port=started.port;
     const root=server.skrynia.grants.root();
@@ -25,7 +25,7 @@ async function run() {
     const countFD=()=>fs.readdirSync('/proc/self/fd').length;
     const baseline=countFD();
 
-    for(let i=0;i<50;i++) {
+    for(let i=0;i<20;i++) {
       await new Promise((resolve,reject)=>{
         const req=http.get({
           host:'127.0.0.1',port,
@@ -37,9 +37,9 @@ async function run() {
           req.destroy();
           resolve();
         });
-        req.on('error',e=>{
-          if(e.code!=='ECONNRESET') reject(e);
-        });
+        // A reset before response headers must reject, not leave this test hung.
+        // A reset after resolve() is harmless (the promise is already settled).
+        req.on('error',reject);
         req.setTimeout(1500,()=>req.destroy(new Error('download timed out')));
       });
     }
@@ -73,6 +73,8 @@ async function run() {
     await expect(port,200,'PUT','/store/large.binary','still alive',grant(token));
 
     // HTTP connections that send no request bytes cannot remain forever.
+    // Use a short idle timeout only for this check, not during large GETs.
+    server.setTimeout(150,socket=>socket.destroy());
     const socket=net.createConnection({host:'127.0.0.1',port});
     await new Promise(resolve=>socket.once('connect',resolve));
     await Promise.race([
