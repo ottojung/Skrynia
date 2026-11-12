@@ -1,7 +1,6 @@
+mod upload;
 use super::{auth, replies};
-use crate::State;
-use crate::{Fail, Result};
-use axum::body::to_bytes;
+use crate::{Result, State};
 use axum::extract::Request;
 use axum::http::{Method, StatusCode};
 use axum::response::Response;
@@ -22,16 +21,15 @@ pub async fn mutation(state: Arc<State>, raw_name: String, req: Request) -> Resu
         let data = state.data.lock().map_err(|_| crate::internal())?;
         data.grant_for(&token, operation, &key)?;
     }
-    let body = if method == Method::DELETE {
-        Vec::new()
+    let upload = if method == Method::DELETE {
+        upload::Upload::empty(Arc::clone(&state.upload))
     } else {
-        to_bytes(req.into_body(), state.max_object)
-            .await
-            .map_err(|_| Fail(StatusCode::PAYLOAD_TOO_LARGE, "request_too_large"))?
-            .to_vec()
+        upload::read(&state, req).await?
     };
     let outcome = tokio::task::spawn_blocking(move || {
-        state.change(&key, kind, &body, expected.as_deref(), &token)
+        let committed = state.change(&key, kind, &upload.bytes, expected.as_deref(), &token);
+        drop(upload);
+        committed
     })
     .await
     .map_err(|_| crate::internal())?;

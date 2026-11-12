@@ -11,6 +11,7 @@ impl State {
         let dir = config.dir;
         let base = config.base;
         let max_object = config.max_object;
+        let max_buffered = config.max_buffered;
         let push_config = crate::PushConfig::load(&config.public)?;
         paths::dirs(&dir)?;
         let lock = locking::acquire(&dir.join("state"))?;
@@ -24,6 +25,8 @@ impl State {
             dir,
             base,
             max_object,
+            max_buffered,
+            upload: std::sync::Arc::new(tokio::sync::Semaphore::new(max_buffered)),
             push_config,
             vapid,
             data: Mutex::new(Snapshot {

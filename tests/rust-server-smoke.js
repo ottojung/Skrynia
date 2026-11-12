@@ -34,9 +34,9 @@ function request(port,method,path,body,token,extra={}) {
     req.end(bytes);
   });
 }
-async function start(command,args,dir,port) {
+async function start(command,args,dir,port,extraEnv={}) {
   const child=spawn(command,args,{env:{...process.env,SKRYNIA_DATA_DIR:dir,
-    SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',SKRYNIA_PORT:String(port),SKRYNIA_PUSH_MANUAL:'1'},stdio:'ignore'});
+    SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',SKRYNIA_PORT:String(port),SKRYNIA_PUSH_MANUAL:'1',...extraEnv},stdio:'ignore'});
   let exited=false;
   child.once('exit',()=>{exited=true;});
   for(let attempt=0;attempt<100;attempt++) {
@@ -172,6 +172,12 @@ async function run() {
     assert.equal(existsSync(marker),false);
     assert.equal((await request(p,'GET','/store/team.a')).body.toString(),'member');
     assert.equal((await request(p,'POST','/store/team.b','unauthorized',contributor)).status,403);
+    await stop(server);server=undefined;
+    // Concurrent upload buffering has a global budget, not just a per-object size.
+    server=await start(binary,[],dir,p,{SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES:'5'});
+    assert.equal((await request(p,'POST','/store/large.upload','sixsix',user)).status,503);
+    assert.equal((await request(p,'GET','/store/large.upload')).status,404);
+    assert.equal((await request(p,'POST','/store/small.upload','ok',user)).status,201);
     await stop(server);server=undefined;
     // An unknown pending push subscription must not be silently discarded.
     const subs=join(dir,'state/push-subs');mkdirSync(subs,{recursive:true});

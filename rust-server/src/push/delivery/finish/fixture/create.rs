@@ -28,6 +28,8 @@ pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
         dir: path.to_path_buf(),
         base: String::new(),
         max_object: 100,
+        max_buffered: 100,
+        upload: std::sync::Arc::new(tokio::sync::Semaphore::new(100)),
         data: Mutex::new(Snapshot {
             objects: BTreeMap::new(),
             grants: HashMap::new(),
