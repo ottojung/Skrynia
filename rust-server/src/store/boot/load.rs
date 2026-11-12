@@ -17,3 +17,15 @@ pub fn grants(root: &Path) -> io::Result<HashMap<String, Grant>> {
     }
     Ok(result)
 }
+
+pub fn tokens(grants: &HashMap<String, Grant>) -> HashMap<String, String> {
+    grants
+        .iter()
+        .flat_map(|(id, grant)| {
+            grant
+                .users
+                .iter()
+                .map(move |user| (user.hash.clone(), id.clone()))
+        })
+        .collect()
+}

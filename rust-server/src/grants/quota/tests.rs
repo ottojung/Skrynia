@@ -23,7 +23,11 @@ fn scoped_quota_and_metadata() {
     let mut objects = BTreeMap::new();
     objects.insert("alpha.one".into(), 1000);
     objects.insert("beta.one".into(), 9000);
-    let data = Snapshot { grants, objects };
+    let data = Snapshot {
+        grants,
+        objects,
+        tokens: HashMap::new(),
+    };
     assert_eq!(data.usage(&child, None), (1000 + 512 + 2048, 1));
     assert_eq!(
         data.usage(&child, Some(("alpha.one", 2000))),

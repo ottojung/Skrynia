@@ -26,7 +26,11 @@ impl State {
             return Err(crate::internal());
         }
         for id in record.ids {
-            data.grants.remove(&id);
+            if let Some(grant) = data.grants.remove(&id) {
+                for user in grant.users {
+                    data.tokens.remove(&user.hash);
+                }
+            }
         }
         Ok(())
     }

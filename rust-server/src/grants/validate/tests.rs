@@ -22,6 +22,7 @@ fn rejects_invalid_root_and_orphans() {
     let mut state = Snapshot {
         objects: BTreeMap::new(),
         grants,
+        tokens: HashMap::new(),
     };
     state.validate().unwrap();
     state.grants.get_mut(&g.id).unwrap().issuer_hash = "0".repeat(64);

@@ -6,10 +6,8 @@ use crate::{Result, forbidden, missing};
 impl Snapshot {
     pub fn user(&self, token: &str) -> Result<&Grant> {
         let hash = sha(token.as_bytes());
-        self.grants
-            .values()
-            .find(|g| g.users.iter().any(|u| u.hash == hash))
-            .ok_or_else(|| forbidden("invalid_grant_user_token"))
+        let grant = self.tokens.get(&hash).and_then(|id| self.grants.get(id));
+        grant.ok_or_else(|| forbidden("invalid_grant_user_token"))
     }
     pub fn issuer(&self, id: &str, token: &str) -> Result<&Grant> {
         let grant = self

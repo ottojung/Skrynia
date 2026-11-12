@@ -88,6 +88,12 @@ async function run() {
     assert.equal((await request(p,'PUT','/store/new.txt','error',user,{'If-Match':'*'})).status,400);
     const list=await request(p,'GET','/store?locations=*',undefined,user);
     assert.deepEqual(list.json.keys,['legacy.txt','new.txt']);
+    const issued=await request(p,'POST','/grants/'+root+'/users',undefined,issuer);
+    assert.equal(issued.status,200);
+    const extra=issued.json;
+    assert.equal((await request(p,'POST','/store/temporary','yes',extra.userToken)).status,201);
+    assert.equal((await request(p,'DELETE','/grants/'+root+'/users/'+extra.userId,undefined,issuer)).status,200);
+    assert.equal((await request(p,'POST','/store/denied','no',extra.userToken)).status,403);
     const child=(await request(p,'POST','/grants',JSON.stringify({locations:'team.*',
       operations:['create','list'],maxBytes:30000,maxObjects:5}),user)).json;
     assert.equal(typeof child.issuerToken,'string');

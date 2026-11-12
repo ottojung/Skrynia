@@ -24,4 +24,7 @@ pub struct State {
 pub struct Snapshot {
     pub objects: BTreeMap<String, u64>,
     pub grants: HashMap<String, Grant>,
+    pub tokens: HashMap<String, String>,
 }
+
+pub use journal::recover as journal_recover;

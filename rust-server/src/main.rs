@@ -21,3 +21,5 @@ pub use grants::{Grant, matches, random_id, sha, sha_file, subset, valid_key, va
 pub use grants::{OPERATIONS, recover_pending};
 pub use store::disk::{sync_dir, write_json};
 pub use store::{Snapshot, State};
+
+pub use store::journal_recover;
