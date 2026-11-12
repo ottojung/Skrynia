@@ -1,3 +1,4 @@
+mod cleanup;
 mod load;
 mod options;
 mod verify;
@@ -15,6 +16,7 @@ impl State {
         let push_config = crate::PushConfig::load(&config.public)?;
         paths::dirs(&dir)?;
         let lock = locking::acquire(&dir.join("state"))?;
+        cleanup::abandoned(&dir)?;
         crate::recover_pending(&dir)?;
         let objects = paths::scan(&dir)?;
         let grants = load::grants(&dir)?;

@@ -76,7 +76,13 @@ async function run() {
     const vapidBefore=JSON.parse(readFileSync(join(dir,'state/push/vapid.json')));
     await cannotStart(binary,dir,await port()); // Node already holds the writer lock.
     await stop(server);server=undefined;
+    // Interrupted atomic JSON writes may leave files that must not poison startup.
+    const tempName='.skrynia-'+'a'.repeat(32);
+    const discarded=[join(dir,'state/grants',tempName),
+      join(dir,'state/push/outbox',tempName),join(dir,'state/push-subs',tempName)];
+    for(const path of discarded)writeFileSync(path,'incomplete atomic JSON');
     server=await start(binary,[],dir,p);
+    for(const path of discarded)assert.equal(existsSync(path),false);
     assert.deepEqual(JSON.parse(readFileSync(join(dir,'state/push/vapid.json'))),vapidBefore);
     assert.equal((await request(p,'GET','/store/legacy.txt')).body.toString(),'legacy');
     const created=await request(p,'POST','/store/new.txt','abc',user);
