@@ -21,3 +21,6 @@ pub fn create(
     message.set_vapid_signature(signature);
     message.build().map_err(|_| Failure::Retry)
 }
+
+#[cfg(test)]
+mod tests;
