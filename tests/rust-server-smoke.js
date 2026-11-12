@@ -97,9 +97,43 @@ async function run() {
     assert.equal((await request(p,'DELETE','/grants/'+root+'/users/'+extra.userId,undefined,issuer)).status,200);
     assert.equal((await request(p,'POST','/store/denied','no',extra.userToken)).status,403);
     const child=(await request(p,'POST','/grants',JSON.stringify({locations:'team.*',
-      operations:['create','list'],maxBytes:30000,maxObjects:5}),user)).json;
+      operations:['create','list','subscribe'],maxBytes:30000,maxObjects:5}),user)).json;
     assert.equal(typeof child.issuerToken,'string');
     const contributor=(await request(p,'POST','/grants/'+child.id+'/users',undefined,child.issuerToken)).json.userToken;
+    // Persisted browser subscriptions must survive both Rust and Node readers.
+    const crypto=require('node:crypto');
+    const ecdh=crypto.createECDH('prime256v1');ecdh.generateKeys();
+    const keys={p256dh:ecdh.getPublicKey().toString('base64url'),
+      auth:crypto.randomBytes(16).toString('base64url')};
+    const subscription={locations:'team.*',events:['create','replace','delete'],
+      endpoint:'https://push.example.com/some-id',keys};
+    const createdSub=await request(p,'POST','/push/subscriptions',JSON.stringify(subscription),contributor);
+    assert.equal(createdSub.status,201,JSON.stringify(createdSub.json));
+    const subId=createdSub.json.id;
+    const liveSubFile=join(dir,'state/push-subs',subId+'.json');
+    assert.equal(JSON.parse(readFileSync(liveSubFile)).grantId,child.id);
+    const vapid=JSON.parse(readFileSync(join(dir,'state/push/vapid.json')));
+    assert.equal((await request(p,'GET','/push/vapid')).json.publicKey,vapid.publicKey);
+    assert.equal((await request(p,'POST','/push/subscriptions',JSON.stringify(subscription),contributor)).status,403);
+    const rotated=await request(p,'POST','/push/subscriptions',JSON.stringify(subscription),contributor,
+      {'X-Skrynia-Capability':createdSub.json.capability});
+    assert.equal(rotated.status,201);
+    assert.equal(rotated.json.deduped,true);
+    assert.notEqual(rotated.json.capability,createdSub.json.capability);
+    assert.equal((await request(p,'PUT','/push/subscriptions/'+subId,
+      JSON.stringify({endpoint:'https://push2.example.com/v1'}),undefined,
+      {'X-Skrynia-Capability':rotated.json.capability})).status,200);
+    const storedSub=JSON.parse(readFileSync(liveSubFile));
+    assert.equal(storedSub.endpoint,'https://push2.example.com/v1');
+    assert.equal(storedSub.capHash,sha(rotated.json.capability));
+    const jsPush=require('../src/push.js').createPush({dataDir:dir,pushManual:true});
+    assert.equal(jsPush.findSub(subId).capHash,storedSub.capHash);
+    assert.equal(jsPush.getPublicKey(),vapid.publicKey);
+    assert.equal((await request(p,'DELETE','/push/subscriptions/'+subId,undefined,undefined,
+      {'X-Skrynia-Capability':createdSub.json.capability})).status,403);
+    assert.equal((await request(p,'DELETE','/push/subscriptions/'+subId,undefined,undefined,
+      {'X-Skrynia-Capability':rotated.json.capability})).status,200);
+    assert.equal(existsSync(liveSubFile),false);
     assert.equal((await request(p,'POST','/store/team.a','member',contributor)).status,201);
     assert.equal((await request(p,'PUT','/store/team.a','wrong',contributor)).status,403);
     assert.equal((await request(p,'GET','/store?locations=team.*',undefined,contributor)).json.keys[0],'team.a');

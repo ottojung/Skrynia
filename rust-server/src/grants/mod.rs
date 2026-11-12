@@ -14,3 +14,5 @@ pub use model::Grant;
 pub use root::OPS as OPERATIONS;
 
 pub use keys::{valid_identifier, valid_sha256};
+
+pub use keys::{secret as random_secret, secure_match};

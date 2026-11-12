@@ -33,10 +33,7 @@ async fn route(state: Arc<State>, req: Request) -> crate::Result<Response> {
         return grants::route(state, &path, req).await;
     }
     if path.starts_with("/push") {
-        return Ok(replies::json(
-            StatusCode::NOT_IMPLEMENTED,
-            serde_json::json!({"error":"push_not_implemented"}),
-        ));
+        return crate::push_route(state, &path, req).await;
     }
     Ok(replies::json(
         StatusCode::NOT_FOUND,

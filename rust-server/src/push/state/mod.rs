@@ -19,3 +19,5 @@ pub fn load_push(root: &Path) -> io::Result<PushState> {
     })
 }
 pub use validate::validate_push;
+
+pub use validate::valid_keys;

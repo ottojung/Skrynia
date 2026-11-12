@@ -1,5 +1,6 @@
 mod hash;
 mod scope;
+mod secure;
 mod valid;
 pub use hash::{sha, sha_file};
 use rand::RngCore;
@@ -19,3 +20,5 @@ pub fn secret() -> String {
 mod tests;
 
 pub use valid::{identifier as valid_identifier, sha256 as valid_sha256};
+
+pub use secure::match_sha as secure_match;
