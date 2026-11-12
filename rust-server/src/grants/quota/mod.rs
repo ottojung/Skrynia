@@ -1,4 +1,5 @@
 mod metadata;
+mod objects;
 mod usage;
 use crate::{Fail, Result, Snapshot};
 use axum::http::StatusCode;
