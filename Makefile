@@ -11,5 +11,6 @@ rust-test:
 	target/skrynia-source-lint-tests
 	cargo build --locked --package skrynia-server
 	node tests/rust-server-smoke.js
+	node tests/rust-protocol-parity.js
 
 .PHONY: test test-node rust-test
