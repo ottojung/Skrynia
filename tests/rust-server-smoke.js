@@ -48,8 +48,9 @@ async function start(command,args,dir,port,extraEnv={}) {
 }
 async function stop(child) {
   child.kill('SIGTERM');
-  await Promise.race([new Promise(done=>child.once('exit',done)),pause(1500)]);
-  if(child.exitCode===null)child.kill('SIGKILL');
+  const code=await Promise.race([new Promise(done=>child.once('exit',done)),pause(1500).then(()=>null)]);
+  if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');
+  return code;
 }
 async function cannotStart(binary,dir,port) {
   const child=spawn(binary,[],{env:{...process.env,SKRYNIA_DATA_DIR:dir,
@@ -200,7 +201,7 @@ async function run() {
       idle.once('close',()=>{clearTimeout(deadline);resolve();});
     });
     assert.equal((await request(p,'GET','/health')).status,200);
-    await stop(server);server=undefined;
+    assert.equal(await stop(server),0,'Rust server must exit cleanly on SIGTERM');server=undefined;
     server=await start(process.execPath,[resolve('src/server.js')],dir,p);
     assert.equal((await request(p,'GET','/store/team.a')).body.toString(),'member');
     console.log('Rust/Node recovery, CAS, grant authority and startup safety: OK');

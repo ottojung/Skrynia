@@ -14,7 +14,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let router = http::router(server);
     let options = net::NetworkOptions::load()?;
     let listener = net::BoundedListener::new(listener, options);
-    axum::serve(listener, router).await?;
+    axum::serve(listener, router)
+        .with_graceful_shutdown(net::shutdown_signal())
+        .await?;
     Ok(())
 }
 
