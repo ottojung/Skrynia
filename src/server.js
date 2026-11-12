@@ -12,6 +12,7 @@ const {createShared,ensureDir}=require('./shared.js');
 const {createGrants}=require('./grants.js');
 const {createPush}=require('./push.js');
 const {createStoreJournal}=require('./store-journal.js');
+const {sha256Bytes,sha256Fd,sha256File}=require('./content-hash.js');
 
 const DEFAULT_BUILD_INFO=Object.freeze({version:'development',commit:'development'});
 function loadBuildInfo(dir) {
@@ -104,24 +105,10 @@ function createServer(opts={}) {
   function validKey(key) {
     return key.length<=maxKeyLength&&grants.validKey(key);
   }
-  function etagFromStat(st) {
-    return '"'+Math.floor(st.mtimeMs/1000).toString(16)+'-'+st.size.toString(16)+'"';
-  }
-  function etag(file) {
-    return etagFromStat(fs.statSync(file));
-  }
-  function setVersion(file,version) {
-    const time=new Date(version*1000);
-    fs.utimesSync(file,time,time);
-    if(Math.floor(fs.statSync(file).mtimeMs/1000)!==version) {
-      throw new Error('filesystem did not preserve object version');
-    }
-  }
-  function tempObject(body,version) {
+  function tempObject(body) {
     const file=path.join(shared.STORE_TMP_DIR,
       'obj.'+process.pid+'.'+crypto.randomBytes(12).toString('hex'));
     fs.writeFileSync(file,body,{mode:0o600});
-    setVersion(file,version);
     fs.chmodSync(file,0o644);
     const fd=fs.openSync(file,'r');
     try {fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
@@ -137,7 +124,7 @@ function createServer(opts={}) {
     try {
       // Open once: validators and body must describe the same inode.
       fd=fs.openSync(file,'r');
-      const stat=fs.fstatSync(fd),tag=etagFromStat(stat);
+      const stat=fs.fstatSync(fd),tag='"'+sha256Fd(fd)+'"';
       const headers={
         'Content-Type':mimeType(key),
         'ETag':tag,
@@ -198,19 +185,38 @@ function createServer(opts={}) {
       if(fd!==null) fs.closeSync(fd);
     }
   }
-  function ifMatchSatisfied(header,tag) {
-    if(header===undefined) return true;
-    if(header.trim()==='*') return true; // caller checked existence
-    // If-Match uses strong comparison. Never accept W/ validators.
-    return header.split(',').some(candidate=>candidate.trim()===tag);
+  function validMutationPrecondition(req,res,method) {
+    for(const name of [
+      'if-match','if-none-match','if-modified-since',
+      'if-unmodified-since','if-range'
+    ]) {
+      if(req.headers[name]!==undefined) {
+        json(res,400,{error:'invalid_precondition'});
+        return false;
+      }
+    }
+    const digest=req.headers['x-skrynia-if-sha256'];
+    if(digest!==undefined&&
+      (method==='POST'||typeof digest!=='string'||!/^[a-f0-9]{64}$/.test(digest))) {
+      json(res,400,{error:'invalid_precondition'});
+      return false;
+    }
+    return true;
+  }
+  function contentMatches(file,req,res) {
+    const expected=req.headers['x-skrynia-if-sha256'];
+    if(expected===undefined) return true;
+    if(sha256File(file)===expected) return true;
+    json(res,412,{error:'content_mismatch'});
+    return false;
   }
   function create(key,body,req,res) {
     const file=shared.objPath(key);
     if(fs.existsSync(file)) return json(res,409,{error:'already_exists'});
     grants.authorizeMutation(bearer(req),key,'create',body.length);
-    const version=shared.nextVersion(),tmp=tempObject(body,version);
+    const digest=sha256Bytes(body),tmp=tempObject(body);
     try {
-      const outcome=journal.commit(key,'create',version,()=>{
+      const outcome=journal.commit(key,'create',digest,()=>{
         fs.linkSync(tmp,file);grants.recordObject(key,body.length);
       });
       return json(res,201,{ok:true,...outcome});
@@ -222,12 +228,11 @@ function createServer(opts={}) {
   function replace(key,body,req,res) {
     const file=shared.objPath(key);
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
-    if(!ifMatchSatisfied(req.headers['if-match'],etag(file)))
-      return json(res,412,{error:'etag_mismatch'});
+    if(!contentMatches(file,req,res)) return;
     grants.authorizeMutation(bearer(req),key,'replace',body.length);
-    const version=shared.nextVersion(),tmp=tempObject(body,version);
+    const digest=sha256Bytes(body),tmp=tempObject(body);
     try {
-      const outcome=journal.commit(key,'replace',version,()=>{
+      const outcome=journal.commit(key,'replace',digest,()=>{
         fs.renameSync(tmp,file);grants.recordObject(key,body.length);
       });
       return json(res,200,{ok:true,...outcome});
@@ -237,10 +242,8 @@ function createServer(opts={}) {
     const file=shared.objPath(key);
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
     grants.authorizeMutation(bearer(req),key,'delete');
-    if(!ifMatchSatisfied(req.headers['if-match'],etag(file)))
-      return json(res,412,{error:'etag_mismatch'});
-    const version=shared.nextVersion();
-    const outcome=journal.commit(key,'delete',version,()=>{
+    if(!contentMatches(file,req,res)) return;
+    const outcome=journal.commit(key,'delete',null,()=>{
       fs.unlinkSync(file);grants.recordObject(key,null);
     });
     return json(res,200,{ok:true,...outcome});
@@ -320,7 +323,7 @@ function createServer(opts={}) {
     res.setHeader('Access-Control-Expose-Headers','ETag');
     if(req.method==='OPTIONS') {
       res.writeHead(204,{'Access-Control-Allow-Methods':'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Skrynia-Capability, If-Match, If-None-Match, If-Range, Range',
+        'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Skrynia-Capability, X-Skrynia-If-SHA256, If-None-Match, If-Range, Range',
         'Access-Control-Max-Age':'3600'});
       return res.end();
     }
@@ -415,10 +418,12 @@ function createServer(opts={}) {
       if(!validKey(key)) return json(res,400,{error:'invalid_key'});
       if(req.method==='GET'||req.method==='HEAD') return get(key,req,res);
       if(req.method==='DELETE') {
+        if(!validMutationPrecondition(req,res,'DELETE')) return;
         try{return deleteObject(key,req,res);}
         catch(e){return error(res,e);}
       }
       if(req.method==='POST'||req.method==='PUT') {
+        if(!validMutationPrecondition(req,res,req.method)) return;
         // Reject anonymous and unauthorized uploads before buffering bytes.
         try {
           grants.requireMutation(bearer(req),key,

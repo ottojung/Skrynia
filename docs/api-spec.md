@@ -31,14 +31,25 @@ unbounded matcher-cache keys.
 | PUT | /store/{key} | Replace if present; requires `modify` and authorized user token; 200 or 404 |
 | DELETE | /store/{key} | Delete if present; requires `delete` and authorized user token; 200 or 404 |
 
-Mutations and listings use `Authorization: Bearer <user-token>`. Both PUT and DELETE accept an
-optional `If-Match: "<etag>"`, `If-Match: *`, or a comma-separated
-list of strong validators. `*` succeeds only while the object exists.
-Weak ETags do not satisfy `If-Match`; a failed precondition returns 412. The strong ETag changes on every successful object mutation,
-including an identical-byte PUT and deletion followed by recreation.
-Objects are files under `SKRYNIA_DATA_DIR/store/{key}`; the server's ETag
-is in nginx's `"hex-mtime-seconds-hex-size"` format. Storage journals and
-temporary files live outside the public store.
+Mutations and listings use `Authorization: Bearer <user-token>`.
+
+`PUT` and `DELETE` accept an optional `X-Skrynia-If-SHA256` header containing
+**exactly 64 lowercase hexadecimal characters**. Skrynia compares it with
+the SHA-256 of the current object's bytes and performs the mutation only
+when the digests match. A mismatch returns HTTP 412 `content_mismatch`;
+an invalid precondition returns HTTP 400 `invalid_precondition`.
+The check and mutation execute as one synchronous step.
+
+Store mutations (`POST`, `PUT`, `DELETE`) reject `If-Match`,
+`If-None-Match`, `If-Modified-Since`, `If-Unmodified-Since` and
+`If-Range` with HTTP 400 `invalid_precondition`. `POST` also rejects
+`X-Skrynia-If-SHA256` because creation requires an absent key.
+
+Skrynia's GET/HEAD sends `ETag: "<sha256>"` as a strong cache validator
+computed from the object's bytes. Static servers serving files from
+`SKRYNIA_DATA_DIR/store/{key}` use their own HTTP cache validators.
+Mutation preconditions depend solely on the bytes. Staging files and
+transaction journals are private and outside the public store.
 
 GET supports `If-None-Match` (304 without body), and `HEAD` returns
 metadata without the object body. Single-range GET requests (`Range:
@@ -62,10 +73,15 @@ The server also bounds aggregate in-progress buffered uploads
 buffer limit receive HTTP 503. Public reads stream from a pinned file
 descriptor rather than copying the entire object into memory.
 
-**nginx ETag compatibility is mandatory:** the original whole-second mtime
-sequence and the standard nginx `"hex-mtime-seconds-hex-size"` ETag format
-are unchanged. High write rates can move stored mtimes ahead of wall time;
-clients must treat ETags as opaque validators.
+Object files retain their filesystem-provided modification times.
+For each create or replace, the durable journal records the SHA-256 of
+the resulting bytes and checks it during recovery.
+
+**Byte identity and ABA:** If an object changes A → B → A, its digest
+returns to the same value. The precondition cannot detect intervening
+changes that restore identical bytes. Applications requiring that guarantee
+must embed a strictly advancing revision or unique transaction ID within
+the mutable value itself and verify it through their protocol.
 
 ### Scoped key listing
 
@@ -109,7 +125,7 @@ Operations: `create`, `modify`, `delete`, `list`, `delegate`, and `subscribe`.
 - `create` authorizes `POST` to a key that does not exist, including its
   initial binary payload. It does not authorize `PUT` or `DELETE`.
 - `modify` authorizes `PUT` to an existing key, including changing its
-  bytes arbitrarily (subject to quota and optional `If-Match`). It does
+  bytes arbitrarily (subject to quota and optional SHA-256 precondition). It does
   not authorize creation or deletion.
 - `delete` authorizes `DELETE` of an existing key; deletion does not
   require `create` or `modify`.
@@ -232,7 +248,7 @@ to publicly routable addresses.
 
 For browser applications, the API provides
 `Access-Control-Allow-Origin: *`, CORS preflight (including
-`If-Match`, `If-None-Match`, `If-Range` and `Range`), and exposure
+`X-Skrynia-If-SHA256`, `If-None-Match`, `If-Range` and `Range`), and exposure
 of the ETag header. Mutations require explicit bearer credentials, not browser cookies.
 
 The filesystem is authoritative; object-size indexes are rebuilt on startup.

@@ -17,8 +17,8 @@ databases and application servers.
 | Public byte values | `GET /store/{key}`, optionally served by nginx | Shared data, independent readers, static app distribution |
 | Create-if-absent | `POST /store/{key}` (201 or 409) | Initialization, unique records, races for one key |
 | Atomic single-key replacement | `PUT` of an existing key | Versioned state, publication pointers |
-| Compare-and-swap (CAS) | `GET` ETag, then `PUT` with `If-Match` (200 or 412) | Optimistic concurrency, one-key linearization points |
-| Conditional deletion | `DELETE` with optional `If-Match` | Reclamation coordinated with a key version |
+| Compare-and-swap (CAS) | SHA-256 of observed bytes, then `PUT` with `X-Skrynia-If-SHA256` (200 or 412) | Optimistic concurrency, one-key linearization points |
+| Conditional deletion | `DELETE` with optional `X-Skrynia-If-SHA256` | Reclamation coordinated with observed object bytes |
 | Scoped, delegable grants | Key/prefix matcher, subset of `create` / `modify` / `delete` / `list` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
 | Notifications | Grant-scoped Web Push subscriptions | Wake interested clients without running application code on Skrynia |
 
@@ -28,13 +28,19 @@ not leading dots. A location matcher is one exact key, a prefix ending in
 atomic operation across multiple physical keys, general query evaluator,
 application-specific server code, or private read operation.
 
-**ETag detail.** Conditional writes compare against the current representation
-ETag, not against the current payload bytes. In the current implementation,
-successful object mutations use a monotonic global filesystem timestamp
-sequence; ETags include that timestamp and object size. Replacing a value with
-identical bytes still produces a new ETag. Clients must preserve the exact ETag
-returned by `GET`, not calculate one from contents. `POST` rejects existing keys;
-`PUT` requires an existing key; `DELETE` supports a version precondition.
+**Byte-content preconditions.** PUT and DELETE can require the SHA-256
+of the current object's bytes using `X-Skrynia-If-SHA256`. The digest is
+64 lowercase hexadecimal characters and may be computed from bytes read
+through **any** static server, or from Skrynia's browser client
+`meta.sha256`. Skrynia's own GET/HEAD ETag is `"<sha256>"`, serving as
+an HTTP cache validator; external static servers may use their own ETags.
+`POST` rejects existing keys, and `PUT` requires an existing key.
+
+This CAS compares **bytes**, not histories. An A → B → A sequence is
+indistinguishable from an uninterrupted A if the bytes return to A.
+Higher-level protocols requiring that guarantee must encode a unique
+transaction ID or strictly advancing revision in the mutable value.
+A returned digest is not a guarantee that a write happened only once.
 
 ### Three different kinds of guarantees
 
@@ -62,22 +68,28 @@ multiple immutable objects. A single small object named `db_head` contains
 the key of the currently committed manifest:
 
 ```json
-{"version":17,"manifest":"manifest_9d..."}
+{"revision":17,"transactionId":"tx_62...","manifest":"manifest_9d..."}
 ```
 
 The manifest identifies the exact keys of the account records, or the root of
-a persistent tree with many records. Each new version reuses unchanged nodes.
-The commit is only the conditional replacement of `db_head`.
+a persistent tree with many records. Each logical revision reuses unchanged
+nodes. Every commit **must** assign `revision = observed_revision + 1` and
+a fresh, unique `transactionId`, even when the manifest or data is unchanged.
+A cooperating client must never publish a `db_head` byte string already
+published by this protocol. The commit is the conditional replacement
+of `db_head`.
 
 Writer algorithm:
 
-1. `GET db_head`, saving both its value and the *exact ETag*.
+1. Read the exact bytes of `db_head` and compute their SHA-256.
 2. Read all required records through that manifest. Evaluate the full
    transaction and its preconditions against this particular snapshot.
-3. Create fresh, unique, unreferenced keys for all changed records and a new
-   manifest. Wait for all creations to succeed. Publish nothing yet.
-4. `PUT db_head` with `If-Match: <etag-from-step-1>`, pointing to the new
-   manifest. **HTTP 200 is the commit point.**
+3. Create fresh, unique, unreferenced keys for all changed records and
+   a new manifest. Prepare a `db_head` value with a strictly advancing
+   `revision` and a fresh, unique `transactionId`. Wait for all creations
+   to succeed. Publish nothing yet.
+4. `PUT db_head` with `X-Skrynia-If-SHA256: <digest-from-step-1>`,
+   pointing to the new manifest. **HTTP 200 is the commit point.**
 5. If HTTP 412, another client committed first. Fetch the new head and
    **re-evaluate the transaction** (including balance checks, uniqueness,
    predicates and read dependencies); do not merely republish stale results.
@@ -109,6 +121,11 @@ a previously published immutable record.
 - Every logical read/write participating in this transaction is represented
   by the same root's immutable reachable state. Direct writes to account
   files outside this protocol bypass the transaction model.
+- Each committed root has a strictly increasing `revision` and a unique
+  `transactionId`, with bytewise distinct head values across all commits.
+  Cooperating writers validate this rule when updating the head. A writer
+  who publishes arbitrary root contents can violate it, and Skrynia's
+  byte-content condition does not itself prevent A → B → A.
 - Published versioned files **remain unchanged and readable** while referenced
   by readers. Random key names alone do not enforce immutability: grants
   with `modify` or `delete` can still change them. Delegate `create` only

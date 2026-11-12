@@ -44,14 +44,6 @@ The record's plaintext issuer secret is stored only on the host in
 0700. Root revocation removes this file. On the next startup, Skrynia
 creates a new root over all surviving object data.
 
-The grant operation schema is strict. An existing installation using an
-obsolete grant operation set cannot start with incompatible grant records.
-For a clean authority reset while retaining object values, back up the data
-first, revoke the old root using the old running version, stop that server,
-and then start the new version. Root revocation invalidates subordinate
-tokens and removes their Web Push subscriptions; the next start creates a
-new root. Grant records are not silently converted or migrated.
-
 Skrynia's single writer process uses synchronous filesystem fsync
 operations to preserve durability. Consequently, high write rates can
 delay reads and push deliveries on its event loop. Benchmark on the
@@ -110,17 +102,17 @@ connection limits alone are not a full denial-of-service defense.
 - `state/push/`: VAPID key and persistent delivery queue.
 - `state/store-transactions/`: recoverable object mutation intents.
 - `state/grant-revocations/`: recoverable subtree revocation intents.
-- `state/etag-sequence`: monotonic per-installation object-version sequence.
 
 Only serve `store/` through a public static web server, never `state/`.
 File names have no separators and never begin with a dot.
-nginx may directly serve `GET /store/{key}` from the public directory,
-using standard MIME types and nginx's whole-second mtime-size ETags.
-**The ETag scheme must remain nginx-compatible:** Skrynia uses the exact
-`"hex-mtime-seconds-hex-size"` format and a monotonic whole-second mtime
-per mutation to prevent ABA. Rapid writes can move file mtimes ahead of
-wall time. Configure the cache policy consistently, especially for
-mutable keys.
+nginx or any other static server can serve `GET /store/{key}` directly
+from the public directory with its own HTTP cache validators, MIME mapping
+and cache policy. Skrynia's GET/HEAD sends `ETag: "<sha256>"` computed
+from the bytes for caching. A conditional PUT/DELETE uses
+`X-Skrynia-If-SHA256` computed from the bytes read through any server.
+
+Object files retain filesystem-provided modification times.
+Create/replace journals record SHA-256 of the resulting bytes for recovery.
 
 The standalone server streams reads from already-open file descriptors,
 bounds in-progress upload memory and connections, and defaults to 1000 keys

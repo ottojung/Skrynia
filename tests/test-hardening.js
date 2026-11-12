@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const assert=require('node:assert/strict');
+const {sha256Bytes:sha256}=require('../src/content-hash.js');
 const fs=require('node:fs');
 const path=require('node:path');
 const {open,close,expect,auth,grant,tmp}=require('./test-grants.js');
@@ -25,12 +26,12 @@ async function run() {
     await expect(p,201,'POST','/store/valid.first','initial',grant(childToken.userToken));
     const before=await expect(p,200,'GET','/store/valid.first');
     await expect(p,412,'DELETE','/store/valid.first',null,
-      {...grant(childToken.userToken),'If-Match':'"bad"'});
+      {...grant(childToken.userToken),'X-Skrynia-If-SHA256':'0'.repeat(64)});
     await expect(p,200,'DELETE','/store/valid.first',null,
-      {...grant(childToken.userToken),'If-Match':before.etag});
+      {...grant(childToken.userToken),'X-Skrynia-If-SHA256':sha256(before.bytes)});
     await expect(p,201,'POST','/store/valid.first','recreated',grant(childToken.userToken));
     const after=await expect(p,200,'GET','/store/valid.first');
-    assert.notEqual(after.etag,before.etag,'ETag generation prevents ABA after deletion');
+    assert.equal(after.etag,'"'+sha256(after.bytes)+'"');
     assert.equal(after.headers['x-content-type-options'],'nosniff');
     await expect(p,200,'DELETE','/grants/'+child.id+'/users/'+childToken.userId,
       null,auth(child.issuerToken));
@@ -66,6 +67,11 @@ async function run() {
     }
     assert.match(expectedLog,/committed value, pending push outbox/);
     assert.equal(write.json.notificationPending,true);
+    const intents=fs.readdirSync(path.join(dir,'state','store-transactions'));
+    assert.equal(intents.length,1);
+    const intent=JSON.parse(fs.readFileSync(path.join(dir,'state','store-transactions',intents[0])));
+    assert.equal(intent.kind,'create');
+    assert.equal(intent.sha256,sha256(Buffer.from('durable')));
     assert.equal((await expect(p,200,'GET','/store/valid.journal')).bytes.toString(),'durable');
     await close(server);server=null;
     started=await open(dir);server=started.server;p=started.port;
@@ -82,7 +88,7 @@ async function run() {
     assert.throws(()=>require('../src/server.js').createServer({
       dataDir:dir,skryniaUrl:'http://127.0.0.1:17380/platform',pushManual:true}),
       /invalid root grant/);
-    console.log('authorization, ETags, crash recovery and bootstrap integrity: OK');
+    console.log('authorization, content hashes, crash recovery and bootstrap integrity: OK');
   }finally {
     if(server)await close(server);
     fs.rmSync(dir,{recursive:true,force:true});

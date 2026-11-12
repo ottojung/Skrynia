@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const assert=require('node:assert/strict');
+const {sha256Bytes:sha256}=require('../src/content-hash.js');
 const fs=require('node:fs');
 const {open,close,expect,auth,grant,tmp}=require('./test-grants.js');
 
@@ -41,9 +42,9 @@ async function run() {
     await expect(p,403,'POST','/store/roles.another','no',grant(modifyToken));
     await expect(p,403,'DELETE',key,null,grant(modifyToken));
     await expect(p,412,'PUT',key,'wrong',
-      {...grant(modifyToken),'If-Match':'"wrong"'});
+      {...grant(modifyToken),'X-Skrynia-If-SHA256':'0'.repeat(64)});
     await expect(p,200,'PUT',key,'updated',
-      {...grant(modifyToken),'If-Match':before.etag});
+      {...grant(modifyToken),'X-Skrynia-If-SHA256':sha256(before.bytes)});
     assert.equal((await expect(p,200,'GET',key)).bytes.toString(),'updated');
 
     await expect(p,403,'POST','/store/roles.another','no',grant(deleteToken));

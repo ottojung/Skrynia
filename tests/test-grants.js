@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const assert=require('node:assert/strict');
+const {sha256Bytes:sha256}=require('../src/content-hash.js');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
@@ -113,9 +114,9 @@ async function run() {
     assert.equal(html.bytes.toString(),'<h1>Hello</h1>');
     assert(html.headers['access-control-allow-origin']==='*');
     await expect(port,412,'PUT','/store/alice.index.html','wrong',
-      {...grant(aliceUser),'If-Match':'"wrong"'});
+      {...grant(aliceUser),'X-Skrynia-If-SHA256':'0'.repeat(64)});
     await expect(port,200,'PUT','/store/alice.index.html','<h1>Updated</h1>',
-      {...grant(aliceUser),'If-Match':html.etag});
+      {...grant(aliceUser),'X-Skrynia-If-SHA256':sha256(html.bytes)});
     await expect(port,201,'POST','/store/bob.file.json','{}',grant(bobToken));
     assert.equal((await expect(port,200,'GET','/store/bob.file.json')).type,'application/json');
     await expect(port,403,'POST','/grants',{
@@ -182,7 +183,7 @@ async function run() {
       Origin:'https://example.org',
       'Access-Control-Request-Method':'PUT',
       'Access-Control-Request-Headers':'authorization,if-match'});
-    assert.match(cors.headers['access-control-allow-headers'],/If-Match/);
+    assert.match(cors.headers['access-control-allow-headers'],/X-Skrynia-If-SHA256/);
     console.log('global store, dot keys, delegation, quotas, root regeneration: OK');
   }finally{
     if(first)await close(first);

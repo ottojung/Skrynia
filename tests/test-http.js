@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 const assert=require('node:assert/strict');
+const {sha256Bytes:sha256}=require('../src/content-hash.js');
 const fs=require('node:fs');
 const path=require('node:path');
 const http=require('node:http');
@@ -105,31 +106,22 @@ async function run() {
       'Access-Control-Request-Method':'GET',
       'Access-Control-Request-Headers':'if-none-match,if-range,range'
     });
-    for(const name of ['If-None-Match','If-Range','Range']) {
+    for(const name of ['X-Skrynia-If-SHA256','If-None-Match','If-Range','Range']) {
       assert(cors.headers['access-control-allow-headers'].includes(name));
     }
 
     await expect(p,201,'POST','/store/conditions','first',grant(token));
-    const firstTag=(await expect(p,200,'GET','/store/conditions')).etag;
+    const conditionsBytes=(await expect(p,200,'GET','/store/conditions')).bytes;
     await expect(p,200,'PUT','/store/conditions','second',{
-      ...grant(token),'If-Match':'"unknown", '+firstTag
-    });
-    const secondTag=(await expect(p,200,'GET','/store/conditions')).etag;
-    await expect(p,412,'PUT','/store/conditions','weak',{
-      ...grant(token),'If-Match':'W/'+secondTag
-    });
-    await expect(p,200,'PUT','/store/conditions','third',{
-      ...grant(token),'If-Match':'*'
+      ...grant(token),'X-Skrynia-If-SHA256':sha256(conditionsBytes)
     });
     await expect(p,412,'DELETE','/store/conditions',null,{
-      ...grant(token),'If-Match':'"another", *'
+      ...grant(token),'X-Skrynia-If-SHA256':sha256(conditionsBytes)
     });
     await expect(p,200,'DELETE','/store/conditions',null,{
-      ...grant(token),'If-Match':'*'
+      ...grant(token),'X-Skrynia-If-SHA256':sha256(Buffer.from('second'))
     });
-    await expect(p,404,'PUT','/store/conditions','cannot reappear',{
-      ...grant(token),'If-Match':'*'
-    });
+    await expect(p,404,'PUT','/store/conditions','absent',grant(token));
 
     // Cached per-matcher statistics are bounded even after many scopes.
     const boundedIndex=createResourceIndex(createShared(dir),validKey,matches);
