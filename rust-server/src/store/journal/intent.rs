@@ -1,0 +1,37 @@
+use std::io;
+use std::path::Path;
+
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub struct Intent {
+    pub key: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(default)]
+    pub committed: bool,
+}
+impl Intent {
+    pub fn valid(&self) -> bool {
+        crate::valid_key(&self.key)
+            && ["create", "replace", "delete"].contains(&self.kind.as_str())
+            && if self.kind == "delete" {
+                self.sha256.is_none()
+            } else {
+                self.sha256.as_ref().is_some_and(|x| {
+                    x.len() == 64
+                        && x.bytes()
+                            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+                })
+            }
+    }
+    pub fn applied(&self, root: &Path) -> io::Result<bool> {
+        let file = root.join("store").join(&self.key);
+        if self.kind == "delete" {
+            return Ok(!file.exists());
+        }
+        if !file.exists() {
+            return Ok(false);
+        }
+        Ok(Some(crate::sha_file(&file)?) == self.sha256)
+    }
+}
