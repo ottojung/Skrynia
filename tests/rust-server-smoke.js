@@ -87,6 +87,11 @@ async function run() {
     assert.equal((await request(p,'PUT','/store/new.txt','changed',user,{'X-Skrynia-If-SHA256':sha('bad')})).status,412);
     assert.equal((await request(p,'PUT','/store/new.txt','changed',user,{'X-Skrynia-If-SHA256':sha('abc')})).status,200);
     assert.equal((await request(p,'GET','/store/new.txt')).body.toString(),'changed');
+    // Raw ampersands in path segments must not become form separators.
+    assert.equal((await request(p,'POST','/store/victim&probe=another','attack',user)).status,400);
+    assert.equal((await request(p,'GET','/store/victim')).status,404);
+    assert.equal((await request(p,'GET','/store/%ZZ')).json.error,'invalid_percent_encoding');
+    assert.equal((await request(p,'POST','/store/victim%26probe%3Danother','attack',user)).status,400);
     assert.equal((await request(p,'PUT','/store/new.txt','error',user,{'If-Match':'*'})).status,400);
     const list=await request(p,'GET','/store?locations=*',undefined,user);
     assert.deepEqual(list.json.keys,['legacy.txt','new.txt']);

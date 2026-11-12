@@ -28,12 +28,23 @@ pub fn precondition(headers: &HeaderMap, method: &Method) -> Result<Option<Strin
     Ok(Some(value.into()))
 }
 pub fn key(value: &str) -> Result<String> {
-    let key = form_urlencoded::parse(format!("x={value}").as_bytes())
-        .find(|(k, _)| k == "x")
-        .map(|(_, v)| v.to_string())
-        .unwrap_or_default();
-    if !crate::valid_key(&key) {
+    let raw = value.as_bytes();
+    for (index, byte) in raw.iter().copied().enumerate() {
+        if byte == b'%'
+            && (index + 2 >= raw.len()
+                || !raw[index + 1].is_ascii_hexdigit()
+                || !raw[index + 2].is_ascii_hexdigit())
+        {
+            return Err(bad("invalid_percent_encoding"));
+        }
+    }
+    let decoded = percent_encoding::percent_decode_str(value)
+        .decode_utf8()
+        .map_err(|_| bad("invalid_percent_encoding"))?;
+    if !crate::valid_key(&decoded) {
         return Err(bad("invalid_key"));
     }
-    Ok(key)
+    Ok(decoded.into_owned())
 }
+#[cfg(test)]
+mod tests;
