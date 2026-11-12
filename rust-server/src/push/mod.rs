@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod delivery;
 mod model;
 mod security;
 mod state;
@@ -15,3 +16,7 @@ pub use api::{PushInput, parse_push_input, route, same_events as same_push_event
 pub use state::valid_keys as valid_push_keys;
 
 pub use api::persist_push_subscription;
+
+pub use delivery::{
+    delay as push_delay, enqueue as push_enqueue, now as push_now, preflight as push_preflight,
+};

@@ -22,8 +22,6 @@ pub use grants::{OPERATIONS, recover_pending};
 pub use store::disk::{sync_dir, write_json};
 pub use store::{Snapshot, State};
 
-pub use store::journal_recover;
-
 pub use grants::{valid_identifier, valid_sha256};
 pub use push::{
     Notification, PushConfig, PushKeys, PushState, Subscription, Vapid, endpoint_allowed,
@@ -35,3 +33,5 @@ pub use push::{
     PushInput, parse_push_input, persist_push_subscription, route as push_route, same_push_events,
     valid_push_keys,
 };
+
+pub use push::{push_delay, push_enqueue, push_now, push_preflight};

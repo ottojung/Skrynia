@@ -10,6 +10,7 @@ pub fn commit(
     kind: &str,
     digest: Option<String>,
     change: impl FnOnce() -> io::Result<()>,
+    notify: impl FnOnce() -> io::Result<()>,
 ) -> io::Result<bool> {
     let dir = root.join("state/store-transactions");
     let file = dir.join(format!("{}.json", crate::random_id()));
@@ -28,15 +29,21 @@ pub fn commit(
         }
         return Err(error);
     }
-    if let Err(error) = finish(&dir, &file, &mut intent) {
+    if let Err(error) = finish(&dir, &file, &mut intent, notify) {
         eprintln!("Skrynia committed object with pending journal recovery: {error}");
         return Ok(true);
     }
     Ok(false)
 }
-fn finish(dir: &Path, file: &Path, intent: &mut Intent) -> io::Result<()> {
+fn finish(
+    dir: &Path,
+    file: &Path,
+    intent: &mut Intent,
+    notify: impl FnOnce() -> io::Result<()>,
+) -> io::Result<()> {
     intent.committed = true;
     write_json(file, intent)?;
+    notify()?;
     fs::remove_file(file)?;
     sync_dir(dir)
 }

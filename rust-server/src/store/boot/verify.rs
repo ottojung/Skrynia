@@ -14,6 +14,6 @@ pub fn finish(state: &State) -> io::Result<()> {
             .map_err(|_| io::Error::other("poisoned"))?;
         crate::validate_push(&data.push, &data.grants, &state.push_config)?;
     }
-    crate::journal_recover(&state.dir)?;
+    state.recover_journal()?;
     Ok(())
 }

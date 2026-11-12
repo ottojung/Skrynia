@@ -36,7 +36,7 @@ function request(port,method,path,body,token,extra={}) {
 }
 async function start(command,args,dir,port) {
   const child=spawn(command,args,{env:{...process.env,SKRYNIA_DATA_DIR:dir,
-    SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',SKRYNIA_PORT:String(port)},stdio:'ignore'});
+    SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',SKRYNIA_PORT:String(port),SKRYNIA_PUSH_MANUAL:'1'},stdio:'ignore'});
   let exited=false;
   child.once('exit',()=>{exited=true;});
   for(let attempt=0;attempt<100;attempt++) {
@@ -53,7 +53,7 @@ async function stop(child) {
 }
 async function cannotStart(binary,dir,port) {
   const child=spawn(binary,[],{env:{...process.env,SKRYNIA_DATA_DIR:dir,
-    SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',SKRYNIA_PORT:String(port)},stdio:'ignore'});
+    SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',SKRYNIA_PORT:String(port),SKRYNIA_PUSH_MANUAL:'1'},stdio:'ignore'});
   const code=await Promise.race([
     new Promise((resolve,reject)=>child.once('exit',value=>resolve(value))),
     pause(1500).then(()=>{child.kill();throw Error('unsafe Rust startup succeeded')})
@@ -129,12 +129,25 @@ async function run() {
     const jsPush=require('../src/push.js').createPush({dataDir:dir,pushManual:true});
     assert.equal(jsPush.findSub(subId).capHash,storedSub.capHash);
     assert.equal(jsPush.getPublicKey(),vapid.publicKey);
+    assert.equal((await request(p,'POST','/store/team.a','member',contributor)).status,201);
+    const queueFile=join(dir,'state/push/outbox',subId+'.json');
+    assert.equal(JSON.parse(readFileSync(queueFile)).generation,1);
+    assert.equal((await request(p,'PUT','/store/team.a','member2',user)).status,200);
+    assert.equal(JSON.parse(readFileSync(queueFile)).generation,2);
+    assert.equal((await request(p,'PUT','/store/team.a','member',user)).status,200);
+    assert.equal(JSON.parse(readFileSync(queueFile)).generation,3);
+    // A committed legacy journal entry must produce another durable wake-up.
+    await stop(server);server=undefined;
+    const notified=join(dir,'state/store-transactions','e'.repeat(32)+'.json');
+    writeFileSync(notified,JSON.stringify({key:'team.a',kind:'replace',sha256:sha('member'),committed:true}));
+    server=await start(binary,[],dir,p);
+    assert.equal(JSON.parse(readFileSync(queueFile)).generation,4);
+    assert.equal(existsSync(notified),false);
     assert.equal((await request(p,'DELETE','/push/subscriptions/'+subId,undefined,undefined,
       {'X-Skrynia-Capability':createdSub.json.capability})).status,403);
     assert.equal((await request(p,'DELETE','/push/subscriptions/'+subId,undefined,undefined,
       {'X-Skrynia-Capability':rotated.json.capability})).status,200);
     assert.equal(existsSync(liveSubFile),false);
-    assert.equal((await request(p,'POST','/store/team.a','member',contributor)).status,201);
     assert.equal((await request(p,'PUT','/store/team.a','wrong',contributor)).status,403);
     assert.equal((await request(p,'GET','/store?locations=team.*',undefined,contributor)).json.keys[0],'team.a');
     assert.equal((await request(p,'DELETE','/store/new.txt',undefined,user,{'X-Skrynia-If-SHA256':sha('changed')})).status,200);

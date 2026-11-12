@@ -4,19 +4,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
-pub fn recover(root: &Path) -> io::Result<()> {
-    for directory in [
-        "state/push-subs",
-        "state/push/outbox",
-        "state/grant-revocations",
-    ] {
-        let folder = root.join(directory);
-        if folder.exists() && fs::read_dir(folder)?.next().transpose()?.is_some() {
-            return Err(io::Error::other(format!(
-                "unsupported pending state: {directory}"
-            )));
-        }
-    }
+pub fn recover(root: &Path, mut notify: impl FnMut(&Intent) -> io::Result<()>) -> io::Result<()> {
     super::cleanup::cleanup_temp(root)?;
     let dir = root.join("state/store-transactions");
     for item in fs::read_dir(&dir)? {
@@ -34,8 +22,9 @@ pub fn recover(root: &Path) -> io::Result<()> {
         if !intent.valid() {
             return Err(io::Error::other("invalid transaction record"));
         }
-        // Disk state is authoritative; no notification subscribers are permitted yet.
-        let _ = intent.applied(root)?;
+        if intent.committed || intent.applied(root)? {
+            notify(&intent)?;
+        }
         fs::remove_file(file)?;
     }
     sync_dir(&dir)

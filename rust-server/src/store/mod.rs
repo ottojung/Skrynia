@@ -29,5 +29,3 @@ pub struct Snapshot {
     pub tokens: HashMap<String, String>,
     pub push: PushState,
 }
-
-pub use journal::recover as journal_recover;

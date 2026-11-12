@@ -17,14 +17,20 @@ impl State {
         let mut data = self.data.lock().map_err(|_| crate::internal())?;
         let path = self.dir.join("store").join(key);
         check::preflight(&data, key, kind, body, expected, &path, token)?;
+        crate::push_preflight(&data, key, kind, self.push_config.max_outbox)?;
         let digest = if kind == "delete" {
             None
         } else {
             Some(crate::sha(body))
         };
-        let pending = journal::commit(&self.dir, key, kind, digest, || {
-            apply::commit(&self.dir, &path, kind, body)
-        })
+        let pending = journal::commit(
+            &self.dir,
+            key,
+            kind,
+            digest,
+            || apply::commit(&self.dir, &path, kind, body),
+            || crate::push_enqueue(&mut data, &self.dir, key, kind, self.push_config.max_outbox),
+        )
         .map_err(|error| {
             self.failed.store(true, Ordering::Release);
             eprintln!("Skrynia storage recovery required: {error}");

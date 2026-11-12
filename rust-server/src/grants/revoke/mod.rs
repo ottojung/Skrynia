@@ -25,6 +25,9 @@ impl State {
             eprintln!("Skrynia revocation recovery required: {error}");
             return Err(crate::internal());
         }
+        data.push
+            .subscriptions
+            .retain(|_, sub| !record.ids.contains(&sub.grant_id));
         for id in record.ids {
             if let Some(grant) = data.grants.remove(&id) {
                 for user in grant.users {
