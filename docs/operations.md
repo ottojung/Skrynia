@@ -172,6 +172,14 @@ without relying on static-server timestamp validators. Immutable
 content-addressed assets can use longer cache lifetimes in deployments
 that keep their bytes unchanged.
 
+Use `node benchmarks/storage.js` to measure read, write and grant overhead
+on the actual filesystem before choosing production rate limits. The
+benchmark starts an isolated temporary server and deletes its data. Set
+`SKRYNIA_BENCH_OBJECTS`, `SKRYNIA_BENCH_GRANTS`, `SKRYNIA_BENCH_READS`,
+`SKRYNIA_BENCH_WRITES` and `SKRYNIA_BENCH_BYTES` to compare workload
+sizes. Results report throughput, p50/p95 request latency and event-loop
+delay, not universal performance guarantees.
+
 ## Deployment by clients
 
 An application publisher can upload static objects, arrange a versioned
