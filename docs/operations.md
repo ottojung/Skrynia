@@ -22,7 +22,8 @@ The HTTP API does not contain special administrative endpoints.
 | SKRYNIA_PUSH_ALLOWED_HOSTS | empty (unrestricted public HTTPS hosts) | Optional comma-separated exact hostname allowlist for Web Push |
 | SKRYNIA_SOCKET_IDLE_TIMEOUT_MS | 30000 | Close HTTP sockets after this many milliseconds of inactivity |
 
-Start the server after installing Node.js 20+ and dependencies:
+Start the server after installing Node.js 20+, util-linux `flock`, and
+the Node dependencies. The server fails closed if `flock` is unavailable:
 
 ```sh
 npm ci
@@ -50,9 +51,14 @@ delay reads and push deliveries on its event loop. Benchmark on the
 target storage medium and apply request rate limits at the reverse proxy
 before exposing the service to high-volume anonymous traffic.
 
-A single Skrynia server must own the data directory. Do not run multiple
-writer processes against the same directory, including across containers
-sharing the same volume. Persist the directory across container restarts.
+Skrynia acquires an exclusive kernel advisory lock on
+`state/writer.lock` before accessing persistent grants or objects. Another
+instance using the same directory fails startup. The lock releases after
+normal shutdown, or automatically on process death; leave the lock file in
+place, since removing a locked inode invalidates mutual exclusion. All
+instances must share a filesystem with reliable Linux `flock` semantics
+(including when mounted into containers). Store data on a persistent volume
+and never run competing writers.
 Back up the directory consistently, including `state/` and `store/`.
 Restore private credentials and object files together when recovering state.
 

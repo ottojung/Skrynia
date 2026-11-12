@@ -13,7 +13,7 @@ It has no application registry or privileged HTTP administration API.
 
 ## Start
 
-Requires Node.js 20+.
+Requires Node.js 20+ and util-linux `flock` on the server host.
 
 ```sh
 npm ci
@@ -152,8 +152,9 @@ Each subscription consumes the sponsoring grant's quotas.
   broader enumeration authority.
 - **Client protocols:** Applications define schemas, indexing, publication,
   cryptographic validation, and computation outside Skrynia.
-- **One writer process:** Only one Skrynia instance may own a data directory.
-  HTTP API mutations are serialized; static readers can be served separately.
+- **One writer process:** An exclusive kernel file lock prevents multiple
+  Skrynia instances from owning a data directory. HTTP API mutations
+  are serialized; static readers can be served separately.
 
 Skrynia supports CORS for bearer-authenticated browser requests from other
 origins. It does not use cookie authentication.

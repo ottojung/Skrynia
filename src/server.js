@@ -9,6 +9,7 @@ const path=require('path');
 const crypto=require('crypto');
 const {normalizeBasePath}=require('./base-path.js');
 const {createShared,ensureDir}=require('./shared.js');
+const {acquireWriterLock}=require('./writer-lock.js');
 const {createGrants}=require('./grants.js');
 const {createPush}=require('./push.js');
 const {createStoreJournal}=require('./store-journal.js');
@@ -39,6 +40,8 @@ function mimeType(key) {
 }
 function createServer(opts={}) {
   const shared=createShared(opts.dataDir);
+  const releaseWriter=acquireWriterLock(shared.STATE_DIR);
+  try {
   const grants=createGrants(shared);
   const buildInfo=opts.buildInfo||loadBuildInfo(opts.buildInfoDir);
   const external=opts.skryniaUrl??process.env.SKRYNIA_URL;
@@ -467,8 +470,16 @@ function createServer(opts={}) {
   server.skrynia={HTTP_BASE_PATH:base,SKRYNIA_URL:external,DATA_DIR:shared.dataDir,
     grants,push,storeJournal:journal,buildInfo,
     bufferedUploadBytes:()=>bufferedBytes};
-  server.on('close',()=>{clearInterval(recoveryTimer);push.close();});
+  server.on('close',()=>{
+    clearInterval(recoveryTimer);
+    try {push.close(releaseWriter);}
+    catch(e) {releaseWriter();throw e;}
+  });
   return server;
+  } catch(e) {
+    releaseWriter();
+    throw e;
+  }
 }
 if(require.main===module) {
   const port=Number(process.env.SKRYNIA_PORT||17380);

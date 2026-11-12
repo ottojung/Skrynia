@@ -78,7 +78,7 @@ function createPush(opts={}) {
     throw new Error('invalid push concurrency');
   if(!Number.isSafeInteger(maxAttempts)||maxAttempts<1||maxAttempts>100)
     throw new Error('invalid push max attempts');
-  let timer=null,pumping=false,cachedSubs=null;
+  let timer=null,pumping=false,cachedSubs=null,stopped=false,onDrained=null;
   const inFlight=new Set();
   function subPath(id) {return path.join(subdir,id+'.json');}
   function invalidateSubscriptions() {cachedSubs=null;}
@@ -226,8 +226,15 @@ function createPush(opts={}) {
       ]);
     } finally {clearTimeout(timeout);}
   }
+  function drainIfStopped() {
+    if(stopped&&inFlight.size===0&&onDrained) {
+      const callback=onDrained;
+      onDrained=null;
+      callback();
+    }
+  }
   async function pumpOne(file,ignoreBackoff) {
-    if(inFlight.has(file)) return false;
+    if(stopped||inFlight.has(file)) return false;
     inFlight.add(file);
     try {
       const fresh=readJson(file);
@@ -267,13 +274,14 @@ function createPush(opts={}) {
       }
     } finally {
       inFlight.delete(file);
+      drainIfStopped();
     }
   }
   async function pumpOnce({ignoreBackoff=false}={}) {
     const files=listOutbox().map(x=>x.file);
     let next=0,delivered=0;
     async function worker() {
-      while(next<files.length) {
+      while(!stopped&&next<files.length) {
         const file=files[next++];
         if(await pumpOne(file,ignoreBackoff)) delivered++;
       }
@@ -282,20 +290,27 @@ function createPush(opts={}) {
     return {delivered};
   }
   async function pumpTick() {
-    if(pumping) return;
+    if(stopped||pumping) return;
     pumping=true;
     try {await pumpOnce();}
     catch(e){console.error('skrynia push pump error:',e);}
     finally {pumping=false;}
   }
-  function schedule() {if(!manual) setImmediate(pumpTick);}
+  function schedule() {if(!manual&&!stopped) setImmediate(pumpTick);}
   function start() {
+    stopped=false;
     ensureDir(outboxDir,0o700);getVapidKeys();
     if(manual) return;
     pumpTick();
     if(pollMs>0) {timer=setInterval(pumpTick,pollMs);timer.unref();}
   }
-  function close() {if(timer) clearInterval(timer);timer=null;}
+  function close(callback) {
+    stopped=true;
+    if(timer) clearInterval(timer);
+    timer=null;
+    if(callback) onDrained=callback;
+    drainIfStopped();
+  }
   return {KINDS,validEndpoint,validKeys,validEvents,getPublicKey:()=>getVapidKeys().publicKey,
     getVapidKeys,allSubs,invalidateSubscriptions,findSub,createSub,updateSub,removeSub,preflight,enqueue,
     listOutbox,outboxCount,pumpOnce,start,close,outboxDir};
