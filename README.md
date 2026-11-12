@@ -64,9 +64,15 @@ curl -i "$SKRYNIA_URL/store/alice.index.html"
 
 `POST` creates only if absent and requires `create`; `PUT` replaces an
 existing object and requires `modify`; `DELETE` requires `delete`.
-`PUT` and `DELETE` support `If-Match` for compare-and-swap.
-GET supports conditional `If-None-Match`, HEAD and byte ranges; `list`
-supports optional `limit` / `after` pagination.
+`PUT` and `DELETE` accept `X-Skrynia-If-SHA256` for byte-content
+compare-and-swap. Pass the 64-character lowercase SHA-256 of the current
+object bytes; a mismatch returns 412 and a malformed value returns 400.
+Any static file server can provide the bytes used to compute this digest,
+regardless of its own HTTP cache validators.
+
+Skrynia's GET/HEAD sends a quoted SHA-256 ETag for cache validation and
+supports `If-None-Match`, `If-Range`, HEAD and byte ranges. Listings
+support `limit` / `after` pagination.
 Grants can delegate these permissions independently—for example, `create`
 without `modify` or `delete` lets a contributor add new keys but not
 rewrite or remove existing entries.
@@ -138,8 +144,9 @@ Each subscription consumes the sponsoring grant's quotas.
 
 - **Shared memory:** Public objects are independently retrievable without
   running application-specific backend code.
-- **CAS:** Single-key conditional writes can serialize client-authored logical
-  multi-object transactions over immutable versions.
+- **CAS:** Byte-hash conditional mutation can serialize client-authored
+  logical transactions over immutable objects and a uniquely identified
+  mutable commit head.
 - **Delegation:** Grants constrain operations, location prefixes, and budgets.
   Scoped `list` enables key discovery and delegated cleanup without giving
   broader enumeration authority.

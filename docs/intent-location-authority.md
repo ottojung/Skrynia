@@ -74,13 +74,17 @@ Subscriptions are removed when the sponsoring grant is revoked.
 ## Consistency and trust
 
 Individual object creations, replacements and deletions have one atomic
-filesystem commit point. ETags are opaque, monotonic representation
-versions, compatible with nginx mtime-size ETags. If-Match implements
-single-object conditional mutation. A sequence of immutable version
-objects can be published atomically as one *logical* transaction by
-CAS on a single root object. Clients must keep referenced versions intact
-and reevaluate failed CAS operations; see
-[client-side protocols](client-protocols.md).
+filesystem commit point. PUT and DELETE can conditionally compare
+`X-Skrynia-If-SHA256` against the SHA-256 of the existing bytes before
+changing an object. Skrynia's GET/HEAD uses quoted SHA-256 ETags for cache
+validation. Other static servers may derive their own cache validators.
+A content hash cannot distinguish A → B → A when bytes return to A;
+client-defined state protocols requiring history awareness embed unique
+transaction IDs or strictly advancing revisions in mutable values.
+A collection of immutable objects can be published as one *logical*
+transaction by content-hash CAS on a small root object. Clients must
+keep referenced objects intact and reevaluate failed CAS operations;
+see [client-side protocols](client-protocols.md).
 
 Object reads are public. Applications wishing to authenticate contents,
 enforce higher-level acceptance policies or encrypt data implement these
