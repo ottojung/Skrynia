@@ -1,5 +1,5 @@
-use super::params::Params;
-use crate::{Result, Snapshot, forbidden, matches, subset};
+use super::{cursor, params::Params};
+use crate::{Result, Snapshot, forbidden, subset};
 
 pub fn list(state: &Snapshot, token: &str, request: Params) -> Result<serde_json::Value> {
     let grant = state.user(token)?;
@@ -9,19 +9,7 @@ pub fn list(state: &Snapshot, token: &str, request: Params) -> Result<serde_json
     if !subset(&request.locations, &grant.locations) {
         return Err(forbidden("locations_outside_grant"));
     }
-    let keys = state
-        .objects
-        .keys()
-        .filter(|key| {
-            matches(&request.locations, key)
-                && request
-                    .after
-                    .as_ref()
-                    .is_none_or(|a| key.as_str() > a.as_str())
-        })
-        .take(request.limit + 1)
-        .cloned()
-        .collect::<Vec<_>>();
+    let keys = cursor::entries(state, &request);
     if keys.len() > request.limit {
         let entries = keys[..request.limit].to_vec();
         Ok(serde_json::json!({"keys":entries,"next":entries.last()}))

@@ -152,6 +152,21 @@ async function main() {
       try {assert.equal(status[1].status,status[0].status);}catch {failures.push({label:name,node:status[0].status,rust:status[1].status});}
       checked++;
     }
+    const second=await Promise.all(states.map(state=>request(state.port,'POST',
+      '/store/team.second',state.childUser,'second')));
+    assert.deepEqual(second.map(x=>x.status),[201,201]);
+    const paged=await Promise.all(states.map(state=>request(state.port,'GET',
+      '/store?locations=team.*&limit=1',state.user)));
+    assert.deepEqual(paged.map(x=>x.status),[200,200]);
+    assert.deepEqual(paged[1].json,paged[0].json);
+    assert.deepEqual(paged[0].json.keys,['team.first']);
+    assert.equal(paged[0].json.next,'team.first');
+    checked++;
+    const remaining=await Promise.all(states.map(state=>request(state.port,'GET',
+      '/store?locations=team.*&limit=1&after=team.first',state.user)));
+    assert.deepEqual(remaining[1].json,remaining[0].json);
+    assert.deepEqual(remaining[0].json.keys,['team.second']);
+    checked++;
     await compare('list after','GET','/store?locations=*&after=team.first');
     console.log(`Verified ${checked} paired Node/Rust request outcomes`);
     if(failures.length) {

@@ -2,6 +2,7 @@ mod auth;
 mod entry;
 mod grants;
 mod list;
+pub use list::ListParams;
 mod range;
 mod read;
 mod replies;
