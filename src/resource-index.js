@@ -8,6 +8,7 @@ const path=require('path');
 function createResourceIndex(shared,validKey,matches) {
   let entries=null,sortedKeys=null;
   const patterns=new Map();
+  const MAX_PATTERN_STATS=1024;
 
   function state() {
     if(entries) return entries;
@@ -31,14 +32,22 @@ function createResourceIndex(shared,validKey,matches) {
 
   function stats(locations) {
     const s=state();
-    if(!patterns.has(locations)) {
+    let result=patterns.get(locations);
+    if(result) patterns.delete(locations);
+    else {
       let bytes=0,objects=0;
       for(const [key,size] of s) {
         if(matches(locations,key)) {bytes+=size;objects++;}
       }
-      patterns.set(locations,{bytes,objects});
+      result={bytes,objects};
     }
-    return {...patterns.get(locations)};
+    // LRU cap prevents the stats cache from retaining every formerly
+    // delegated pattern forever. A missed pattern is rebuilt from state.
+    patterns.set(locations,result);
+    if(patterns.size>MAX_PATTERN_STATS) {
+      patterns.delete(patterns.keys().next().value);
+    }
+    return {...result};
   }
 
   function replace(key,size) {
@@ -98,6 +107,7 @@ function createResourceIndex(shared,validKey,matches) {
   function list() {
     return [...state()].map(([key,bytes])=>({key,bytes}));
   }
-  return {value,stats,replace,entries:list,listKeys};
+  return {value,stats,replace,entries:list,listKeys,
+    clearStats:()=>patterns.clear(),statsCacheSize:()=>patterns.size};
 }
 module.exports={createResourceIndex};

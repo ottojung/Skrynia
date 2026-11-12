@@ -55,6 +55,9 @@ function grammar() {
     assert(validLocations(scope));
   for(const scope of ['.hidden','.hidden*','..*','.','..','...','.*'])
     assert(!validLocations(scope),scope);
+  assert(validLocations('a'.repeat(256)+'*'));
+  assert(!validLocations('a'.repeat(258)));
+  assert(!validLocations('a'.repeat(257)+'*'));
   assert(matches('alice.*','alice.index.html'));
   assert(matches('alice...*','alice...script.js'));
   assert(!matches('alice.*','.hidden'));
