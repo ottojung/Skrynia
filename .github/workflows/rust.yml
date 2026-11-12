@@ -32,3 +32,29 @@ jobs:
         run: |
           cargo build --locked --package skrynia-server
           node tests/rust-server-smoke.js
+          node tests/rust-protocol-parity.js
+
+  container-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build isolated Rust preview image
+        run: docker build --file Dockerfile.rust --tag skrynia-rust-preview .
+      - name: Verify non-root startup and graceful SIGTERM
+        run: |
+          docker run --rm -d --name skrynia-rust-check \
+            -p 127.0.0.1:38912:17380 \
+            -e SKRYNIA_URL=http://127.0.0.1:38912/base \
+            skrynia-rust-preview
+          trap 'docker stop -t 5 skrynia-rust-check >/dev/null 2>&1 || true' EXIT
+          ready=0
+          for attempt in $(seq 1 50); do
+            if curl --fail --silent http://127.0.0.1:38912/base/health > /dev/null; then
+              ready=1
+              break
+            fi
+            sleep 0.2
+          done
+          test "$ready" = 1 || { docker logs skrynia-rust-check; exit 1; }
+          test "$(docker exec skrynia-rust-check id -u)" = 1000
+          timeout 8s docker stop -t 5 skrynia-rust-check > /dev/null
