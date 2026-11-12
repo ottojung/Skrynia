@@ -1,4 +1,5 @@
 mod dns;
+mod http;
 mod signature;
 mod transport;
 use crate::{PushConfig, Subscription, Vapid};

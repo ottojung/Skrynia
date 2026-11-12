@@ -14,16 +14,5 @@ pub async fn deliver(
         .timeout(Duration::from_millis(config.timeout_ms))
         .build()
         .map_err(|_| Failure::Retry)?;
-    let request = web_push::request_builder::build_request::<Vec<u8>>(msg);
-    let (parts, body) = request.into_parts();
-    let mut send = client.post(sub.endpoint.clone());
-    for (name, value) in &parts.headers {
-        send = send.header(name.as_str(), value.as_bytes());
-    }
-    let response = send.body(body).send().await.map_err(|_| Failure::Retry)?;
-    match response.status().as_u16() {
-        200..=299 => Ok(()),
-        404 | 410 => Err(Failure::Gone),
-        _ => Err(Failure::Retry),
-    }
+    super::http::post(&client, sub, msg).await
 }
