@@ -35,3 +35,7 @@ pub use push::{
 };
 
 pub use push::{push_delay, push_enqueue, push_now, push_preflight};
+
+pub use push::{PushFailure, push_send};
+
+pub use push::{push_finish, push_run};

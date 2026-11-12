@@ -20,3 +20,7 @@ pub use api::persist_push_subscription;
 pub use delivery::{
     delay as push_delay, enqueue as push_enqueue, now as push_now, preflight as push_preflight,
 };
+
+pub use delivery::{PushFailure, push_send};
+
+pub use delivery::{push_finish, push_run};
