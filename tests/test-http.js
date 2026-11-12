@@ -100,6 +100,44 @@ async function run() {
       assert.deepEqual(index.listKeys('good.*'),{keys:['good.one','good.two']});
     } finally {fs.rmSync(scanDir,{recursive:true,force:true});}
 
+    const cors=await expect(p,204,'OPTIONS','/store/doc.alpha',null,{
+      Origin:'https://frontend.example.org',
+      'Access-Control-Request-Method':'GET',
+      'Access-Control-Request-Headers':'if-none-match,if-range,range'
+    });
+    for(const name of ['If-None-Match','If-Range','Range']) {
+      assert(cors.headers['access-control-allow-headers'].includes(name));
+    }
+
+    await expect(p,201,'POST','/store/conditions','first',grant(token));
+    const firstTag=(await expect(p,200,'GET','/store/conditions')).etag;
+    await expect(p,200,'PUT','/store/conditions','second',{
+      ...grant(token),'If-Match':'"unknown", '+firstTag
+    });
+    const secondTag=(await expect(p,200,'GET','/store/conditions')).etag;
+    await expect(p,412,'PUT','/store/conditions','weak',{
+      ...grant(token),'If-Match':'W/'+secondTag
+    });
+    await expect(p,200,'PUT','/store/conditions','third',{
+      ...grant(token),'If-Match':'*'
+    });
+    await expect(p,412,'DELETE','/store/conditions',null,{
+      ...grant(token),'If-Match':'"another", *'
+    });
+    await expect(p,200,'DELETE','/store/conditions',null,{
+      ...grant(token),'If-Match':'*'
+    });
+    await expect(p,404,'PUT','/store/conditions','cannot reappear',{
+      ...grant(token),'If-Match':'*'
+    });
+
+    // Cached per-matcher statistics are bounded even after many scopes.
+    const boundedIndex=createResourceIndex(createShared(dir),validKey,matches);
+    for(let i=0;i<1500;i++)boundedIndex.stats('unused.'+i+'*');
+    assert(boundedIndex.statsCacheSize()<=1024);
+    boundedIndex.clearStats();
+    assert.equal(boundedIndex.statsCacheSize(),0);
+
     console.log('conditional GET, HEAD, Range, pagination and fail-closed loading: OK');
   } finally {
     if(server)await close(server);

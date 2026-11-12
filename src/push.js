@@ -13,6 +13,7 @@ const KINDS=Object.freeze(['create','replace','delete']);
 const MAX_SUBSCRIPTIONS=2000,MAX_OUTBOX_ITEMS=10000;
 const DEFAULT_SEND_TIMEOUT_MS=10000;
 const DEFAULT_CONCURRENCY=8;
+const DEFAULT_MAX_ATTEMPTS=12;
 function randomId() {return crypto.randomBytes(16).toString('hex');}
 function randomSecret() {return crypto.randomBytes(32).toString('hex');}
 function hash(x) {return crypto.createHash('sha256').update(x).digest('hex');}
@@ -34,7 +35,10 @@ function validEvents(events) {
   return Array.isArray(events)&&events.length>0&&
     new Set(events).size===events.length&&events.every(x=>KINDS.includes(x));
 }
-function backoffMs(attempts) {return Math.min(30000,1000*Math.pow(2,Math.max(0,attempts-1)));}
+function backoffMs(attempts) {
+  // Slow repeated failures instead of continuously probing arbitrary hosts.
+  return Math.min(30*60*1000,1000*Math.pow(2,Math.max(0,attempts-1)));
+}
 function createPush(opts={}) {
   const stateDir=path.join(opts.dataDir||process.env.SKRYNIA_DATA_DIR||'/var/lib/skrynia','state');
   const pushDir=path.join(stateDir,'push');
@@ -45,6 +49,20 @@ function createPush(opts={}) {
   const maxSubs=opts.maxSubscriptions??MAX_SUBSCRIPTIONS;
   const maxOutbox=opts.maxOutboxItems??MAX_OUTBOX_ITEMS;
   const concurrency=opts.pushConcurrency??Number(process.env.SKRYNIA_PUSH_CONCURRENCY||DEFAULT_CONCURRENCY);
+  const maxAttempts=opts.pushMaxAttempts??
+    Number(process.env.SKRYNIA_PUSH_MAX_ATTEMPTS||DEFAULT_MAX_ATTEMPTS);
+  const hosts=opts.pushAllowedHosts??process.env.SKRYNIA_PUSH_ALLOWED_HOSTS??'';
+  if(typeof hosts!=='string') throw new Error('invalid push allowed hosts');
+  const hostnames=hosts.split(',').map(host=>host.trim().toLowerCase())
+    .filter(Boolean);
+  if(hostnames.some(host=>!validEndpoint('https://'+host+'/'))) {
+    throw new Error('invalid push allowed hosts');
+  }
+  const allowedHosts=new Set(hostnames);
+  function endpointAllowed(endpoint) {
+    return validEndpoint(endpoint)&&
+      (allowedHosts.size===0||allowedHosts.has(new URL(endpoint).hostname.toLowerCase()));
+  }
   const timeoutMs=opts.pushSendTimeoutMs??Number(process.env.SKRYNIA_PUSH_SEND_TIMEOUT_MS||DEFAULT_SEND_TIMEOUT_MS);
   const manual=Boolean(opts.pushManual);
   const pollMs=opts.pushPollMs??1000;
@@ -58,6 +76,8 @@ function createPush(opts={}) {
   if(!Number.isSafeInteger(maxOutbox)||maxOutbox<1) throw new Error('invalid outbox limit');
   if(!Number.isSafeInteger(concurrency)||concurrency<1||concurrency>100)
     throw new Error('invalid push concurrency');
+  if(!Number.isSafeInteger(maxAttempts)||maxAttempts<1||maxAttempts>100)
+    throw new Error('invalid push max attempts');
   let timer=null,pumping=false,cachedSubs=null;
   const inFlight=new Set();
   function subPath(id) {return path.join(subdir,id+'.json');}
@@ -86,7 +106,7 @@ function createPush(opts={}) {
     return keys;
   }
   function createSub(locations,events,endpoint,keys,existingCapability,grantToken) {
-    if(!validLocations(locations)||!validEvents(events)||!validEndpoint(endpoint)||!validKeys(keys)) {
+    if(!validLocations(locations)||!validEvents(events)||!endpointAllowed(endpoint)||!validKeys(keys)) {
       throw fault('invalid_subscription');
     }
     const subs=allSubs();
@@ -121,7 +141,7 @@ function createPush(opts={}) {
     if(!sub) throw fault('not_found');
     if(!safeMatch(sub.capHash,hash(capability||''))) throw fault('invalid_capability');
     if(patch.endpoint!==undefined) {
-      if(!validEndpoint(patch.endpoint)) throw fault('invalid_subscription');
+      if(!endpointAllowed(patch.endpoint)) throw fault('invalid_subscription');
       if(allSubs().some(s=>s.id!==id&&s.endpoint===patch.endpoint&&
         s.locations===sub.locations&&
         JSON.stringify([...s.events].sort())===JSON.stringify([...sub.events].sort()))) {
@@ -151,7 +171,9 @@ function createPush(opts={}) {
     if(current&&current.endpoint===old.endpoint&&current.capHash===old.capHash&&
       current.keys.p256dh===old.keys.p256dh&&current.keys.auth===old.keys.auth) {
       deleteRecord(old.id);
+      return true;
     }
+    return false;
   }
   function matching(key,kind) {
     return allSubs().filter(s=>s.events.includes(kind)&&matches(s.locations,key));
@@ -177,7 +199,10 @@ function createPush(opts={}) {
       const pending=readJson(file);
       if(pending&&pending.subscriptionId!==sub.id) throw new Error('corrupt push outbox');
       atomicJson(file,{subscriptionId:sub.id,
-        generation:(pending?.generation||0)+1,attempts:0,nextAt:0});
+        generation:(pending?.generation||0)+1,
+        // An unrelated mutation must not bypass retry backoff or reset the
+        // failed-send budget of an unresponsive subscription.
+        attempts:pending?.attempts||0,nextAt:pending?.nextAt||0});
     }
     if(subscribers.length) schedule();
     return subscribers.map(s=>s.id);
@@ -189,6 +214,7 @@ function createPush(opts={}) {
   }
   function isGoneError(e) {return e&&(e.statusCode===404||e.statusCode===410||e.status===404||e.status===410);}
   async function sendBounded(sub) {
+    if(!endpointAllowed(sub.endpoint)) throw fault('push_endpoint_not_allowed');
     const send=transport||((s)=>webPush().sendNotification(
       {endpoint:s.endpoint,keys:s.keys},'changed',
       {timeout:timeoutMs,agent,vapidDetails:{subject,publicKey:getVapidKeys().publicKey,privateKey:getVapidKeys().privateKey}}));
@@ -215,14 +241,27 @@ function createPush(opts={}) {
         if(current&&current.generation===fresh.generation) fs.unlinkSync(file);
         return true;
       } catch(e) {
-        if(isGoneError(e)) removeSubIfUnchanged(sub);
         const current=readJson(file);
         if(!current) return false;
-        if(!findSub(fresh.subscriptionId)) fs.unlinkSync(file);
-        else if(current.generation===fresh.generation) {
-          const attempts=isGoneError(e)?0:fresh.attempts+1;
+        if(!findSub(fresh.subscriptionId)) {
+          fs.unlinkSync(file);
+          return false;
+        }
+        const attempts=Math.max(current.attempts||0,fresh.attempts||0)+1;
+        if(isGoneError(e)||e.code==='push_endpoint_not_allowed'||
+          attempts>=maxAttempts) {
+          // Permanently dead endpoints must not be retried every 30 seconds
+          // forever. A refreshed subscription is preserved and retried.
+          if(removeSubIfUnchanged(sub)||!findSub(fresh.subscriptionId)) {
+            fs.unlinkSync(file);
+          } else {
+            atomicJson(file,{...current,attempts:0,nextAt:0});
+          }
+        } else {
+          // Update the latest generation too: a write racing with this
+          // failed send must not clear the failed-send budget.
           atomicJson(file,{...current,attempts,
-            nextAt:isGoneError(e)?0:Date.now()+backoffMs(attempts)});
+            nextAt:Date.now()+backoffMs(attempts)});
         }
         return false;
       }

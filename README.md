@@ -64,7 +64,9 @@ curl -i "$SKRYNIA_URL/store/alice.index.html"
 
 `POST` creates only if absent and requires `create`; `PUT` replaces an
 existing object and requires `modify`; `DELETE` requires `delete`.
-`PUT` and `DELETE` support `If-Match` for compare-and-swap.\nGET supports conditional `If-None-Match`, HEAD and byte ranges; `list`\nsupports optional `limit` / `after` pagination.
+`PUT` and `DELETE` support `If-Match` for compare-and-swap.
+GET supports conditional `If-None-Match`, HEAD and byte ranges; `list`
+supports optional `limit` / `after` pagination.
 Grants can delegate these permissions independently—for example, `create`
 without `modify` or `delete` lets a contributor add new keys but not
 rewrite or remove existing entries.
@@ -127,9 +129,10 @@ location scope contained in its own grant:
 POST this to `/push/subscriptions` with `Authorization: Bearer`. The response
 contains a subscription ID and a separate capability for updating/removing
 that subscription. Skrynia sends a generic `changed` wake-up; clients fetch
-current values. Delivery is durable and at least once, so duplicates are
-possible; pending changes coalesce per subscription. Each subscription
-consumes the sponsoring grant's quotas.
+current values. Delivery attempts are durable and retryable, so duplicate
+wake-ups are possible; pending changes coalesce per subscription. Permanent
+failures and exhaustion of the retry budget retire the subscription.
+Each subscription consumes the sponsoring grant's quotas.
 
 ## Architectural properties
 

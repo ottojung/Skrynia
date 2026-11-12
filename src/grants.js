@@ -11,10 +11,13 @@ const GRANT_COST=2048,OBJECT_COST=512,PUSH_SUB_COST=4096,EXTRA_USER_COST=128;
 const ID_RE=/^[a-f0-9]{32}$/;
 const KEY_RE=/^[A-Za-z0-9_][A-Za-z0-9_.]*$/;
 const LOCATION_RE=/^(?:[A-Za-z0-9_][A-Za-z0-9_.]*\*?|\*)?$/;
+const MAX_LOCATION_LENGTH=257;
 const OPERATIONS=Object.freeze(['create','modify','delete','list','delegate','subscribe']);
 
 function validKey(key) {return typeof key==='string'&&KEY_RE.test(key);}
-function validLocations(loc) {return typeof loc==='string'&&LOCATION_RE.test(loc);}
+function validLocations(loc) {
+  return typeof loc==='string'&&loc.length<=MAX_LOCATION_LENGTH&&LOCATION_RE.test(loc);
+}
 function matches(loc,key) {
   return validLocations(loc)&&validKey(key)&&
     (loc.endsWith('*')?key.startsWith(loc.slice(0,-1)):key===loc);
@@ -334,6 +337,7 @@ function createGrants(shared) {
     tokenIndex=null;
     validatedTree=null;
     metadataUsage=null;
+    index.clearStats();
     if(fs.existsSync(dir)) syncDir(dir);
     fs.unlinkSync(marker);syncDir(pendingDir);
   }
