@@ -1,0 +1,34 @@
+name: Rust preview
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: Swatinem/rust-cache@v2
+      - run: npm ci
+      - name: Default Rust formatting
+        run: cargo fmt --all -- --check
+      - name: Rust unit tests
+        run: cargo test --locked --all-targets
+      - name: Ivanka-compatible structural linter
+        run: |
+          rustc --test rust-server/source_lints/mod.rs -o "${RUNNER_TEMP}/skrynia-lints"
+          "${RUNNER_TEMP}/skrynia-lints"
+      - name: Strict Clippy
+        run: cargo clippy --locked --all-targets -- -D clippy::correctness -D clippy::suspicious -D clippy::perf -D clippy::complexity
+      - name: Rust + Node on-disk/API interoperability
+        run: |
+          cargo build --locked --package skrynia-server
+          node tests/rust-server-smoke.js
