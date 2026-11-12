@@ -1,6 +1,7 @@
+mod subscriptions;
 use crate::{Grant, OPERATIONS, Snapshot};
 use std::collections::{BTreeMap, HashMap};
-fn grant(id: &str, parent: Option<&str>, locations: &str) -> Grant {
+pub(super) fn grant(id: &str, parent: Option<&str>, locations: &str) -> Grant {
     Grant {
         id: id.into(),
         parent: parent.map(str::to_string),

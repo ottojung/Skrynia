@@ -7,13 +7,17 @@ impl Snapshot {
     pub fn usage(&self, id: &str, update: Option<(&str, u64)>) -> (u64, u64) {
         let grant = &self.grants[id];
         let (mut bytes, objects) = objects::sum(&self.objects, &grant.locations, update);
-        for descendant in self.children_of(id) {
+        let descendants = self.children_of(id);
+        let ids = descendants
+            .iter()
+            .map(|g| g.id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        for descendant in descendants {
             bytes += GRANT_COST + descendant.users.len().saturating_sub(1) as u64 * EXTRA_USER_COST;
         }
-        let descendants = self.children_of(id);
         let mut objects = objects;
         for sub in self.push.subscriptions.values() {
-            if descendants.iter().any(|g| g.id == sub.grant_id) {
+            if ids.contains(sub.grant_id.as_str()) {
                 bytes += 4096;
                 objects += 1;
             }
