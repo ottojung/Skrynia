@@ -51,7 +51,9 @@ function validEndpoint(endpoint) {
   } catch {return false;}
 }
 
-function safeAgent(lookup=dns.lookup) {
+// Optional injected resolver/address predicate is for isolated socket tests.
+// Production calls safeAgent() with its private-address restrictions intact.
+function safeAgent(lookup=dns.lookup,isAllowed=publicAddress) {
   return new https.Agent({
     keepAlive:false,
     lookup(hostname,options,callback) {
@@ -59,12 +61,15 @@ function safeAgent(lookup=dns.lookup) {
       // to this TLS connection, blocking DNS-rebinding to internal services.
       lookup(hostname,{all:true},(error,addresses)=>{
         if(error) return callback(error);
-        const preferred=addresses.find(result=>publicAddress(result.address));
+        const preferred=addresses.find(result=>isAllowed(result.address));
         if(!preferred) {
           const rejection=new Error('push endpoint does not resolve to a public address');
           rejection.code='EHOSTUNREACH';
           return callback(rejection);
         }
+        // Node's autoSelectFamily path asks for all:true. Returning a
+        // string here makes real TLS connections fail with an invalid IP.
+        if(options.all) return callback(null,[preferred]);
         callback(null,preferred.address,preferred.family);
       });
     }

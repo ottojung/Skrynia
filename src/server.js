@@ -3,6 +3,7 @@
 
 // One object store, one delegable authority tree, one owning server process.
 const http=require('http');
+const {pipeline}=require('node:stream');
 const fs=require('fs');
 const path=require('path');
 const crypto=require('crypto');
@@ -54,10 +55,13 @@ function createServer(opts={}) {
     process.env.SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES??41943040);
   const maxConnections=Number(opts.maxConnections??
     process.env.SKRYNIA_MAX_CONNECTIONS??512);
+  const idleTimeoutMs=Number(opts.socketIdleTimeoutMs??
+    process.env.SKRYNIA_SOCKET_IDLE_TIMEOUT_MS??30000);
   if(!Number.isSafeInteger(maxKeyLength)||maxKeyLength<1||
     !Number.isSafeInteger(maxObjectSize)||maxObjectSize<1||
     !Number.isSafeInteger(maxBufferedBytes)||maxBufferedBytes<1||
-    !Number.isSafeInteger(maxConnections)||maxConnections<1) {
+    !Number.isSafeInteger(maxConnections)||maxConnections<1||
+    !Number.isSafeInteger(idleTimeoutMs)||idleTimeoutMs<1) {
     throw new Error('invalid storage limits');
   }
   let bufferedBytes=0;
@@ -67,6 +71,8 @@ function createServer(opts={}) {
     pushSendTimeoutMs:opts.pushSendTimeoutMs,
     maxSubscriptions:opts.pushMaxSubscriptions,maxOutboxItems:opts.pushMaxOutboxItems,
     pushConcurrency:opts.pushConcurrency,
+    pushAllowedHosts:opts.pushAllowedHosts,
+    pushMaxAttempts:opts.pushMaxAttempts,
     onSubscriptionCreate:(secret,locations)=>grants.accountSubscription(secret,locations),
     onSubscriptionMutation:()=>grants.subscriptionChanged()});
   grants.setOnSubscriptionsRevoked(()=>push.invalidateSubscriptions());
@@ -127,65 +133,76 @@ function createServer(opts={}) {
   }
   function get(key,req,res) {
     const file=shared.objPath(key);
-    // Pin the inode before evaluating validators so a concurrent
-    // replacement cannot change the bytes halfway through the response.
-    let fd;
-    try {fd=fs.openSync(file,'r');}
-    catch(e) {
+    let fd=null;
+    try {
+      // Open once: validators and body must describe the same inode.
+      fd=fs.openSync(file,'r');
+      const stat=fs.fstatSync(fd),tag=etagFromStat(stat);
+      const headers={
+        'Content-Type':mimeType(key),
+        'ETag':tag,
+        'Cache-Control':'no-cache',
+        'Accept-Ranges':'bytes',
+        'X-Content-Type-Options':'nosniff'
+      };
+      const validators=(req.headers['if-none-match']||'').split(',').map(x=>x.trim());
+      if(validators.some(x=>x==='*'||x===tag||x==='W/'+tag)) {
+        res.writeHead(304,headers);
+        return res.end();
+      }
+      let start=0,end=stat.size-1,status=200;
+      const range=req.headers.range;
+      // If-Range must match the current strong representation tag.
+      if(range&&(!req.headers['if-range']||req.headers['if-range']===tag)) {
+        const match=/^bytes=(\d*)-(\d*)$/.exec(range);
+        if(match&&(match[1]||match[2])&&stat.size>0) {
+          if(!match[1]) {
+            const suffix=Number(match[2]);
+            if(Number.isSafeInteger(suffix)&&suffix>0) {
+              start=Math.max(0,stat.size-suffix);
+            } else status=416;
+          } else {
+            start=Number(match[1]);
+            end=match[2]?Number(match[2]):end;
+            if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||
+              end<start||start>=stat.size) status=416;
+            end=Math.min(end,stat.size-1);
+          }
+          if(status!==416) status=206;
+        } else status=416;
+      }
+      if(status===416) {
+        res.writeHead(416,{...headers,'Content-Range':'bytes */'+stat.size});
+        return res.end();
+      }
+      if(status===206) {
+        headers['Content-Range']='bytes '+start+'-'+end+'/'+stat.size;
+      }
+      headers['Content-Length']=status===206?end-start+1:stat.size;
+      res.writeHead(status,headers);
+      if(req.method==='HEAD'||headers['Content-Length']===0) return res.end();
+
+      // pipeline destroys the source on disconnect, closing its descriptor
+      // even when an anonymous client aborts a large download.
+      const source=fs.createReadStream(null,{fd,autoClose:true,start,end});
+      fd=null; // ownership is transferred to the stream
+      pipeline(source,res,e=>{
+        if(e&&!['ERR_STREAM_PREMATURE_CLOSE','ECONNRESET'].includes(e.code)) {
+          console.error('Skrynia download stream failed:',e);
+        }
+      });
+    } catch(e) {
       if(e.code==='ENOENT') return json(res,404,{error:'not_found'});
       throw e;
+    } finally {
+      if(fd!==null) fs.closeSync(fd);
     }
-    const stat=fs.fstatSync(fd),tag=etagFromStat(stat);
-    const headers={
-      'Content-Type':mimeType(key),
-      'ETag':tag,
-      'Cache-Control':'no-cache',
-      'Accept-Ranges':'bytes',
-      'X-Content-Type-Options':'nosniff'
-    };
-    const validators=(req.headers['if-none-match']||'').split(',').map(x=>x.trim());
-    if(validators.some(x=>x==='*'||x===tag||x==='W/'+tag)) {
-      fs.closeSync(fd);
-      res.writeHead(304,headers);
-      return res.end();
-    }
-    let start=0,end=stat.size-1,status=200;
-    const range=req.headers.range;
-    // If-Range must match the strong, current representation tag.
-    if(range&&(!req.headers['if-range']||req.headers['if-range']===tag)) {
-      const match=/^bytes=(\d*)-(\d*)$/.exec(range);
-      if(match&&(match[1]||match[2])&&stat.size>0) {
-        if(!match[1]) {
-          const suffix=Number(match[2]);
-          if(Number.isSafeInteger(suffix)&&suffix>0) {
-            start=Math.max(0,stat.size-suffix);
-          } else status=416;
-        } else {
-          start=Number(match[1]);
-          end=match[2]?Number(match[2]):end;
-          if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||
-            end<start||start>=stat.size) status=416;
-          end=Math.min(end,stat.size-1);
-        }
-        if(status!==416) status=206;
-      } else status=416;
-    }
-    if(status===416) {
-      fs.closeSync(fd);
-      res.writeHead(416,{...headers,'Content-Range':'bytes */'+stat.size});
-      return res.end();
-    }
-    if(status===206) headers['Content-Range']=`bytes ${start}-${end}/${stat.size}`;
-    headers['Content-Length']=status===206?end-start+1:stat.size;
-    res.writeHead(status,headers);
-    if(req.method==='HEAD'||headers['Content-Length']===0) {
-      fs.closeSync(fd);
-      return res.end();
-    }
-    // Stream from the already-open descriptor: memory is O(stream buffer),
-    // even for a slow reader or a large public object.
-    fs.createReadStream(null,{fd,autoClose:true,start,end})
-      .on('error',e=>res.destroy(e)).pipe(res);
+  }
+  function ifMatchSatisfied(header,tag) {
+    if(header===undefined) return true;
+    if(header.trim()==='*') return true; // caller checked existence
+    // If-Match uses strong comparison. Never accept W/ validators.
+    return header.split(',').some(candidate=>candidate.trim()===tag);
   }
   function create(key,body,req,res) {
     const file=shared.objPath(key);
@@ -205,7 +222,7 @@ function createServer(opts={}) {
   function replace(key,body,req,res) {
     const file=shared.objPath(key);
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
-    if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
+    if(!ifMatchSatisfied(req.headers['if-match'],etag(file)))
       return json(res,412,{error:'etag_mismatch'});
     grants.authorizeMutation(bearer(req),key,'replace',body.length);
     const version=shared.nextVersion(),tmp=tempObject(body,version);
@@ -220,7 +237,7 @@ function createServer(opts={}) {
     const file=shared.objPath(key);
     if(!fs.existsSync(file)) return json(res,404,{error:'not_found'});
     grants.authorizeMutation(bearer(req),key,'delete');
-    if(req.headers['if-match']!==undefined&&req.headers['if-match']!==etag(file))
+    if(!ifMatchSatisfied(req.headers['if-match'],etag(file)))
       return json(res,412,{error:'etag_mismatch'});
     const version=shared.nextVersion();
     const outcome=journal.commit(key,'delete',version,()=>{
@@ -303,7 +320,7 @@ function createServer(opts={}) {
     res.setHeader('Access-Control-Expose-Headers','ETag');
     if(req.method==='OPTIONS') {
       res.writeHead(204,{'Access-Control-Allow-Methods':'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Skrynia-Capability, If-Match',
+        'Access-Control-Allow-Headers':'Authorization, Content-Type, X-Skrynia-Capability, If-Match, If-None-Match, If-Range, Range',
         'Access-Control-Max-Age':'3600'});
       return res.end();
     }
@@ -423,10 +440,25 @@ function createServer(opts={}) {
     catch(e){console.error('Skrynia recovery pending:',e);}
   },60000);
   recoveryTimer.unref();
-  const server=http.createServer(route);
+  const server=http.createServer((req,res)=>{
+    // A public GET can fail during open/stat or stream setup. No unhandled
+    // synchronous exception may terminate the entire storage process.
+    try {route(req,res);}
+    catch(e) {
+      console.error('Skrynia unhandled request error:',e);
+      if(res.headersSent) res.destroy(e);
+      else {
+        try {error(res,e);}
+        catch(replyError) {res.destroy(replyError);}
+      }
+    }
+  });
   server.maxConnections=maxConnections;
   server.requestTimeout=60000;
   server.headersTimeout=15000;
+  // requestTimeout only bounds receiving request data. An inactive
+  // *response* socket must also be closed to avoid exhausting connections.
+  server.setTimeout(idleTimeoutMs,socket=>socket.destroy());
   server.skrynia={HTTP_BASE_PATH:base,SKRYNIA_URL:external,DATA_DIR:shared.dataDir,
     grants,push,storeJournal:journal,buildInfo,
     bufferedUploadBytes:()=>bufferedBytes};
