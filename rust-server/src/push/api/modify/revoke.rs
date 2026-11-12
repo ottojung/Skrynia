@@ -12,5 +12,12 @@ pub fn remove(state: &State, id: &str, cap: &str) -> Result<()> {
         .map_err(|_| crate::internal())?;
     sync_dir(&state.dir.join("state/push-subs")).map_err(|_| crate::internal())?;
     data.push.subscriptions.remove(id);
+    let outbox = state.dir.join("state/push/outbox");
+    let notice = outbox.join(format!("{id}.json"));
+    if notice.exists() {
+        fs::remove_file(notice).map_err(|_| crate::internal())?;
+        sync_dir(&outbox).map_err(|_| crate::internal())?;
+    }
+    data.push.outbox.remove(id);
     Ok(())
 }

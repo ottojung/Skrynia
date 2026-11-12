@@ -21,7 +21,8 @@ impl State {
         let objects = paths::scan(&dir)?;
         let grants = load::grants(&dir)?;
         let tokens = load::tokens(&grants);
-        let push = crate::load_push(&dir)?;
+        let mut push = crate::load_push(&dir)?;
+        crate::prune_orphan_notifications(&dir, &mut push)?;
         let vapid = crate::load_vapid(&dir)?;
         let state = Self {
             dir,

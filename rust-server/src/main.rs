@@ -46,3 +46,5 @@ pub use push::{PushFailure, push_send};
 pub use push::{push_finish, push_run};
 
 pub use http::ListParams;
+
+pub use push::prune_orphan_notifications;

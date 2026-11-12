@@ -24,3 +24,5 @@ pub use delivery::{
 pub use delivery::{PushFailure, push_send};
 
 pub use delivery::{push_finish, push_run};
+
+pub use state::prune_orphan_notifications;

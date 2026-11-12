@@ -160,6 +160,12 @@ async function run() {
     assert.equal((await request(p,'DELETE','/push/subscriptions/'+subId,undefined,undefined,
       {'X-Skrynia-Capability':rotated.json.capability})).status,200);
     assert.equal(existsSync(liveSubFile),false);
+    assert.equal(existsSync(queueFile),false);
+    const secondSub=(await request(p,'POST','/push/subscriptions',JSON.stringify(subscription),contributor)).json;
+    assert.equal(typeof secondSub.id,'string');
+    assert.equal((await request(p,'PUT','/store/team.a','member',user)).status,200);
+    const secondOutbox=join(dir,'state/push/outbox',secondSub.id+'.json');
+    assert.equal(existsSync(secondOutbox),true);
     assert.equal((await request(p,'PUT','/store/team.a','wrong',contributor)).status,403);
     assert.equal((await request(p,'GET','/store?locations=team.*',undefined,contributor)).json.keys[0],'team.a');
     assert.equal((await request(p,'DELETE','/store/new.txt',undefined,user,{'X-Skrynia-If-SHA256':sha('changed')})).status,200);
@@ -182,6 +188,7 @@ async function run() {
     writeFileSync(marker,JSON.stringify({id:child.id,ids:[child.id]}));
     server=await start(binary,[],dir,p);
     assert.equal(existsSync(marker),false);
+    assert.equal(existsSync(secondOutbox),false);
     assert.equal((await request(p,'GET','/store/team.a')).body.toString(),'member');
     assert.equal((await request(p,'POST','/store/team.b','unauthorized',contributor)).status,403);
     await stop(server);server=undefined;
