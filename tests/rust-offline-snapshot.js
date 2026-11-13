@@ -6,13 +6,14 @@ const fs=require('node:fs');
 const {join,resolve}=require('node:path');
 const {tmpdir}=require('node:os');
 const {port,start,stop}=require('./crash/fixture');
-const {manifest}=require('./snapshot/manifest');
+const {manifest,requireRegularTree}=require('./snapshot/manifest');
 const {verify}=require('./snapshot/verify');
 const source=resolve(process.argv[2]||'');
 const binary=resolve(process.argv[3]||'target/debug/skrynia-server');
 async function main() {
   assert(process.argv[2],'Usage: node tests/rust-offline-snapshot.js <offline-data-copy>');
-  assert(fs.statSync(source).isDirectory(),'snapshot path must be a directory');
+  requireRegularTree(source);
+  assert(fs.lstatSync(source).isDirectory(),'snapshot path must be a directory');
   for(const part of ['store','state/grants','state/push-subs','state/push',
     'state/store-transactions','state/grant-revocations','store-tmp']) {
     assert(fs.statSync(join(source,part)).isDirectory(),`missing ${part}`);

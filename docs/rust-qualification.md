@@ -285,7 +285,8 @@ and creates a second private temporary copy. Rust and Node open only the
 temporary copy in succession, with outbound Push disabled, and both must
 return the exact same public object bytes and SHA-256 ETags. The checker
 compares hashes for public files, grant records, subscription records, VAPID
-keys, and the durable outbox before and after each startup; the source is
+keys, and the durable outbox before and after each startup; all source
+symlinks and special files are rejected before copying; the source is
 never modified. Its regression target `make rust-snapshot-test` builds a
 synthetic snapshot with real stored objects and a Push subscription, verifies
 the upgrade/rollback check, and proves the original fixture is unchanged.

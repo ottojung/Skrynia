@@ -13,7 +13,10 @@ off.** None of the commands below deploys Rust or edits a live data directory.
    or taking a storage snapshot with coherent filesystem semantics. Do not copy
    a directory while its writer is mutating it. Preserve ownership, modes,
    symlinks, directory structure, and all of `store/`, `store-tmp/` and
-   `state/`. Never delete `state/writer.lock`; its inode is the coordination
+   `state/`. The snapshot checker rejects symbolic links, device nodes and
+   other special files **anywhere** inside this tree so cloned paths cannot
+   redirect server writes back to the source or outside the temporary copy.
+   Never delete `state/writer.lock`; its inode is the coordination
    point for exclusive writers. Never put the backup under a publicly served
    directory.
 3. Confirm the source contains no pending transaction or grant-revocation

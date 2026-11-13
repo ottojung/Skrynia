@@ -3,6 +3,17 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const {join}=require('node:path');
 const {createHash}=require('node:crypto');
+function requireRegularTree(root) {
+  function walk(path) {
+    const info=fs.lstatSync(path);
+    assert(info.isDirectory()||info.isFile(),
+      `offline snapshot has symlink or special file: ${path.slice(root.length)}`);
+    if(info.isDirectory()) {
+      for(const entry of fs.readdirSync(path))walk(join(path,entry));
+    }
+  }
+  walk(root);
+}
 async function hash(file) {
   const digest=createHash('sha256');
   for await(const chunk of fs.createReadStream(file))digest.update(chunk);
@@ -23,4 +34,4 @@ async function manifest(root) {
   for(const dir of ['store','state/grants','state/push-subs','state/push'])await walk(dir);
   return result;
 }
-module.exports={hash,manifest};
+module.exports={hash,manifest,requireRegularTree};

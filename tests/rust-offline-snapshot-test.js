@@ -34,6 +34,21 @@ async function main() {
     execFileSync(process.execPath,[resolve('tests/rust-offline-snapshot.js'),root],
       {stdio:'inherit',timeout:60000});
     assert.deepEqual(await manifest(root),before,'snapshot source was modified');
+    // A copied symlink must not let either server access the original tree.
+    const unsafe=join(root,'state','push','outside.json');
+    fs.symlinkSync(join(root,'state','grants',grant.id+'.json'),unsafe);
+    try {
+      let rejection;
+      try {
+        execFileSync(process.execPath,[resolve('tests/rust-offline-snapshot.js'),root],
+          {stdio:'pipe',timeout:10000});
+      } catch(error) {rejection=error;}
+      assert(rejection,'snapshot with a symlink must be rejected');
+      assert.match(rejection.stderr.toString(),
+        /offline snapshot has symlink or special file/);
+      assert.equal(fs.readFileSync(join(root,'state/grants',grant.id+'.json')).length>0,true);
+    } finally {fs.unlinkSync(unsafe);}
+
     console.log('Offline-source immutability and credential/subscription replay: OK');
   } finally {
     if(child)await stop(child,'SIGKILL');
