@@ -14,3 +14,10 @@ rust-test:
 	node tests/rust-protocol-parity.js
 
 .PHONY: test test-node rust-test
+
+# Adversarial real-process SIGKILL tests run separately from the fast suite.
+rust-crash-test:
+	cargo build --locked --package skrynia-server
+	node tests/rust-crash-recovery.js
+
+.PHONY: rust-crash-test

@@ -66,3 +66,18 @@ connection and memory saturation, notification-heavy writes, cold cache and
 large grant trees, with fixed hardware and I/O visibility. Compare failure
 modes as well as throughput; do not optimize away fsync durability or grant
 checks merely to improve a benchmark.
+
+## Process-crash correctness workload
+
+Run `make rust-crash-test` to exercise real `SIGKILL` events during concurrent
+durable object creates and content-hash-conditional replacements. Each test
+round restarts Rust on the same directory and checks that all objects are
+complete (never torn), all acknowledged writes persisted, and the transaction
+journal was drained. It then opens the same directory under the Node reference
+server and reads all objects. Responses lost during a crash are conservatively
+classified as unknown (a mutation may have committed without its HTTP reply).
+The default is six crashes, eight creates and eight replacements per round;
+configure `SKRYNIA_CRASH_ROUNDS` / `SKRYNIA_CRASH_WRITES` for larger sweeps.
+This is a fault-injection test, **not** a replacement for real power-loss and
+filesystem-corruption testing. It runs separately to preserve the fast-suite
+latency budget.
