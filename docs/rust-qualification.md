@@ -250,8 +250,18 @@ that `memory.max` (or cgroup-v1 memory limit) is **100663296 bytes**; silently
 ignored container memory flags fail the gate. The preview image is already
 separately checked for non-root UID 1000.
 
+**Enforced cgroup gate passed on GitHub Actions** for commit `67362e9`
+(Rust preview workflow run `43384772774`, `container-preview` job). With
+`memory.max=100663296` bytes and no OOM kills, the 24 simultaneous 4 MiB
+uploads produced **7 acknowledged writes, 10 HTTP 503 responses, and 7 early
+socket closes**. Every surviving object had exactly the submitted bytes and
+SHA-256 ETag; the staged-files and journal directories were empty, and Node
+reopened and verified the same directory after Rust stopped. The test ran
+as the image's non-root **UID 1000**. This closes the narrow 96 MiB container
+backpressure acceptance gate, not target-hardware capacity qualification.
+
 The local rootless Podman environment currently *does not enforce* `--memory`:
 its `memory.max` reported 30 GiB despite the 96 MiB flag. A smoke-only run
 using `SKRYNIA_CONTAINER_SKIP_CGROUP_ASSERT=1` passed the upload integrity
-and Node-restart checks but **does not qualify memory limits**. The strict
-Docker-based CI run is required before this gate can be marked satisfied.
+and Node-restart checks but **does not qualify memory limits**; the GitHub
+Docker-based enforced-cgroup result above is the authoritative evidence.

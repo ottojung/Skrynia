@@ -252,3 +252,19 @@ only two runs per build were measured on a shared development filesystem, and
 the request mix had no Web Push subscriptions. Repeat on deployment hardware
 with long runs, simultaneous notification delivery, larger objects, memory
 limits and controlled background I/O before release.
+
+### GitHub container memory qualification — November 13, 2026
+
+Rust preview CI run `43384772774` verified the Docker image built at
+`67362e9` under a *real enforced* 96 MiB cgroup limit, non-root UID 1000,
+and a 24 MiB aggregate upload buffer. A burst of 24 independent 4 MiB
+POSTs produced 7 acknowledged successes, 10 explicit `upload_memory_full`
+HTTP 503 responses and 7 early transport closures from requests rejected
+while transmitting. The probe treats early transport closure as an ambiguous
+write outcome; it independently GETs **every key**, requiring either absence
+or the exact original bytes and matching SHA-256 ETag. All surviving objects
+were intact. No OOM kills occurred. The journal and staging directory were
+empty, and the original Node server reopened the persisted state successfully.
+This was one burst under cgroup pressure, not a long-running load
+benchmark. The local Podman host did not enforce the cgroup limit and its
+corresponding run is only a protocol/integrity smoke test.
