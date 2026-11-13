@@ -126,3 +126,16 @@ Both passed full-payload and ETag assertions, journal-drain checks, and
 Node restart verification. No notifications were configured. Durable writes
 remain relatively slow under contended shared-host storage. Repeat across
 controlled production-like workloads and hardware before qualifying release.
+
+### Filesystem error injection
+
+`tests/rust-disk-failure.js` (included in `make rust-crash-test`) uses
+throwaway directories and temporary permission changes, so it must be run as
+a **non-root** user on a POSIX system. It makes transaction-journal creation
+and staging fail independently; both must return 500, fail closed with
+`recovery_required`, and preserve the original bytes. It also prevents Push
+outbox persistence **after** a durable mutation, verifies the successful HTTP
+response carries `notificationPending: true`, restores permissions, restarts
+Rust to recover the journal and notification, and confirms the original Node
+server can read the state. These are I/O error tests, not a simulated power
+loss or full filesystem corruption model.

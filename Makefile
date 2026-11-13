@@ -20,6 +20,7 @@ rust-crash-test:
 	cargo build --locked --package skrynia-server
 	node tests/rust-crash-recovery.js
 	node tests/rust-crash-grants.js
+	node tests/rust-disk-failure.js
 
 .PHONY: rust-crash-test
 
