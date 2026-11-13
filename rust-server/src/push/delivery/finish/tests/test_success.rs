@@ -1,4 +1,4 @@
-use super::fixture::Fixture;
+use super::Fixture;
 use crate::{Notification, push_finish};
 #[test]
 fn newer_generation_survives_stale_acknowledgment() {

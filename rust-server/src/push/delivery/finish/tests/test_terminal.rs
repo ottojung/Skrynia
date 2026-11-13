@@ -1,4 +1,4 @@
-use super::fixture::Fixture;
+use super::Fixture;
 use crate::{PushFailure, push_finish};
 #[test]
 fn terminal_failure_retires_only_unchanged_subscription() {

@@ -1,4 +1,4 @@
-use super::fixture::Fixture;
+use super::Fixture;
 use axum::http::StatusCode;
 use std::sync::atomic::Ordering;
 #[test]

@@ -119,3 +119,16 @@ reading private authority or making changes. A threaded unit test explicitly
 queues a write behind that lock, marks the state failed, releases the lock,
 and requires HTTP 503 with no mutation. The existing filesystem fault-injection
 suite still verifies failure recovery across restarts.
+
+### Push completion races after a persistence error
+
+A running Web Push batch may contain multiple already-sent notifications.
+The Push completion path now checks the recovery-required flag after taking
+the same state lock as HTTP mutations. If an outbox acknowledgement or
+retry-state update fails on disk, the completion sets the flag **before**
+releasing that lock, preventing the other completions from changing durable
+state in the gap before the worker loop observes the failure. A regression
+test replaces an outbox JSON path with a directory to produce an actual
+filesystem error, confirms the fail-closed transition and verifies that a
+second completion is refused. Recovery still replays the unacknowledged
+notification at least once after restart.

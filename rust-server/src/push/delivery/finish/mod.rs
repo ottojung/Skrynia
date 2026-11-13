@@ -4,17 +4,10 @@ mod fail;
 mod fixture;
 mod retire;
 #[cfg(test)]
-mod test_health;
-#[cfg(test)]
-mod test_queued;
-#[cfg(test)]
-mod test_retry;
-#[cfg(test)]
-mod test_success;
-#[cfg(test)]
-mod test_terminal;
+mod tests;
 use crate::{Notification, PushFailure, State, Subscription};
 use std::io;
+use std::sync::atomic::Ordering;
 pub fn finish(
     state: &State,
     original: &Notification,
@@ -25,21 +18,31 @@ pub fn finish(
         .data
         .lock()
         .map_err(|_| io::Error::other("poisoned"))?;
+    if state.failed.load(Ordering::Acquire) {
+        return Err(io::Error::other("recovery required"));
+    }
     let Some(current) = data.push.outbox.get(&original.subscription_id).cloned() else {
         return Ok(());
     };
-    if sub.is_none() || outcome.is_ok() {
+    let persisted = if sub.is_none() || outcome.is_ok() {
         if sub.is_none() || current.generation == original.generation {
-            ack::remove(&state.dir, &mut data, &original.subscription_id)?;
+            ack::remove(&state.dir, &mut data, &original.subscription_id)
+        } else {
+            Ok(())
         }
-        return Ok(());
+    } else {
+        fail::retry(
+            state,
+            &mut data,
+            &current,
+            original,
+            sub.unwrap(),
+            outcome.unwrap_err(),
+        )
+    };
+    // A failing ack must freeze subsequent completions before unlocking.
+    if persisted.is_err() {
+        state.failed.store(true, Ordering::Release);
     }
-    fail::retry(
-        state,
-        &mut data,
-        &current,
-        original,
-        sub.unwrap(),
-        outcome.unwrap_err(),
-    )
+    persisted
 }

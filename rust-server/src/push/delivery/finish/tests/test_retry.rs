@@ -1,4 +1,4 @@
-use super::fixture::Fixture;
+use super::Fixture;
 use crate::{Notification, PushFailure, push_finish};
 #[test]
 fn failed_send_retains_latest_generation_and_backoff() {
