@@ -19,6 +19,8 @@ It never interprets object contents as executable application instructions.
 | `SKRYNIA_PUSH_CONCURRENCY` | `8` | Parallel notification deliveries |
 | `SKRYNIA_PUSH_SEND_TIMEOUT_MS` | `10000` | Notification request timeout |
 | `SKRYNIA_PUSH_MAX_ATTEMPTS` | `12` | Retry attempts before retirement |
+| `SKRYNIA_MAX_SUBSCRIPTIONS` | `2000` | Maximum active Web Push registrations (1–1,000,000) |
+| `SKRYNIA_MAX_OUTBOX_ITEMS` | `10000` | Maximum pending notification records (1–1,000,000) |
 | `SKRYNIA_PUSH_ALLOWED_HOSTS` | empty | Optional exact HTTPS endpoint host allowlist |
 | `SKRYNIA_PUSH_SUBJECT` | public URL | VAPID contact |
 
@@ -46,6 +48,15 @@ opened without following symlinks. Nonregular filesystem entries fail closed.
 Object creation and replacement are journaled. A process interruption can
 leave an incomplete intent, which must be replayed on the next startup.
 Never manually discard transaction records.
+
+A synchronous storage failure **before** object application returns HTTP 503
+`storage_unavailable` (or HTTP 507 `insufficient_storage` for a full
+filesystem or exhausted disk quota). The server remains healthy so clients
+may retry once the environment recovers. An ambiguous applied mutation or
+failed durable recovery sets a protective latch: subsequent requests,
+including `/health`, return HTTP 503 `recovery_required` until the
+writer is restarted and the journal is recovered. Do not bypass this latch
+or manually clear its records.
 
 ## Container and reverse proxy
 

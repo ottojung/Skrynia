@@ -10,9 +10,9 @@ mod replies;
 mod util;
 mod write;
 
-pub fn router(state: crate::store::State) -> axum::Router {
+pub fn router(state: crate::store::State, delivery_enabled: bool) -> axum::Router {
     let state = std::sync::Arc::new(state);
-    if !state.push_config.manual {
+    if delivery_enabled {
         tokio::spawn(crate::push_run(std::sync::Arc::clone(&state)));
     }
     axum::Router::new()

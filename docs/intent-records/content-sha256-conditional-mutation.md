@@ -14,9 +14,9 @@ precondition headers with HTTP 400. POST creates only an absent key.
 Skrynia GET and HEAD produce a strong ETag containing the quoted lowercase
 SHA-256 of the object bytes, and honor If-None-Match and If-Range as HTTP
 cache validators. Objects are directly servable as public files through
-arbitrary static servers whose cache validators may differ. A browser client
-computes meta.sha256 from the received bytes using WebCrypto and supplies
-options.sha256 for conditional PUT and DELETE.
+arbitrary static servers whose cache validators may differ. Callers compute
+the SHA-256 of the received bytes and supply it through the conditional
+mutation header.
 
 Object files use filesystem-provided timestamps. No persistent object
 sequence or per-object digest state exists. Create/replace journal intents

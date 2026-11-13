@@ -19,7 +19,7 @@ impl Server {
             .env("SKRYNIA_DATA_DIR", &home)
             .env("SKRYNIA_PORT", port.to_string())
             .env("SKRYNIA_URL", format!("http://127.0.0.1:{port}/api"))
-            .env("SKRYNIA_PUSH_MANUAL", "1")
+            .env("SKRYNIA_TEST_DISABLE_PUSH", "1")
             .stderr(Stdio::null())
             .stdout(Stdio::null())
             .spawn()

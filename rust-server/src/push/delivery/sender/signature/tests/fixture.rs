@@ -33,7 +33,6 @@ pub fn sample() -> (Subscription, PushConfig, EcKey<Private>) {
         max_attempts: 2,
         max_subscriptions: 5,
         max_outbox: 5,
-        manual: true,
     };
     (subscriber, config, key)
 }

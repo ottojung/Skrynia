@@ -22,7 +22,6 @@ pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
         max_attempts: 3,
         max_subscriptions: 10,
         max_outbox: 10,
-        manual: true,
     };
     State {
         dir: path.to_path_buf(),

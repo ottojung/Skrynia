@@ -4,6 +4,7 @@ mod http;
 mod net;
 mod operator;
 mod push;
+mod push_mode;
 mod store;
 
 #[tokio::main]
@@ -20,7 +21,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let address = std::env::var("SKRYNIA_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let port = std::env::var("SKRYNIA_PORT").unwrap_or_else(|_| "17380".into());
     let listener = tokio::net::TcpListener::bind(format!("{address}:{port}")).await?;
-    let router = http::router(server);
+    let router = http::router(server, push_mode::delivery_enabled());
     let options = net::NetworkOptions::load()?;
     let listener = net::BoundedListener::new(listener, options);
     axum::serve(listener, router)
@@ -50,9 +51,7 @@ pub use push::{
 
 pub use push::{push_delay, push_enqueue, push_now, push_preflight};
 
-pub use push::{PushFailure, push_send};
-
-pub use push::{push_finish, push_run};
+pub use push::{PushFailure, push_finish, push_run, push_send};
 
 pub use http::ListParams;
 

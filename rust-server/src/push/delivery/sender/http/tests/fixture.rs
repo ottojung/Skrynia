@@ -36,7 +36,6 @@ pub fn sample(port: u16) -> (Subscription, PushConfig, Vapid, PathBuf) {
         max_attempts: 2,
         max_subscriptions: 5,
         max_outbox: 5,
-        manual: true,
     };
     (sub, config, vapid, root)
 }

@@ -9,7 +9,6 @@ pub struct PushConfig {
     pub max_attempts: u32,
     pub max_subscriptions: usize,
     pub max_outbox: usize,
-    pub manual: bool,
 }
 fn number(name: &str, fallback: u64, maximum: u64) -> io::Result<u64> {
     let value = std::env::var(name)
@@ -38,7 +37,6 @@ impl PushConfig {
             max_attempts: number("SKRYNIA_PUSH_MAX_ATTEMPTS", 12, 100)? as u32,
             max_subscriptions: number("SKRYNIA_MAX_SUBSCRIPTIONS", 2000, 1000000)? as usize,
             max_outbox: number("SKRYNIA_MAX_OUTBOX_ITEMS", 10000, 1000000)? as usize,
-            manual: std::env::var("SKRYNIA_PUSH_MANUAL").is_ok_and(|s| s == "1"),
         })
     }
 }
