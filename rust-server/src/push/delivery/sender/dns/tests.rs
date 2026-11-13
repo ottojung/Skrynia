@@ -11,7 +11,7 @@ fn dns_rebinding_cannot_select_private_or_special_destinations() {
     ]
     .into_iter()
     .map(|s| s.parse::<SocketAddr>().unwrap());
-    assert_eq!(select(addresses), Err(Failure::Blocked));
+    assert_eq!(select(addresses), Err(Failure::Retry));
     let mixed = ["127.0.0.1:443", "1.1.1.1:443", "10.0.0.1:443"]
         .into_iter()
         .map(|s| s.parse::<SocketAddr>().unwrap());
@@ -22,7 +22,7 @@ fn ipv6_transition_and_documentation_addresses_remain_blocked() {
     let addresses = ["[2002::1]:443", "[2001:db8::1]:443", "[2001::1]:443"]
         .into_iter()
         .map(|s| s.parse::<SocketAddr>().unwrap());
-    assert_eq!(select(addresses), Err(Failure::Blocked));
+    assert_eq!(select(addresses), Err(Failure::Retry));
     assert_eq!(
         select(["[2606:4700:4700::1111]:443".parse().unwrap()].into_iter())
             .unwrap()

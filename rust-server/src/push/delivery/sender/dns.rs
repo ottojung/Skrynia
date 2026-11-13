@@ -15,7 +15,7 @@ pub async fn choose(endpoint: &str) -> Result<(String, SocketAddr), Failure> {
 pub fn select(mut addresses: impl Iterator<Item = SocketAddr>) -> Result<SocketAddr, Failure> {
     addresses
         .find(|address| crate::public_address(address.ip()))
-        .ok_or(Failure::Blocked)
+        .ok_or(Failure::Retry)
 }
 #[cfg(test)]
 mod tests;

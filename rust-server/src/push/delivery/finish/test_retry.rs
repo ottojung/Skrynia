@@ -15,3 +15,36 @@ fn failed_send_retains_latest_generation_and_backoff() {
     assert_eq!(pending.attempts, 1);
     assert!(pending.next_at >= crate::push_now());
 }
+
+#[test]
+fn blocked_dns_address_is_retried_without_retiring_subscription() {
+    let fixture = Fixture::new(1);
+    let notification = fixture.read();
+    push_finish(
+        &fixture.state,
+        &notification,
+        Some(&fixture.sub),
+        Err(PushFailure::Retry),
+    )
+    .unwrap();
+    let next = fixture.read();
+    assert_eq!(next.attempts, 1);
+    assert!(next.next_at >= crate::push_now());
+    assert!(
+        fixture
+            .path
+            .join("state/push-subs")
+            .join(format!("{}.json", fixture.sub.id))
+            .exists()
+    );
+    assert!(
+        fixture
+            .state
+            .data
+            .lock()
+            .unwrap()
+            .push
+            .subscriptions
+            .contains_key(&fixture.sub.id)
+    );
+}
