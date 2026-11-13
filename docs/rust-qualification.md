@@ -212,3 +212,18 @@ is wrong. It runs in `cargo test` and Rust preview CI, alongside the local
 verified-TLS HTTP sender test. This tests protocol-crypto interoperability
 without a live third-party Push service or browser receipt; those remain
 separate acceptance gates.
+
+### Parallel staging with commit-time revalidation
+
+The Rust object mutation path preflights authorization, size/quota, CAS and
+Push capacity while holding the shared state lock; durable temporary-file
+writes and `fsync` now run outside that lock. Immediately before journal
+commit, Rust reacquires the lock and **repeats all preconditions**. The final
+link/rename and destination-directory sync remain within the serialized
+journal transaction. RAII removes unused staged names on losing contenders,
+failed quotas, or other errors. The differential key-race test now exercises
+two independent dimensions: 16 writers to one CAS key and 16 writers to
+different keys sharing an aggregate one-object grant quota. Both Node and
+Rust must accept exactly one quota winner and leave no temporary files. The
+existing crash/fault suites and four-run performance comparison were also
+repeated. See `docs/rust-benchmarks.md` for exact measurements and caveats.

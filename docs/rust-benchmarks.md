@@ -217,3 +217,38 @@ runs per build. p99 writes remain hundreds of milliseconds, and the
 experiment cannot determine production tail latency or a confidence interval.
 Compare again on target disks, with more trials and realistic notification
 subscriptions before authorizing a production migration.
+
+### Pre-staged durable writes outside the global mutation lock
+
+The implementation at `b2ccd43` checks the caller's grant, quota, CAS and
+notification capacity before staging an upload. It writes and `fsync`s the
+staged object **outside** the global state lock, then reacquires that lock,
+rechecks all preconditions and atomically commits the staged inode through the
+existing durable journal. An RAII guard removes staged files on failed
+revalidation. The public store directory is still `fsync`ed before success.
+The pre-commit recheck keeps same-key compare-and-swap and shared-grant quotas
+serialized even if several uploads were staged concurrently. Regression
+checks include 16-way competing creates/CAS/deletes, 16-way independent
+creates against a one-object quota, no leftover staging files, real SIGKILL,
+filesystem faults, and cross-runtime Node restart.
+
+A matched, **four-run ABBA** comparison used a release binary from `515982a`
+(baseline) and a distinct verified release binary with the pre-staging change
+(optimized). Each sequential run on shared `marceline-dev` used 32 persistent
+clients, 10-second steady-state workload, 4 KiB objects, 90% GET and 10%
+SHA-256 CAS PUT, a 20-second request timeout, and fresh ext4 directories.
+Each verified bytes/ETags, a drained journal, and a Node restart:
+
+| Run | Build | Operations/s | Write p95 ms | Write p99 ms | Peak RSS MiB |
+|---|---|---:|---:|---:|---:|
+| 1 | baseline | 411.3 | 3,285.72 | 4,851.85 | 13.0 |
+| 2 | pre-staged | 942.1 | 506.99 | 592.95 | 14.4 |
+| 3 | pre-staged | 897.3 | 557.92 | 616.93 | 13.9 |
+| 4 | baseline | 460.0 | 2,525.17 | 5,453.15 | 15.2 |
+
+These trials indicate roughly 2.1× throughput and substantially lower write
+p99 under this exact workload. They are **not** production performance claims:
+only two runs per build were measured on a shared development filesystem, and
+the request mix had no Web Push subscriptions. Repeat on deployment hardware
+with long runs, simultaneous notification delivery, larger objects, memory
+limits and controlled background I/O before release.
