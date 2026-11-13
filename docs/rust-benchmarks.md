@@ -104,3 +104,25 @@ Set `SKRYNIA_SOAK_SECONDS` and `SKRYNIA_SOAK_WORKERS` to control duration and
 load; set `SKRYNIA_SOAK_SERVER=node` to run the same fixture against the
 reference server. This workload is a probe, not a production-size stress test
 or statistically controlled latency benchmark.
+
+### Mixed-load sample — November 12, 2026
+
+The following were separate, sequential eight-second runs on the same
+`marceline-dev` host, with 16 keep-alive clients per server, 4 KiB objects,
+90% GETs and 10% synchronous SHA-256-CAS replacements. Both servers used
+throwaway directories on the same ext4 filesystem and were restarted by Node
+to verify final object bytes. These are **individual measurements, not
+statistical confidence intervals** or a production throughput claim.
+
+| Metric | Optimized Rust | Node v24.21.0 |
+|---|---:|---:|
+| Operations completed | 4,946 | 1,797 |
+| Operations / second | 598.3 | 223.5 |
+| Read p95 / p99 (ms) | 0.40 / 0.55 | 294 / 1,029 |
+| Write p95 / p99 (ms) | 385 / 492 | 365 / 963 |
+| Peak RSS (MiB) | 10.3 | 79.9 |
+
+Both passed full-payload and ETag assertions, journal-drain checks, and
+Node restart verification. No notifications were configured. Durable writes
+remain relatively slow under contended shared-host storage. Repeat across
+controlled production-like workloads and hardware before qualifying release.
