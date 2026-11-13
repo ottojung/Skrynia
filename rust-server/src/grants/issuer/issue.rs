@@ -26,6 +26,16 @@ impl State {
         )?;
         data.grants.insert(id.into(), grant);
         data.tokens.insert(user.hash, id.into());
+        if !data.grants[id].users.is_empty() && data.grants[id].users.len() > 1 {
+            data.change_meta(
+                id,
+                crate::Usage {
+                    bytes: 128,
+                    objects: 0,
+                },
+                true,
+            );
+        }
         Ok(serde_json::json!({"grantId":id,"userId":user.id,"userToken":token}))
     }
 }

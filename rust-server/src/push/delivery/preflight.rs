@@ -1,12 +1,7 @@
-use crate::{Fail, Result, Snapshot, matches};
+use crate::{Fail, Result, Snapshot};
 use axum::http::StatusCode;
 pub fn matching(data: &Snapshot, key: &str, kind: &str) -> Vec<String> {
-    data.push
-        .subscriptions
-        .values()
-        .filter(|sub| matches(&sub.locations, key) && sub.events.iter().any(|event| event == kind))
-        .map(|sub| sub.id.clone())
-        .collect()
+    data.push.index.matching(key, kind)
 }
 pub fn preflight(data: &Snapshot, key: &str, kind: &str, max: usize) -> Result<()> {
     let needed = matching(data, key, kind)

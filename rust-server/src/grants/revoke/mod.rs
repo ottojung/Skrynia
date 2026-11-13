@@ -34,7 +34,7 @@ impl State {
             .map(|sub| sub.id.clone())
             .collect::<Vec<_>>();
         for id in obsolete {
-            data.push.subscriptions.remove(&id);
+            data.push.remove_sub(&id);
             data.push.outbox.remove(&id);
         }
         for id in record.ids {
@@ -44,6 +44,8 @@ impl State {
                 }
             }
         }
+        data.quota = crate::QuotaIndex::from_disk(&self.dir, &data.grants, &data.push)
+            .map_err(|_| crate::internal())?;
         Ok(())
     }
 }

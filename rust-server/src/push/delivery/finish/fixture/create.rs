@@ -1,5 +1,5 @@
 use crate::{Pending, PushConfig, PushState, Snapshot, State, Subscription, Vapid};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
@@ -9,10 +9,12 @@ pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
         attempts: 0,
         next_at: 0,
     };
-    let push = PushState {
+    let mut push = PushState {
         subscriptions: HashMap::from([(sub.id.clone(), sub.clone())]),
         outbox: HashMap::from([(sub.id.clone(), notice)]),
+        index: Default::default(),
     };
+    push.reindex();
     let config = PushConfig {
         subject: "mailto:test@example.org".into(),
         allowed_hosts: HashSet::new(),
@@ -30,7 +32,7 @@ pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
         max_buffered: 100,
         upload: std::sync::Arc::new(tokio::sync::Semaphore::new(100)),
         data: Mutex::new(Snapshot {
-            objects: BTreeMap::new(),
+            quota: crate::QuotaIndex::default(),
             grants: HashMap::new(),
             tokens: HashMap::new(),
             push,

@@ -15,6 +15,15 @@ pub fn remove(state: &State, id: &str, cap: &str) -> Result<()> {
         data.push.outbox = next;
     }
     state.persist_remove(&state.dir.join("state/push-subs").join(format!("{id}.json")))?;
-    data.push.subscriptions.remove(id);
+    if let Some(sub) = data.push.remove_sub(id) {
+        data.change_meta(
+            &sub.grant_id,
+            crate::Usage {
+                bytes: 4096,
+                objects: 1,
+            },
+            false,
+        );
+    }
     Ok(())
 }

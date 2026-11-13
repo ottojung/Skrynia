@@ -2,7 +2,6 @@ use super::Kind;
 use crate::{Fail, Result, Snapshot};
 use axum::http::StatusCode;
 use std::path::Path;
-
 pub enum Mode<'a> {
     Initial,
     Final(Option<&'a str>),
@@ -15,8 +14,12 @@ pub fn preflight(
     path: &Path,
     token: &str,
     mode: Mode<'_>,
-) -> Result<()> {
-    let old = data.objects.get(key).copied();
+) -> Result<Option<u64>> {
+    let old = match crate::open_regular(path) {
+        Ok(file) => Some(file.metadata().map_err(|_| crate::internal())?.len()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => return Err(crate::internal()),
+    };
     if kind == Kind::Create && old.is_some() {
         return Err(Fail(StatusCode::CONFLICT, "already_exists"));
     }
@@ -31,7 +34,7 @@ pub fn preflight(
         }
     }
     if kind != Kind::Delete && matches!(mode, Mode::Final(_)) {
-        data.check_quota(&grant.id, key, body.len() as u64)?;
+        data.check_quota(&grant.id, key, old, body.len() as u64)?;
     }
-    Ok(())
+    Ok(old)
 }

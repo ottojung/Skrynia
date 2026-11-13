@@ -2,6 +2,9 @@ use crate::{Fail, Result, Snapshot};
 use axum::http::StatusCode;
 
 impl Snapshot {
+    pub fn change_meta(&mut self, id: &str, usage: super::Usage, add: bool) {
+        self.quota.change_metadata(&self.grants, id, usage, add);
+    }
     pub fn check_metadata(&self, id: &str, extra: u64) -> Result<()> {
         self.check_capacity(id, extra, 0)
     }

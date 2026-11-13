@@ -22,7 +22,7 @@ impl State {
         outbox::initialize(&dir)?;
         cleanup::abandoned(&dir)?;
         crate::recover_pending(&dir)?;
-        let objects = paths::scan(&dir)?;
+        paths::scan(&dir)?;
         let grants = load::grants(&dir)?;
         let tokens = load::tokens(&grants);
         let push = crate::load_push(&dir)?;
@@ -37,7 +37,7 @@ impl State {
             push_config,
             vapid,
             data: Mutex::new(Snapshot {
-                objects,
+                quota: crate::QuotaIndex::default(),
                 grants,
                 tokens,
                 push,

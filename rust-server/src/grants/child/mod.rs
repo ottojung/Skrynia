@@ -1,3 +1,4 @@
+mod scope;
 mod spec;
 use super::Grant;
 use super::keys::{random_id, secret, sha};
@@ -10,6 +11,7 @@ impl State {
         let parent = data.user(token)?.clone();
         let spec = spec::parse(&parent, value)?;
         data.check_metadata(&parent.id, 2048)?;
+        let totals = scope::initial(self, &data, &spec.locations)?;
         let issuer_token = secret();
         let child = Grant {
             id: random_id(),
@@ -30,6 +32,15 @@ impl State {
             &child,
         )?;
         data.grants.insert(child.id.clone(), child.clone());
+        scope::attach(&mut data, &child, totals);
+        data.change_meta(
+            &child.id,
+            crate::Usage {
+                bytes: 2048,
+                objects: 0,
+            },
+            true,
+        );
         Ok(
             serde_json::json!({"id":child.id,"issuerToken":issuer_token,"locations":spec.locations,
             "operations":spec.operations,"maxBytes":spec.max_bytes,"maxObjects":spec.max_objects}),

@@ -22,6 +22,16 @@ impl State {
         if let Some(hash) = removed {
             data.tokens.remove(&hash);
         }
+        if count > 1 {
+            data.change_meta(
+                id,
+                crate::Usage {
+                    bytes: 128,
+                    objects: 0,
+                },
+                false,
+            );
+        }
         Ok(())
     }
 }

@@ -1,41 +1,24 @@
-use std::collections::BTreeMap;
-const OBJECT_COST: u64 = 512;
-pub fn sum(
-    objects: &BTreeMap<String, u64>,
-    scope: &str,
-    update: Option<(&str, u64)>,
-) -> (u64, u64) {
-    let mut bytes = 0u64;
-    let mut count = 0u64;
-    let mut include = |key: &str, size: &u64| {
-        bytes += update
-            .filter(|(name, _)| *name == key)
-            .map_or(*size, |(_, n)| n)
-            + OBJECT_COST;
-        count += 1;
-    };
-    if scope == "*" {
-        for (key, size) in objects {
-            include(key, size);
+use super::{QuotaIndex, Usage};
+use crate::matches;
+use std::{fs, io, path::Path};
+impl QuotaIndex {
+    pub fn scope_usage(dir: &Path, scope: &str) -> io::Result<Usage> {
+        let mut total = Usage::default();
+        if scope.is_empty() {
+            return Ok(total);
         }
-    } else if let Some(prefix) = scope.strip_suffix('*') {
-        for (key, size) in objects.range(prefix.to_string()..) {
-            if !key.starts_with(prefix) {
-                break;
+        for entry in fs::read_dir(dir.join("store"))? {
+            let entry = entry?;
+            let key = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| io::Error::other("invalid key"))?;
+            if matches(scope, &key) {
+                total.add(Usage::object(entry.metadata()?.len()));
             }
-            include(key, size);
         }
-    } else if let Some(size) = objects.get(scope) {
-        include(scope, size);
+        Ok(total)
     }
-    if let Some((key, size)) = update
-        && !objects.contains_key(key)
-        && crate::matches(scope, key)
-    {
-        bytes += size + OBJECT_COST;
-        count += 1;
-    }
-    (bytes, count)
 }
 #[cfg(test)]
 mod tests;
