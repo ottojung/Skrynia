@@ -268,3 +268,31 @@ empty, and the original Node server reopened the persisted state successfully.
 This was one burst under cgroup pressure, not a long-running load
 benchmark. The local Podman host did not enforce the cgroup limit and its
 corresponding run is only a protocol/integrity smoke test.
+
+### Refreshed optimized-build operation benchmark — November 13, 2026
+
+`SKRYNIA_BENCH_REPETITIONS=2 SKRYNIA_BENCH_OBJECTS=32 node
+benchmarks/compare-rust.js target/release/skrynia-server` was run on the
+same shared `marceline-dev` filesystem. The Rust release binary was verified
+to have SHA-256
+`5618ac42c9e1e5eec98efbc2dda71794b18227921d42c997d257086c655bc989`,
+matching the optimized pre-staged build. Order alternated **Node, Rust,
+Rust, Node**, and each invocation used its own private data directory.
+The benchmark prepopulates 32 objects, then measures 300 public GETs of
+32 KiB values at concurrency 8, 32 content-hash CAS PUTs of 8 KiB at
+concurrency 4, and 24 child-grant creations at concurrency 4.
+
+| Trial | Server | GET ops/s | CAS PUT ops/s | Child grants/s |
+|---|---|---:|---:|---:|
+| 1 | Node | 1,954.8 | 41.8 | 162.1 |
+| 1 | Rust | 3,671.3 | 79.4 | 187.1 |
+| 2 | Rust | 5,765.5 | 90.6 | 199.6 |
+| 2 | Node | 3,717.9 | 53.5 | 184.1 |
+
+The corresponding CAS PUT p95 latencies were **152.54 / 119.31 ms** for
+Node and **72.92 / 61.29 ms** for Rust, in trial order. Child-grant p95
+was **37.94 / 35.30 ms** for Node and **24.85 / 22.66 ms** for Rust.
+These are single-host samples with few durable writes and grant creations,
+not confidence intervals or a sustained production workload. They support
+continued Rust performance qualification without asserting a universal
+speedup or weakening filesystem synchronization.
