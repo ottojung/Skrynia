@@ -254,5 +254,5 @@ of the ETag header. Mutations require explicit bearer credentials, not browser c
 The filesystem is authoritative; object-size indexes are rebuilt on startup.
 Skrynia requires a **single writer process per data directory**, and
 does not offer physical cross-key ACID transactions. See
-[client-side protocols](client-protocols.md) for how to build atomic logical
+[Skrynia Cookbook](cookbook.md) for how to build atomic logical
 multi-object transactions using immutable files and one CAS commit point.

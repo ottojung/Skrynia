@@ -84,7 +84,7 @@ transaction IDs or strictly advancing revisions in mutable values.
 A collection of immutable objects can be published as one *logical*
 transaction by content-hash CAS on a small root object. Clients must
 keep referenced objects intact and reevaluate failed CAS operations;
-see [client-side protocols](client-protocols.md).
+see [Skrynia Cookbook](cookbook.md).
 
 Object reads are public. Applications wishing to authenticate contents,
 enforce higher-level acceptance policies or encrypt data implement these

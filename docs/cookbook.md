@@ -1,16 +1,41 @@
-# Client-side protocols on Skrynia
+# Skrynia Cookbook
 
-**Purpose.** This document describes *applications built from Skrynia's existing
-primitives*, not additional server features. The relevant distinction is between
-what the server enforces, what cooperating clients can coordinate, and what
-untrusted clients can verify. All domain-specific computation happens in clients.
+Practical recipes for building applications on **Skrynia's existing storage
+primitives**, without adding application logic to the server.
 
-Skrynia is an unusually small shared-memory substrate: durable public values,
-single-key conditional mutation, and delegable resource-bounded mutation authority.
-These primitives can support applications conventionally associated with
-databases and application servers.
+Each recipe explains which authorities and operations are needed, how clients
+coordinate, why the construction works, and where it stops working. These are
+**client protocols**, not additional server guarantees. Distinguish what
+Skrynia enforces for arbitrary callers from what cooperating clients promise
+and from what readers can independently verify.
 
-## The substrate and its guarantees
+Skrynia provides public durable objects, atomic create-if-absent, byte-hash
+compare-and-swap (CAS), scoped grants, listing, and Web Push wake-ups.
+Applications implement their own schemas, indexes, checks, and computation.
+
+## Recipes at a glance
+
+- [Atomic logical transactions](#recipe-atomic-multi-object-logical-transactions):
+  publish immutable versions through one CAS commit head.
+- [Key discovery](#recipe-scoped-key-discovery-and-contributions):
+  independent create-only contributions with scoped listing.
+- [Append-only log](#recipe-an-append-only-log-using-only-create-authority):
+  ordered publication by cooperating create-only writers, no CAS.
+- [Garbage-collected log](#recipe-garbage-collection-using-sealed-epochs):
+  revoke old writer authority and collect acknowledged sealed prefixes.
+- [CAS logs, queues, and state machines](#recipe-cas-logs-queues-and-state-machines):
+  mutable heads for more flexible coordination.
+- [Public collaboration](#recipe-public-collaboration-without-an-application-backend):
+  posts, community indices, and curation.
+- [Delegation and privacy](#recipe-delegation-identity-and-confidentiality):
+  signed objects, unlisted keys, encrypted payloads, and quotas.
+- [Client-run work](#recipe-client-run-work-and-crash-recovery):
+  workers, recovery, and the absence of guaranteed execution.
+
+For a comparative application catalog, see
+[application feasibility](application-feasibility.md).
+
+## Ingredients: storage primitives and guarantees
 
 | Primitive | Actual Skrynia interface | What it enables |
 | --- | --- | --- |
@@ -58,7 +83,7 @@ validation: untrusted clients can modify or bypass their own checks. Security mu
 come from **Skrynia-enforced authority boundaries** or **independent
 verification of accepted data**.
 
-## 1. Atomic multi-object *logical* transactions
+## Recipe: Atomic multi-object *logical* transactions
 
 **Construction: immutable versions plus one mutable root.**
 
@@ -165,7 +190,7 @@ anonymous public readers, there is no automatic way to prove that *every*
 reader has finished. Keeping versions indefinitely is the simplest safe
 policy; reclamation trades space for explicit assumptions.
 
-## Scoped key discovery and log entries
+## Recipe: Scoped key discovery and contributions
 
 A holder of `list` can enumerate live keys within any subset of its
 grant's `locations` matcher using `GET /store?locations=...`. This
@@ -185,17 +210,197 @@ range and read their contents publicly. Keys do not inherently define
 a chronological order: an application can encode sequence identifiers,
 follow predecessor links, or impose an order in a signed manifest.
 
-When clients require a canonical ordered history, a CAS-linked log or
-committed manifest supplies its ordering. `list` alone is key discovery,
-not a tamper-resistance guarantee against holders of `modify` or `delete`
-authority: those can still replace or remove entries. A maintainer can list a delegated key range
+A `create`-only grant prevents its holder from replacing or deleting
+already-created entries. This is a valuable storage-enforced invariant,
+not just a client convention. In particular, a grant scoped to one exact
+key can allow at most one successful initial publication **at that key**,
+provided no broader authority replaces or deletes it.
+
+Sequentially named entries (`log.0`, `log.1`, ...) do **not** by themselves
+form a canonical append order: `log.2` may be created before `log.1`, and
+a later insertion can change sorted replay order. Requiring a contiguous
+prefix avoids observing holes but risks blocking on missing, invalid, or
+maliciously occupied slots. Skipping invalid contents deterministically
+does not eliminate these ordering and liveness problems. A designated
+sequencer can publish numbered slots under restricted authority, with a
+single point of trust and availability.
+
+Cooperating writers can also preserve a strictly contiguous sequence by
+racing to `POST` the first missing successor, as in the create-only log
+recipe below. That claim requires strict writer discipline, no deletions,
+and fresh reads; it does not follow merely from sorting arbitrary keys.
+When clients require a canonical ordered history without such assumptions,
+a CAS-linked log or committed manifest can supply its ordering. A holder
+of `modify` authority over the head can still publish arbitrary bytes:
+clients must verify acceptable transitions and the application must limit
+that authority. `list` alone is key discovery, not a tamper-resistance
+guarantee against holders of `modify` or `delete` authority: those can
+still replace or remove entries. A maintainer can list a delegated key range
 and explicitly delete unwanted contributions with an appropriate write
 token. Subspace isolation, cryptographic validation, and client protocols
 control what histories participants accept.
 
-## 2. Shared logs, queues and state machines
+## Recipe: An append-only log using only create authority
 
-**Append-only logical log:** Represent each entry as an immutable object
+**Use when:** cooperating writers need one ordered, immutable stream without a
+mutable head or a trusted sequencer. This works with **create-only** writer
+tokens; readers need only know the keys (and may use a separate `list` token
+for discovery). It assumes no deletion of live log entries.
+
+**Layout:** reserve one exclusive prefix, such as `log.e000001.*`, and use
+fixed-width decimal slot keys:
+
+```text
+log.e000001.000000  # genesis record, created once by the initializer
+log.e000001.000001  # first message
+log.e000001.000002  # second message
+```
+
+Grant cooperating writers `create` **only** for that epoch's keys. Other
+writers must not have overlapping `modify` or `delete` authority. The root
+operator remains trusted. Numbering is a *client protocol*, not something
+Skrynia checks. The genesis object establishes the start of a contiguous
+sequence; initialize it before allowing other writers to append.
+
+**Writer:**
+
+1. Starting after genesis, find the *first missing* slot using fresh,
+   authoritative point reads (`GET` or `HEAD`). Equivalently, find the
+   smallest existing `X0` and then the first missing consecutive successor.
+   A scoped listing can be an optimization, but its pages are not an atomic
+   snapshot: do not infer missing slots from a partial or stale listing.
+2. `POST` a new entry at the missing slot, including a unique application
+   operation ID in its bytes. If creation succeeds (201), that slot is the
+   append's commit point.
+3. On 409 (someone else created the slot first), advance to the next
+   successor and retry. Do **not** skip an unverified missing predecessor.
+4. If a response is lost, read the attempted key. If it contains this
+   operation ID, the append succeeded; if it contains another entry, advance;
+   if it remains absent, retry the *same* key. Do not append the same logical
+   operation twice merely because the HTTP acknowledgment was lost.
+
+A slower, particularly simple writer needs no listing or read permission:
+attempt `POST` at successive slot numbers from genesis, advancing only on
+409, until one succeeds. This can be expensive for long logs.
+
+**Reader:** start after genesis and read consecutive slots, stopping at the
+first 404. Use authoritative, cache-fresh reads for a guarantee about the
+current committed prefix. Every successfully read entry belongs to a stable
+prefix; new appends only extend the tail. Readers must not mistake the first
+missing key for a permanently sealed end of history.
+
+**Why it works:** by induction, initially only genesis exists. Every
+cooperating writer attempts the first absent successor of the existing
+contiguous prefix, and `POST` atomically permits only one winner at that
+key. Under the no-deletion assumption, a successful append can only extend
+the prefix by one. The numeric order of slots therefore agrees with the
+linearization order of successful appends; no CAS head is needed.
+
+**Limits:** This is not a Skrynia-enforced *numbering rule*. A malicious
+create-only writer can fill future slots, publish invalid payloads, or spend
+quota; even if readers deterministically skip invalid contents, they cannot
+force progress through a missing or maliciously filled slot. The guarantee
+also fails if any authorized actor removes or replaces live entries. Fixed
+width must accommodate expected sequence length or trigger a new epoch.
+Scanning from genesis costs linear work without a trustworthy acceleration
+strategy. Log entries are public, so encrypt confidential payloads in clients.
+
+## Recipe: Garbage collection using sealed epochs
+
+**Use when:** the append-only protocol above needs bounded *retained*
+history. Unlike append-only publication, safe reclamation requires trusted
+coordination over writer authority and consumer retention.
+
+**Why naive prefix deletion fails:** A writer may observe the current first
+entry, then a collector deletes a prefix, and the stale writer successfully
+`POST`s at one of the freed names. This reuses a previous position and can
+put an apparently new message *before* previously appended messages.
+Acknowledgments for the former occupant could cause the new message to be
+deleted. Merely deleting contiguous prefixes does not remove this race.
+
+**Layout and participants:**
+
+- A coordinator owns a small versioned `log.control` head (or a CAS head
+  pointing to immutable control manifests). It records the active epoch,
+  sealed epoch boundaries, the earliest retained position or checkpoint,
+  and registered consumers/acknowledgments. Transitions to the head use
+  SHA-256 CAS; include advancing revisions to prevent ABA.
+- Each epoch has distinct fixed-width keys, such as `log.e000001.000005`
+  and `log.e000002.000000`. Its contributors receive a *separate*,
+  revocable subtree of `create`-only grants. No other distributed token
+  has write authority over an old epoch.
+- Readers are **registered consumers** with durable next-unprocessed
+  positions. The coordinator serializes consumer enrollment and retained
+  floor advances through the same control state. New consumers start at a
+  documented checkpoint, not from an already-deleted arbitrary beginning.
+  Arbitrary anonymous readers are not promised perpetual replay.
+
+**Epoch transition:**
+
+1. Stop writes to the current epoch by revoking its entire writer-grant
+   subtree (or all equivalent write credentials). Wait for revocation to
+   complete; a request committed before revocation is included. Ensure
+   no overlapping broader grant can continue writing that epoch.
+2. Read its final contiguous prefix *after* revocation and publish an
+   immutable sealed-epoch descriptor identifying its terminal slot.
+   With malicious or faulty writers, do not silently treat a hole as a
+   terminal slot; validation/repair policy is application-defined.
+3. Publish the next epoch and its ordering relative to the old epoch in
+   the CAS-controlled metadata. Only then distribute usable next-epoch
+   writer credentials. A crash between revocation and publication may
+   temporarily halt appends, but must not allow old-key reuse. Recover
+   using persisted control state.
+4. Writers append only to the currently published epoch. Readers traverse
+   sealed epochs up to their recorded terminal slot, then continue into
+   the next epoch. In an *active* epoch, the first missing slot is the
+   current end; a missing retained slot in a *sealed* epoch is an error.
+
+**Collecting acknowledged prefixes:**
+
+1. Each registered consumer durably acknowledges a position only after
+   processing it and relinquishing any need to reread that prefix. Use
+   per-consumer authenticated acknowledgment keys or CAS cursors; account
+   for compromised, lost, or falsely advanced consumer credentials.
+2. Compute a safe cutoff from the minimum acknowledged position of the
+   registered consumers promised replay. A slow/offline consumer blocks
+   collection until it catches up or is **explicitly** dropped under the
+   application's retention policy.
+3. The collector may retire only a prefix belonging to **sealed epochs**
+   whose create authority cannot be reissued by untrusted parties. Advance
+   the retained floor via CAS against the same state that controls consumer
+   enrollment, so a new reader cannot register for history being retired.
+4. **After** the retained floor commits, delete retired keys with an
+   authorized `delete` grant restricted to sealed epochs. Deletion can
+   resume after a crash. Never give an untrusted writer this deletion
+   authority; Skrynia has no per-object owner restrictions.
+5. Existing consumers resume from their durable position; new consumers
+   initialize from the published checkpoint/floor. A reader cannot safely
+   infer this position just by asking for the name-smallest *physical*
+   object: deletion may be in progress or may have left old bytes behind.
+
+**Safety argument:** no writer can reuse a key after the epoch is sealed,
+and the retained floor cannot pass any consumer still entitled to read the
+retired prefix. CAS coordinates new registrations with floor advancement.
+Consequently, deleting the acknowledged prefix cannot reorder future
+appends or deprive a registered, correctly acknowledging reader of data
+it has yet to consume.
+
+**Trust and liveness assumptions:** a coordinator/issuer must actually
+revoke all write authority (including all relevant descendants), not
+reissue it for retired keys, and preserve the epoch and consumer metadata.
+Skrynia's root authority can always override subordinate grants. Consumers
+must acknowledge honestly; the collector must follow the shared control
+protocol. Epoch rotation, callbacks, and collection are run by clients,
+not automatically by Skrynia. If no coordinator runs, writers may stall and
+garbage collection does not progress. If all past readers must be able to
+replay from genesis forever, no finite garbage collection policy can meet
+that requirement.
+
+## Recipe: CAS logs, queues, and state machines
+
+**CAS-linked logical log:** Unlike the create-only recipe above, this
+uses a mutable head, so the authority and integrity of that head matter.
+Represent each entry as an immutable object
 `event_<random>` containing its payload and the previous head identifier.
 Create the entry first, then CAS a `log_head` pointer to the entry. Two
 concurrent appends compete at the head; the loser rereads, creates an entry
@@ -229,7 +434,7 @@ classical shared-memory model (Maurice Herlihy, 1991,
 That result motivates these constructions; it is not a proof that a particular
 HTTP implementation is wait-free or withstands arbitrary malicious writers.
 
-## 3. Collaboration without application code on the server
+## Recipe: Public collaboration without an application backend
 
 A **public discussion board** is one example, not a built-in data type.
 
@@ -270,9 +475,13 @@ More examples follow the same recipe: collaborative documents use a
 versioned state or operation log; directories and registries are CAS
 indexes; polls or voting systems store independently verifiable signed
 ballots and a derived tally; shared games publish ordered valid moves.
+For an invited poll, a trusted issuer can give each voter a create-only
+grant restricted to one exact ballot key, enforcing at most one creation
+for that issued slot. That does not establish voter eligibility, protect
+ballot secrecy, prevent Sybil identities, or make the tally trustworthy.
 Application-specific validation and presentation remain client-side.
 
-## 4. Fine-grained trust, identity and privacy
+## Recipe: Delegation, identity, and confidentiality
 
 **Capability delegation.** The issuer token mints user tokens and can revoke
 the grant; user tokens exercise only the delegated operations. A user with
@@ -290,12 +499,17 @@ accepted history. A malicious client with head-modification authority can still
 replace/delete it or repeatedly win races, so cryptographic validity and
 service availability are distinct claims.
 
-**Private payloads over public reads.** Applications can encrypt values
-client-side and distribute decryption keys independently. This provides
-payload confidentiality under appropriate cryptographic assumptions, but
-Skrynia still exposes ciphertext, object names, sizes and access patterns.
-Revoking a grant does not revoke a previously distributed decryption key or
-erase copies already downloaded.
+**Private payloads over public reads.** Reading an existing object requires
+knowing its key but no read token; key enumeration through the Skrynia API
+requires `list`. High-entropy unlisted keys can discourage casual discovery,
+but are not enforced private reads: keys can leak through URLs, referrers,
+logs, or other clients. Applications can encrypt values client-side and
+distribute decryption keys independently. This provides payload
+confidentiality under appropriate cryptographic assumptions, but Skrynia
+still exposes ciphertext, object names, sizes and access patterns to the
+storage operator and to anyone who discovers the relevant keys. Exposed
+ciphertext is available for offline attacks. Revoking a grant does not
+revoke a previously distributed decryption key or erase downloaded copies.
 
 **Quotas are scope-based, not reservations.** Usage of a grant counts
 matching objects, *including objects another grant created*, plus descendant
@@ -355,7 +569,7 @@ This gives **quota-level guaranteed headroom**, not guaranteed free disk
 blocks. Actual physical capacity, server-wide resource costs, root-level
 writers and server availability remain separate concerns.
 
-## 5. Work, liveness and durability
+## Recipe: Client-run work and crash recovery
 
 Skrynia stores state but does not execute application-specific computation.
 A computation can be performed by *any* client with the necessary data and
@@ -369,7 +583,7 @@ no application-specific transition takes place. And a single Skrynia service
 is a shared point of availability and trust for writes; client replication
 does not by itself make the storage service fault-tolerant.
 
-## 6. Designing protocols and identifying genuine gaps
+## Designing a new recipe: when a primitive is actually missing
 
 Before proposing a new Skrynia operation:
 
