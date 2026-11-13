@@ -81,6 +81,13 @@ and new creations. Finally, it reopens the data with Node and checks the
 resulting objects, subscriptions, outbox, and journal. The test uses the
 literal same files, not a simulated format conversion or API mock.
 
+On the refactored staging implementation (`b2ccd43`), the expanded
+`SKRYNIA_MIGRATION_OBJECTS_PER_LEAF=40 node tests/rust-migration-rehearsal.js`
+run passed: **160 initial checked objects** across four delegated teams,
+four Web Push subscriptions with preserved VAPID and credentials, 140 final
+checked objects after CAS changes and deletions, a drained journal, and a
+successful Node rollback without a file format conversion.
+
 Run `SKRYNIA_MIGRATION_OBJECTS_PER_LEAF=40 make rust-migration-test` to expand
 the corpus to 160 objects. This demonstrates the cross-runtime file format
 and credential boundary in a synthetic deployment-like dataset. It is **not**
