@@ -37,6 +37,8 @@ jobs:
           node tests/rust-push-parity.js
       - name: Offline Node-Rust-Node migration rehearsal
         run: node tests/rust-migration-rehearsal.js
+      - name: Check immutable offline snapshot with Rust and Node
+        run: node tests/rust-offline-snapshot-test.js
       - name: Real SIGKILL durability and Node restart validation
         run: |
           node tests/rust-crash-recovery.js
