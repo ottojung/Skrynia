@@ -81,3 +81,11 @@ configure `SKRYNIA_CRASH_ROUNDS` / `SKRYNIA_CRASH_WRITES` for larger sweeps.
 This is a fault-injection test, **not** a replacement for real power-loss and
 filesystem-corruption testing. It runs separately to preserve the fast-suite
 latency budget.
+
+Grant-revocation crash testing (`tests/rust-crash-grants.js`) kills the Rust
+process after a durable subtree-revocation marker appears. On restart it
+verifies full recovery, descendant token invalidation, subscription and
+outbox cleanup, object preservation, and the ability of the original Node
+server to read the same directory. This test is part of `make rust-crash-test`
+and the Rust preview CI job. Configure
+`SKRYNIA_REVOKE_CRASH_ROUNDS` / `SKRYNIA_REVOKE_CRASH_WIDTH` for longer runs.
