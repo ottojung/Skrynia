@@ -1,3 +1,4 @@
+mod cache;
 mod disk;
 mod record;
 mod recover;
@@ -44,8 +45,7 @@ impl State {
                 }
             }
         }
-        data.quota = crate::QuotaIndex::from_disk(&self.dir, &data.grants, &data.push)
-            .map_err(|_| crate::internal())?;
+        cache::reload(self, &mut data)?;
         Ok(())
     }
 }

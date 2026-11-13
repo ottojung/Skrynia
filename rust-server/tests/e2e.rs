@@ -3,6 +3,7 @@ mod e2e {
     mod fixture;
     mod grant_routes;
     mod objects;
+    mod quotas;
     mod races;
     mod resilience;
     mod security;

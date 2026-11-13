@@ -6,7 +6,7 @@ use crate::{Fail, Result, Snapshot};
 use axum::http::StatusCode;
 pub use index::{QuotaIndex, Usage};
 impl Snapshot {
-    pub fn check_quota(&self, id: &str, key: &str, old: Option<u64>, size: u64) -> Result<()> {
+    pub fn check_quota(&self, id: &str, _key: &str, old: Option<u64>, size: u64) -> Result<()> {
         let mut next = Some(id);
         while let Some(id) = next {
             let grant = &self.grants[id];
@@ -14,7 +14,8 @@ impl Snapshot {
                 next = grant.parent.as_deref();
                 continue;
             }
-            let (bytes, objects) = self.usage(id, Some((key, old, size)));
+            // The acting grant authorized the key, and every ancestor scope contains it.
+            let (bytes, objects) = self.usage_authorized(id, old, size);
             if grant.max_bytes.is_some_and(|max| bytes > max)
                 || grant.max_objects.is_some_and(|max| objects > max)
             {

@@ -1,6 +1,8 @@
 mod node;
 mod remove;
 mod select;
+#[cfg(test)]
+mod tests;
 use crate::Subscription;
 #[derive(Default)]
 pub struct SubIndex {
