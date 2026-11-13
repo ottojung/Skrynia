@@ -3,7 +3,8 @@
 // Crash-test a real Rust process in the middle of concurrent durable mutations.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
-const {mkdtempSync,rmSync,readdirSync}=fs;
+const crypto=require('node:crypto');
+const {mkdtempSync,rmSync,readdirSync,readFileSync}=fs;
 const {join,resolve}=require('node:path');
 const {tmpdir}=require('node:os');
 const {port,request,start,stop,credentials,sha,pause}=require('./crash/fixture');
@@ -24,6 +25,15 @@ async function main() {
     const issued=await request(p,'POST',`/grants/${grant.id}/users`,grant.issuer);
     expected(issued.status,200,'issue user');
     const user=JSON.parse(issued.body).userToken;
+    const subscriber=crypto.createECDH('prime256v1');subscriber.generateKeys();
+    const registration=await request(p,'POST','/push/subscriptions',user,JSON.stringify({
+      locations:'fresh_*',events:['create'],endpoint:'https://push.example.org/crash-test',
+      keys:{p256dh:subscriber.getPublicKey().toString('base64url'),
+        auth:crypto.randomBytes(16).toString('base64url')}
+    }));
+    expected(registration.status,201,'register durable crash wake-up');
+    const subId=JSON.parse(registration.body).id;
+    const noticeFile=join(root,'state/push/outbox',subId+'.json');
     for(let round=0;round<rounds;round++) {
       for(let j=0;j<writes;j++) {
         expected((await request(p,'POST',`/store/base_${round}_${j}`,user,sample(round,j,0))).status,
@@ -31,7 +41,7 @@ async function main() {
       }
     }
     await stop(child,'SIGTERM');child=undefined;
-    let confirmed=0,uncertain=0,applied=0;
+    let confirmed=0,uncertain=0,applied=0,created=0;
     for(let round=0;round<rounds;round++) {
       child=await start(binary,[],root,p);
       const calls=[];
@@ -61,7 +71,16 @@ async function main() {
           assert.equal(actual.status,200,`acknowledged mutation missing: ${call.key}`);
           assert(got.equals(call.body),`acknowledged mutation lost: ${call.key}`);
         } else {uncertain++;}
-        if(got?.equals(call.body))applied++;
+        if(got?.equals(call.body)) {
+          applied++;
+          if(call.old===null)created++;
+        }
+      }
+      if(created>0) {
+        const pending=JSON.parse(readFileSync(noticeFile));
+        assert.equal(pending.subscriptionId,subId);
+        assert(pending.generation>=created,
+          `lost Push wake-up: ${pending.generation} generations for ${created} applied creates`);
       }
       const journal=join(root,'state/store-transactions');
       assert.deepEqual(readdirSync(journal),[],`journal not fully recovered in round ${round}`);
@@ -78,7 +97,8 @@ async function main() {
       }
     }
     console.log(`SIGKILL recovery passed: ${rounds} crashes, ${rounds*writes*2} objects, `+
-      `${confirmed} acknowledged, ${uncertain} uncertain, ${applied} new values visible; Node reader OK`);
+      `${confirmed} acknowledged, ${uncertain} uncertain, ${applied} new values visible, `+
+      `${created} recoverable Push creates; Node reader OK`);
   } finally {
     if(child)await stop(child,'SIGKILL');
     rmSync(root,{recursive:true,force:true});

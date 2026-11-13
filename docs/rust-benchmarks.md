@@ -139,3 +139,14 @@ response carries `notificationPending: true`, restores permissions, restarts
 Rust to recover the journal and notification, and confirms the original Node
 server can read the state. These are I/O error tests, not a simulated power
 loss or full filesystem corruption model.
+
+### Push durability across real process kills
+
+The `rust-crash-recovery.js` SIGKILL harness also registers a matching browser
+Push subscription *before* starting concurrent writes. After each restart,
+every recovered create must contribute to a durable notification generation
+for that subscription. The test conservatively permits extra generations
+caused by replaying a committed intent after a crash, but never permits fewer
+notifications than the number of applied creates. Notification delivery is
+manual here; the test asserts durable enqueueing, not receipt by a real
+external push service.
