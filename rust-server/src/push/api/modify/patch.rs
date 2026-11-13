@@ -10,11 +10,11 @@ pub fn apply(
     let fields = value
         .as_object()
         .ok_or_else(|| bad("invalid_json_object"))?;
+    if !fields.contains_key("endpoint") && !fields.contains_key("keys") {
+        return Err(bad("nothing_to_update"));
+    }
     if !fields.keys().all(|key| key == "endpoint" || key == "keys") {
         return Err(bad("invalid_subscription_patch"));
-    }
-    if fields.is_empty() {
-        return Err(bad("nothing_to_update"));
     }
     if let Some(endpoint) = fields.get("endpoint") {
         let endpoint = endpoint

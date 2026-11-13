@@ -15,7 +15,7 @@ ledger separates tested properties from assumptions and remaining gaps.
 | Grants, scopes, operations, quotas, user/issuer tokens, revocation | Rust unit tests, paired HTTP checks, concurrent subtree-revocation `SIGKILL` test | Independent adversarial auth review and larger grant-tree loads |
 | Durable journal, atomic replacement and staged files | `tests/rust-crash-recovery.js`, `tests/rust-crash-grants.js`, `tests/rust-disk-failure.js` | More I/O fault schedules and real machine power failures |
 | Node on-disk upgrade and rollback | Node→Rust→Node smoke, crash tests reopen Rust data with Node, recover Node-style abandoned atomic JSON files | Production copy rehearsal with full realistic historical data |
-| Web Push subscription API, VAPID keys and persistent wake-ups | Rust unit tests, Node-compatible subscription and VAPID state, `SIGKILL`-recovered notifications | Real external Web Push service integration and browser receipt |
+| Web Push subscription API, VAPID keys and persistent wake-ups | Rust unit tests, paired Push lifecycle/capability/error checks, Node-compatible subscription and VAPID state, `SIGKILL`-recovered notifications | Real external Web Push service integration and browser receipt |
 | Web Push delivery and SSRF protection | Signed AES128GCM test, local verified HTTPS transport, untrusted cert rejection, 201/410/302 handling, public-address filtering and pinning | Real DNS-rebinding and network fault-injection environment, independent security review |
 | Resource limits and shutdown | Upload semaphore tests, idle socket/connection limits, memory soak, non-root container startup and graceful `SIGTERM` | Heavy-write tail latency (>3s p99 in one 32-worker run), sustained load on target hardware and externally constrained memory/cgroups |
 | Structural quality and CI | Default rustfmt, strict Clippy, 50-line/10-entry/sibling-import lint, Rust preview workflow, Node CI, Docker preview | Reviewer sign-off and complete acceptance-matrix reconciliation |
@@ -59,3 +59,12 @@ bytes and ETag from its pinned descriptor; a subsequent GET must return the
 replacement bytes/ETag. A ranged read verifies offsets, and Node must read
 the replacement from the Rust directory after restart. It runs under `make
 test` and in Rust preview CI.
+
+## Web Push HTTP parity
+
+`tests/rust-push-parity.js` compares the live Node and Rust APIs on independent
+throwaway directories. It checks VAPID key publication, subscription creation,
+malformed inputs, missing/wrong capabilities, deduplication and rotation,
+patch validation precedence, endpoint conflicts, and deletion. Opaque random
+IDs/capabilities are schema-validated but not compared for equality. This is
+not a substitute for external Web Push delivery receipts.

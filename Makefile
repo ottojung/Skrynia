@@ -13,6 +13,7 @@ rust-test:
 	node tests/rust-server-smoke.js
 	node tests/rust-protocol-parity.js
 	node tests/rust-large-read.js
+	node tests/rust-push-parity.js
 
 .PHONY: test test-node rust-test
 
