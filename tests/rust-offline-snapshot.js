@@ -18,16 +18,23 @@ async function main() {
     'state/store-transactions','state/grant-revocations','store-tmp']) {
     assert(fs.statSync(join(source,part)).isDirectory(),`missing ${part}`);
   }
-  for(const part of ['state/store-transactions','state/grant-revocations','store-tmp']) {
-    assert.deepEqual(fs.readdirSync(join(source,part)),[],
-      `snapshot has pending recovery in ${part}; take a coherent offline copy`);
+  const recovery=['state/store-transactions','state/grant-revocations','store-tmp'];
+  function requireClean(root) {
+    for(const part of recovery) {
+      assert.deepEqual(fs.readdirSync(join(root,part)),[],
+        `pending recovery in ${part}; take a coherent offline copy`);
+    }
   }
+  requireClean(source);
   const dir=fs.mkdtempSync(join(tmpdir(),'skrynia-offline-rehearsal-'));
   const clone=join(dir,'data');
   let server;
   try {
     fs.cpSync(source,clone,{recursive:true,preserveTimestamps:true});
-    const original=await manifest(clone);
+    const original=await manifest(source);
+    assert.deepEqual(await manifest(clone),original,'offline clone does not match source');
+    const lock=fs.statSync(join(clone,'state/writer.lock'));
+    assert(lock.isFile(),'writer.lock must be a regular file');
     assert([...original.keys()].some(key=>key.startsWith('state/grants/')),
       'expected at least one grant record');
     const p=await port();
@@ -35,10 +42,18 @@ async function main() {
     await verify(p,original);
     await stop(server,'SIGTERM');server=undefined;
     assert.deepEqual(await manifest(clone),original,'Rust changed persistent snapshot data');
+    requireClean(clone);
+    assert.equal(fs.statSync(join(clone,'state/writer.lock')).ino,lock.ino,
+      'Rust replaced writer-lock inode');
     server=await start(process.execPath,[resolve('src/server.js')],clone,p,2400);
     await verify(p,original);
     await stop(server,'SIGTERM');server=undefined;
     assert.deepEqual(await manifest(clone),original,'Node changed snapshot after Rust');
+    requireClean(clone);
+    assert.equal(fs.statSync(join(clone,'state/writer.lock')).ino,lock.ino,
+      'Node replaced writer-lock inode');
+    assert.deepEqual(await manifest(source),original,
+      'offline source changed during rehearsal');
     console.log(`Offline snapshot rehearsal: ${original.size} files verified by Rust and Node; source untouched`);
   } finally {
     if(server)await stop(server,'SIGKILL');

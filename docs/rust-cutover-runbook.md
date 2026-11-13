@@ -38,9 +38,11 @@ copy using Node's filesystem API. Only the temporary copy is ever opened by
 Rust or Node. Both processes bind to local loopback and run with manual Push
 delivery; neither attempts external Push requests. The checker hashes every
 public object and all private grant, subscription, VAPID and outbox records,
-requires clean staging and journal directories, reads every public object
-through both HTTP implementations, verifies matching SHA-256 ETags, and
-requires identical durable state after each restart. It prints only counts,
+checks that the private clone matches the source, and verifies the source is
+unchanged at the end. It requires empty staging and journal directories
+before and after each server restart, retains the same writer-lock inode,
+reads every public object through both HTTP implementations, and verifies
+matching SHA-256 ETags and identical durable state after each restart. It prints only counts,
 never bearer tokens or object contents. The supplied snapshot is read-only
 from the checker's perspective; it is not mutated.
 
