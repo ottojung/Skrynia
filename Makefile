@@ -32,3 +32,10 @@ rust-soak:
 	node benchmarks/soak-rust.js target/release/skrynia-server
 
 .PHONY: rust-soak
+
+# Offline Node -> Rust -> Node rehearsal on delegated state and pending Push data.
+rust-migration-test:
+	cargo build --locked --package skrynia-server
+	node tests/rust-migration-rehearsal.js
+
+.PHONY: rust-migration-test

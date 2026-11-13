@@ -68,3 +68,22 @@ malformed inputs, missing/wrong capabilities, deduplication and rotation,
 patch validation precedence, endpoint conflicts, and deletion. Opaque random
 IDs/capabilities are schema-validated but not compared for equality. This is
 not a substitute for external Web Push delivery receipts.
+
+## Offline upgrade-and-rollback rehearsal
+
+`make rust-migration-test` starts the Node reference server on a freshly
+created private directory, populates 100 checked objects through HTTP across
+four delegated team grants, creates four Web Push subscriptions and pending
+notifications, and captures the original VAPID keys and user credentials. It
+shuts down Node, starts Rust on exactly the same directory, verifies the
+objects and scoped listing, and performs conditional modifications, deletions
+and new creations. Finally, it reopens the data with Node and checks the
+resulting objects, subscriptions, outbox, and journal. The test uses the
+literal same files, not a simulated format conversion or API mock.
+
+Run `SKRYNIA_MIGRATION_OBJECTS_PER_LEAF=40 make rust-migration-test` to expand
+the corpus to 160 objects. This demonstrates the cross-runtime file format
+and credential boundary in a synthetic deployment-like dataset. It is **not**
+proof that arbitrary historical production data or external integrations
+will migrate safely. Before release, rehearse with a full *copy* of real data,
+with a documented backup and rollback plan.
