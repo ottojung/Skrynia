@@ -35,6 +35,8 @@ jobs:
           node tests/rust-protocol-parity.js
           node tests/rust-large-read.js
           node tests/rust-push-parity.js
+      - name: Offline Node-Rust-Node migration rehearsal
+        run: node tests/rust-migration-rehearsal.js
       - name: Real SIGKILL durability and Node restart validation
         run: |
           node tests/rust-crash-recovery.js
