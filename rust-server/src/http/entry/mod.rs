@@ -1,4 +1,6 @@
+mod build;
 mod common;
+pub use build::validate as validate_build_info;
 mod storage;
 use super::{grants, list, read, replies, write};
 use crate::State;

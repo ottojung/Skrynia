@@ -19,9 +19,7 @@ pub fn public(path: &str, method: &Method) -> Option<Response> {
     }
     match path {
         "/health" => Some(replies::ok(serde_json::json!({"ok":true}))),
-        "/version" => Some(replies::ok(
-            serde_json::json!({"version":"development","commit":"development"}),
-        )),
+        "/version" => Some(replies::ok(super::build::info())),
         "/client/skrynia.js" => Some(
             (
                 [

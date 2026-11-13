@@ -10,6 +10,10 @@ COPY src/client.js src/client.js
 RUN cargo build --locked --release -p skrynia-server
 
 FROM docker.io/library/debian:bookworm-slim
+ARG SKRYNIA_VERSION=development
+ARG SKRYNIA_COMMIT=development
+ENV SKRYNIA_VERSION=${SKRYNIA_VERSION}
+ENV SKRYNIA_COMMIT=${SKRYNIA_COMMIT}
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -g 1000 skrynia && useradd -u 1000 -g 1000 -M skrynia \

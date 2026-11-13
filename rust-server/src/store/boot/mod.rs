@@ -8,6 +8,7 @@ use std::sync::Mutex;
 
 impl State {
     pub fn open() -> io::Result<Self> {
+        crate::validate_build_info()?;
         let config = options::read()?;
         let dir = config.dir;
         let base = config.base;

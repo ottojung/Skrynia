@@ -163,3 +163,14 @@ server on each data directory to check durable compatibility. This is a
 regression test for the synchronous CAS/state-lock boundary, not proof of
 linearizability for all possible multi-key protocols. Configure
 `SKRYNIA_RACE_ROUNDS` and `SKRYNIA_RACE_WIDTH` for longer runs.
+
+### Release identity parity
+
+The Rust preview image accepts the same `SKRYNIA_VERSION` and
+`SKRYNIA_COMMIT` Docker build arguments as the Node image (default
+`development`/`development`). Rust startup validates either the complete
+development pair or a nonempty version and 40–64 character hexadecimal
+commit, and `/version` returns the effective values. An incomplete/invalid
+pair refuses to start. The Rust protocol smoke test exercises a populated
+release pair and an invalid commit. These flags identify a build; they are
+not proof of its provenance without trusted CI/image signing.

@@ -1,5 +1,6 @@
 mod auth;
 mod entry;
+pub use entry::validate_build_info;
 mod grants;
 mod list;
 pub use list::ListParams;

@@ -48,3 +48,5 @@ pub use push::{push_finish, push_run};
 pub use http::ListParams;
 
 pub use push::prune_orphan_notifications;
+
+pub use http::validate_build_info;

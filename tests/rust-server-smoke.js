@@ -52,9 +52,9 @@ async function stop(child) {
   if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');
   return code;
 }
-async function cannotStart(binary,dir,port) {
+async function cannotStart(binary,dir,port,extraEnv={}) {
   const child=spawn(binary,[],{env:{...process.env,SKRYNIA_DATA_DIR:dir,
-    SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',SKRYNIA_PORT:String(port),SKRYNIA_PUSH_MANUAL:'1'},stdio:'ignore'});
+    SKRYNIA_URL:'http://127.0.0.1:'+port+'/platform',SKRYNIA_PORT:String(port),SKRYNIA_PUSH_MANUAL:'1',...extraEnv},stdio:'ignore'});
   const code=await Promise.race([
     new Promise((resolve,reject)=>child.once('exit',value=>resolve(value))),
     pause(1500).then(()=>{child.kill();throw Error('unsafe Rust startup succeeded')})
@@ -234,6 +234,13 @@ async function run() {
     assert.equal((await request(p,'POST','/store/abcd','yes',user)).status,201);
     assert.equal((await request(p,'GET','/health')).status,200);
     await stop(server);server=undefined;
+    const releaseCommit='a'.repeat(40);
+    server=await start(binary,[],dir,p,{SKRYNIA_VERSION:'preview-1',SKRYNIA_COMMIT:releaseCommit});
+    assert.deepEqual((await request(p,'GET','/version')).json,
+      {version:'preview-1',commit:releaseCommit});
+    await stop(server);server=undefined;
+    await cannotStart(binary,dir,await port(),
+      {SKRYNIA_VERSION:'preview-1',SKRYNIA_COMMIT:'invalid'});
     server=await start(process.execPath,[resolve('src/server.js')],dir,p);
     assert.equal((await request(p,'GET','/store/team.a')).body.toString(),'member');
     assert.equal((await request(p,'GET','/store/'+longKey)).body.toString(),'long');
