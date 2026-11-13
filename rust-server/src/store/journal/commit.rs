@@ -1,4 +1,6 @@
+mod error;
 mod finish;
+pub use error::Failure;
 #[cfg(test)]
 mod tests;
 use super::disk::{sync_dir, write_json};
@@ -14,7 +16,7 @@ pub fn commit(
     digest: Option<String>,
     change: impl FnOnce() -> io::Result<()>,
     notify: impl FnOnce() -> io::Result<()>,
-) -> io::Result<bool> {
+) -> Result<bool, Failure> {
     let dir = root.join("state/store-transactions");
     let file = dir.join(format!("{}.json", crate::random_id()));
     let mut intent = Intent {
@@ -23,16 +25,16 @@ pub fn commit(
         sha256: digest,
         committed: false,
     };
-    write_json(&file, &intent)?;
+    write_json(&file, &intent).map_err(Failure::Uncertain)?;
     if let Err(error) = change() {
-        // An applied mutation may be recoverable, so preserve its intent.
-        if !intent.applied(root)? {
-            fs::remove_file(&file)?;
-            sync_dir(&dir)?;
+        if !intent.applied(root).map_err(Failure::Uncertain)? {
+            fs::remove_file(&file).map_err(Failure::Uncertain)?;
+            sync_dir(&dir).map_err(Failure::Uncertain)?;
+            return Err(Failure::Clean(error));
         }
-        return Err(error);
+        return Err(Failure::Uncertain(error));
     }
     // Once the store directory is durable, the initial intent is sufficient
     // for crash replay while this writer lock is held.
-    finish::run(&dir, &file, &mut intent, notify)
+    finish::run(&dir, &file, &mut intent, notify).map_err(Failure::Uncertain)
 }

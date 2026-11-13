@@ -1,10 +1,10 @@
 mod apply;
 mod check;
+mod failure;
 mod lock;
 use super::staging;
 use super::{State, journal};
 use crate::Result;
-use std::sync::atomic::Ordering;
 
 impl State {
     pub fn change(
@@ -20,7 +20,10 @@ impl State {
         let staged = if kind == "delete" {
             None
         } else {
-            Some(self.fail_on_io(staging::Staged::prepare(&self.dir, body))?)
+            Some(
+                staging::Staged::prepare(&self.dir, body)
+                    .map_err(|e| crate::error::transient_io(&e))?,
+            )
         };
         let mut data = lock::checked(self, key, kind, body, expected, token)?;
         let path = self.dir.join("store").join(key);
@@ -37,11 +40,7 @@ impl State {
             || apply::commit(&self.dir, &path, kind, staged.as_ref()),
             || crate::push_enqueue(&mut data, &self.dir, key, kind, self.push_config.max_outbox),
         )
-        .map_err(|error| {
-            self.failed.store(true, Ordering::Release);
-            eprintln!("Skrynia storage recovery required: {error}");
-            crate::internal()
-        })?;
+        .map_err(|failure| failure::map(self, failure))?;
         if kind == "delete" {
             data.objects.remove(key);
         } else {

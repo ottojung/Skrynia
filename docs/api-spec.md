@@ -7,7 +7,7 @@ Use HTTPS outside local development. No API request relies on cookies.
 ## Object names and authority scopes
 
 An object key must be a nonempty ASCII string, at most
-`SKRYNIA_MAX_KEY_LENGTH` characters (default 256), matching
+`SKRYNIA_MAX_KEY_LENGTH` characters (default 255; maximum 255), matching
 `[A-Za-z0-9_][A-Za-z0-9_.]*`. Keys cannot begin with a dot;
 consecutive dots are unrestricted after the first character.
 Case matters; `/`, spaces and `*` are not valid object-key characters.

@@ -21,3 +21,24 @@ pub fn missing(code: &'static str) -> Fail {
 pub fn internal() -> Fail {
     Fail(StatusCode::INTERNAL_SERVER_ERROR, "internal_error")
 }
+
+pub fn transient_io(error: &std::io::Error) -> Fail {
+    let full = matches!(error.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT));
+    if full {
+        Fail(StatusCode::INSUFFICIENT_STORAGE, "insufficient_storage")
+    } else {
+        Fail(StatusCode::SERVICE_UNAVAILABLE, "storage_unavailable")
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::transient_io;
+    #[test]
+    fn exhausted_space_is_507_and_other_transient_io_is_503() {
+        let storage = std::io::Error::from_raw_os_error(libc::ENOSPC);
+        let quota = std::io::Error::from_raw_os_error(libc::EDQUOT);
+        assert_eq!(transient_io(&storage).0.as_u16(), 507);
+        assert_eq!(transient_io(&quota).0.as_u16(), 507);
+        assert_eq!(transient_io(&std::io::Error::other("io")).0.as_u16(), 503);
+    }
+}

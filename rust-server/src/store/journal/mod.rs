@@ -4,7 +4,7 @@ mod intent;
 mod recover;
 
 use super::State;
-pub use commit::commit;
+pub use commit::{Failure as CommitFailure, commit};
 pub use recover::recover;
 use std::io;
 use std::sync::atomic::Ordering;

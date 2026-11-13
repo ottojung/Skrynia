@@ -11,7 +11,7 @@ It never interprets object contents as executable application instructions.
 | `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Persistent object and private authority state |
 | `SKRYNIA_HOST` | `127.0.0.1` | Listener interface |
 | `SKRYNIA_PORT` | `17380` | Listener port |
-| `SKRYNIA_MAX_KEY_LENGTH` | `256` | Maximum flat key length |
+| `SKRYNIA_MAX_KEY_LENGTH` | `255` | Maximum flat key length (1–255 bytes; invalid values reject startup) |
 | `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Maximum object bytes |
 | `SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES` | `41943040` | Aggregate upload-buffer budget |
 | `SKRYNIA_MAX_CONNECTIONS` | `512` | Active connection limit |

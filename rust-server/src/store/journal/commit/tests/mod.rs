@@ -11,3 +11,4 @@ fn root() -> PathBuf {
     }
     root
 }
+mod errors;
