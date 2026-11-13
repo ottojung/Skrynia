@@ -1,3 +1,6 @@
+mod finish;
+#[cfg(test)]
+mod tests;
 use super::disk::{sync_dir, write_json};
 use super::intent::Intent;
 use std::fs;
@@ -29,21 +32,7 @@ pub fn commit(
         }
         return Err(error);
     }
-    if let Err(error) = finish(&dir, &file, &mut intent, notify) {
-        eprintln!("Skrynia committed object with pending journal recovery: {error}");
-        return Ok(true);
-    }
-    Ok(false)
-}
-fn finish(
-    dir: &Path,
-    file: &Path,
-    intent: &mut Intent,
-    notify: impl FnOnce() -> io::Result<()>,
-) -> io::Result<()> {
-    intent.committed = true;
-    write_json(file, intent)?;
-    notify()?;
-    fs::remove_file(file)?;
-    sync_dir(dir)
+    // Once the store directory is durable, the initial intent is sufficient
+    // for crash replay while this writer lock is held.
+    finish::run(&dir, &file, &mut intent, notify)
 }

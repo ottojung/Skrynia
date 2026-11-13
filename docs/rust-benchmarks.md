@@ -177,3 +177,18 @@ exclusive writer lock; unrelated filenames are preserved. Regression coverage
 includes staged-file cleanup, journal replay, real SIGKILL of concurrent
 writes, full-object checks, and Node restart. This reduces redundant metadata
 syncs without weakening the durable destination-file requirements.
+
+### Journal finalization: avoid an unnecessary success-path rewrite
+
+The journal's initial durable intent plus the durable committed object is
+sufficient for recovery **before the mutation lock releases**. An ordinary
+successful Push enqueue now removes that initial journal file directly; it
+avoids an extra atomic JSON record rewrite and directory sync on every
+successful mutation. If durable Push enqueue fails, Rust still persists the
+`committed:true` marker *before* returning `notificationPending`, allowing
+later writes to the same key without losing that earlier notification on
+recovery. Failure to persist the marker itself is fatal and forces recovery;
+the server must not continue accepting writes with an unprotected pending
+notification. The mutation lock, journal recovery, failure injection and
+Node/Rust on-disk interoperability are covered by dedicated tests. The
+at-least-once notification contract remains unchanged.
