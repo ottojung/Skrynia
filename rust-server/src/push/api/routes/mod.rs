@@ -27,10 +27,10 @@ pub async fn route(state: Arc<State>, path: &str, req: Request) -> Result<Respon
     if path == "/push/subscriptions" && method == Method::POST {
         return create::run(state, req, cap, token).await;
     }
-    if let Some(id) = path.strip_prefix("/push/subscriptions/") {
-        if crate::valid_identifier(id) {
-            return modify::run(state, req, id.into(), cap).await;
-        }
+    if let Some(id) = path.strip_prefix("/push/subscriptions/")
+        && crate::valid_identifier(id)
+    {
+        return modify::run(state, req, id.into(), cap).await;
     }
     Err(Fail(StatusCode::NOT_FOUND, "not_found"))
 }

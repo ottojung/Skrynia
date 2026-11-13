@@ -11,10 +11,10 @@ pub async fn respond(listener: TcpListener, acceptor: TlsAcceptor, status: u16) 
         let count = stream.read(&mut part).await.unwrap();
         assert!(count > 0, "client disconnected before encrypted Push");
         content.extend_from_slice(&part[..count]);
-        if let Some((end, length)) = headers::parse(&content) {
-            if content.len() >= end + 4 + length {
-                break (end, length);
-            }
+        if let Some((end, length)) = headers::parse(&content)
+            && content.len() >= end + 4 + length
+        {
+            break (end, length);
         }
     };
     let headers = String::from_utf8_lossy(&content[..end]).to_ascii_lowercase();

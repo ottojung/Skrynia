@@ -28,11 +28,12 @@ pub fn sum(
     } else if let Some(size) = objects.get(scope) {
         include(scope, size);
     }
-    if let Some((key, size)) = update {
-        if !objects.contains_key(key) && crate::matches(scope, key) {
-            bytes += size + OBJECT_COST;
-            count += 1;
-        }
+    if let Some((key, size)) = update
+        && !objects.contains_key(key)
+        && crate::matches(scope, key)
+    {
+        bytes += size + OBJECT_COST;
+        count += 1;
     }
     (bytes, count)
 }

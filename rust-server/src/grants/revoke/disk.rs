@@ -14,10 +14,10 @@ pub fn apply(root: &Path, marker: &Path, record: &Revocation) -> io::Result<()> 
             let grant = value.get("grantId").and_then(|v| v.as_str()).unwrap_or("");
             if record.ids.iter().any(|id| id == grant) {
                 fs::remove_file(&file)?;
-                if let Some(id) = value.get("id").and_then(|v| v.as_str()) {
-                    if crate::valid_identifier(id) {
-                        sub_ids.push(id.to_string());
-                    }
+                if let Some(id) = value.get("id").and_then(|v| v.as_str())
+                    && crate::valid_identifier(id)
+                {
+                    sub_ids.push(id.to_string());
                 }
             }
         }
