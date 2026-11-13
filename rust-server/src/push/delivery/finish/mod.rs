@@ -24,21 +24,17 @@ pub fn finish(
     let Some(current) = data.push.outbox.get(&original.subscription_id).cloned() else {
         return Ok(());
     };
-    let persisted = if sub.is_none() || outcome.is_ok() {
-        if sub.is_none() || current.generation == original.generation {
-            ack::remove(&state.dir, &mut data, &original.subscription_id)
-        } else {
-            Ok(())
+    let persisted = match (sub, outcome) {
+        (Some(sub), Err(failure)) => {
+            fail::retry(state, &mut data, &current, original, sub, failure)
         }
-    } else {
-        fail::retry(
-            state,
-            &mut data,
-            &current,
-            original,
-            sub.unwrap(),
-            outcome.unwrap_err(),
-        )
+        (subscription, _) => {
+            if subscription.is_none() || current.generation == original.generation {
+                ack::remove(&state.dir, &mut data, &original.subscription_id)
+            } else {
+                Ok(())
+            }
+        }
     };
     // A failing ack must freeze subsequent completions before unlocking.
     if persisted.is_err() {
