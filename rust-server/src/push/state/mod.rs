@@ -2,7 +2,7 @@ mod load;
 mod outbox;
 mod persist;
 mod validate;
-use crate::{Notification, Subscription};
+use crate::{Pending, Subscription};
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
@@ -10,7 +10,7 @@ use std::path::Path;
 #[derive(Default)]
 pub struct PushState {
     pub subscriptions: HashMap<String, Subscription>,
-    pub outbox: HashMap<String, Notification>,
+    pub outbox: HashMap<String, Pending>,
 }
 pub fn load_push(root: &Path) -> io::Result<PushState> {
     let subscriptions = load::read(&root.join("state/push-subs"))?;

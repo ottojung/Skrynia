@@ -1,10 +1,10 @@
-use crate::{Notification, Snapshot};
+use crate::{Pending, Snapshot};
 use std::io;
 pub fn notifications(
     data: &Snapshot,
     ids: Vec<String>,
     max: usize,
-) -> io::Result<Vec<Notification>> {
+) -> io::Result<Vec<(String, Pending)>> {
     let new = ids
         .iter()
         .filter(|id| !data.push.outbox.contains_key(*id))
@@ -21,12 +21,14 @@ pub fn notifications(
                     .checked_add(1)
                     .ok_or_else(|| io::Error::other("generation overflow"))
             })?;
-            Ok(Notification {
-                subscription_id: id,
-                generation,
-                attempts: old.map_or(0, |entry| entry.attempts),
-                next_at: old.map_or(0, |entry| entry.next_at),
-            })
+            Ok((
+                id,
+                Pending {
+                    generation,
+                    attempts: old.map_or(0, |entry| entry.attempts),
+                    next_at: old.map_or(0, |entry| entry.next_at),
+                },
+            ))
         })
         .collect()
 }

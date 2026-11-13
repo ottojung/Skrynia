@@ -11,5 +11,5 @@ pub use retry::{delay, now};
 
 pub use sender::{Failure as PushFailure, send as push_send};
 
-pub use finish::{DeliveryOutcome, batch as push_finish_batch, finish as push_finish};
+pub use finish::{DeliveryOutcome, batch as push_finish_batch};
 pub use runner::run as push_run;

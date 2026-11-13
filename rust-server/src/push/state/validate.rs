@@ -33,11 +33,8 @@ pub fn validate_push(
             return Err(io::Error::other("invalid push subscription"));
         }
     }
-    for (id, pending) in &state.outbox {
-        if id != &pending.subscription_id
-            || pending.generation == 0
-            || !state.subscriptions.contains_key(id)
-        {
+    for pending in state.outbox.values() {
+        if pending.generation == 0 {
             return Err(io::Error::other("invalid push notification"));
         }
     }

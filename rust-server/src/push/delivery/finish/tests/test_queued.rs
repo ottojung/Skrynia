@@ -21,25 +21,3 @@ fn queued_mutation_rechecks_health_after_acquiring_lock() {
     });
     assert!(!f.path.join("store/queued").exists());
 }
-
-#[test]
-fn push_io_failure_blocks_later_delivery_completions() {
-    let fixture = super::Fixture::new(1);
-    let pending = fixture.read();
-    let file = fixture.path.join("state/push/outbox.json");
-    std::fs::remove_file(&file).unwrap();
-    std::fs::create_dir(&file).unwrap();
-    assert!(crate::push_finish(&fixture.state, &pending, Some(&fixture.sub), Ok(())).is_err());
-    assert!(fixture.state.failed.load(Ordering::Acquire));
-    assert!(
-        fixture
-            .state
-            .data
-            .lock()
-            .unwrap()
-            .push
-            .outbox
-            .contains_key(&fixture.sub.id)
-    );
-    assert!(crate::push_finish(&fixture.state, &pending, Some(&fixture.sub), Ok(())).is_err());
-}

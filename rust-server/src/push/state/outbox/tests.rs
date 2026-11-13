@@ -6,8 +6,7 @@ fn pending_notifications_without_subscriptions_do_not_consume_capacity() {
     fs::create_dir_all(root.join("state/push-subs")).unwrap();
     fs::create_dir_all(root.join("state/push")).unwrap();
     let id = "a".repeat(32);
-    let notice = crate::Notification {
-        subscription_id: id.clone(),
+    let notice = crate::Pending {
         generation: 1,
         attempts: 0,
         next_at: 0,

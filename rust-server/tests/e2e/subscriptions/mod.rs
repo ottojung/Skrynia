@@ -28,6 +28,7 @@ async fn publish(server: &Server, token: &str, method: Method, data: &str) -> St
 }
 mod batch;
 mod layout;
+mod quiet;
 mod recovery;
 mod restart;
 mod revoke_recovery;

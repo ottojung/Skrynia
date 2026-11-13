@@ -1,4 +1,4 @@
-use crate::{Notification, PushKeys, Subscription, write_json};
+use crate::{Pending, PushKeys, Subscription, write_json};
 use std::fs;
 use std::path::Path;
 pub fn prepare(path: &Path, generation: u64) -> Subscription {
@@ -18,8 +18,7 @@ pub fn prepare(path: &Path, generation: u64) -> Subscription {
         },
         cap_hash: "e".repeat(64),
     };
-    let notice = Notification {
-        subscription_id: id.clone(),
+    let notice = Pending {
         generation,
         attempts: 0,
         next_at: 0,

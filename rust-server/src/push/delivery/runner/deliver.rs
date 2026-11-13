@@ -1,7 +1,10 @@
 use super::select::Entry;
 use crate::{DeliveryOutcome, PushFailure, State};
 use std::sync::Arc;
-pub async fn process(state: Arc<State>, (notification, subscription): Entry) -> DeliveryOutcome {
+pub async fn process(
+    state: Arc<State>,
+    (id, notification, subscription): Entry,
+) -> DeliveryOutcome {
     let result = if let Some(ref sub) = subscription {
         tokio::time::timeout(
             std::time::Duration::from_millis(state.push_config.timeout_ms),
@@ -12,5 +15,5 @@ pub async fn process(state: Arc<State>, (notification, subscription): Entry) -> 
     } else {
         Ok(())
     };
-    (notification, subscription, result)
+    (id, notification, subscription, result)
 }

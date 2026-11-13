@@ -42,8 +42,9 @@ The only durable pending-notification representation is
 `state/push/outbox.json`. It is a JSON object mapping subscription IDs
 to records containing `generation`, `attempts`, and `nextAt`.
 Every mutation with matching subscriptions durably replaces that file once.
-Each delivery tick persists all completed acknowledgments and retries in
-one replacement. The file must be a regular file; missing subscriptions,
+During a delivery tick, completed acknowledgments and retries are flushed
+together at least once each second and again when all deliveries finish.
+A slow endpoint cannot delay other successful acknowledgments until timeout. The file must be a regular file; missing subscriptions,
 invalid IDs, invalid generations, and malformed records reject startup.
 Grant revocation recovery removes affected records before their
 subscriptions. Back up the entire `state/` tree with the public store;

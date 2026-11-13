@@ -35,8 +35,11 @@ pub async fn run(state: Arc<State>) {
             let state = Arc::clone(&state);
             async move { deliver::process(state, entry).await }
         });
-        let (outcomes, healthy) = dispatch::run(work, state.push_config.concurrency).await;
-        if !commit::completed(&state, outcomes).await || !healthy {
+        let healthy = dispatch::run(work, state.push_config.concurrency, |outcomes| {
+            commit::completed(&state, outcomes)
+        })
+        .await;
+        if !healthy {
             eprintln!("Skrynia push delivery worker or persistence failure");
             state
                 .failed

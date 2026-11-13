@@ -1,5 +1,6 @@
 use super::fixture::Fixture;
 mod test_batch;
+mod test_failure;
 mod test_group;
 mod test_health;
 mod test_queued;

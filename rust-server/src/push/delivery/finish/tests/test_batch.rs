@@ -1,5 +1,5 @@
 use super::Fixture;
-use crate::{Notification, outbox_write_count, push_finish_batch};
+use crate::{Pending, outbox_write_count, push_finish_batch};
 #[test]
 fn fifty_acknowledgments_in_one_tick_have_one_durable_outbox_write() {
     let fixture = Fixture::new(1);
@@ -13,8 +13,7 @@ fn fifty_acknowledgments_in_one_tick_have_one_durable_outbox_write() {
             data.push.subscriptions.insert(id.clone(), sub);
             data.push.outbox.insert(
                 id.clone(),
-                Notification {
-                    subscription_id: id,
+                Pending {
                     generation: 1,
                     attempts: 0,
                     next_at: 0,
@@ -22,15 +21,15 @@ fn fifty_acknowledgments_in_one_tick_have_one_durable_outbox_write() {
             );
         }
         crate::persist_outbox(&fixture.path, &data.push.outbox).unwrap();
-        for pending in data.push.outbox.values() {
-            let sub = data.push.subscriptions[&pending.subscription_id].clone();
-            results.push((pending.clone(), sub));
+        for (id, pending) in &data.push.outbox {
+            let sub = data.push.subscriptions[id].clone();
+            results.push((id.clone(), pending.clone(), sub));
         }
     }
     let before = outbox_write_count();
     let reports = results
         .into_iter()
-        .map(|(notice, sub)| (notice, Some(sub), Ok(())))
+        .map(|(id, notice, sub)| (id, notice, Some(sub), Ok(())))
         .collect();
     push_finish_batch(&fixture.state, reports).unwrap();
     assert_eq!(

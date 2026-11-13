@@ -4,17 +4,17 @@ mod fail;
 #[cfg(test)]
 mod fixture;
 mod retire;
-mod single;
-pub use single::finish;
 #[cfg(test)]
 mod tests;
-use crate::{Notification, PushFailure, State, Subscription};
+use crate::{Pending, PushFailure, State, Subscription};
 use std::{io, sync::atomic::Ordering};
-pub type DeliveryOutcome = (Notification, Option<Subscription>, Result<(), PushFailure>);
+pub type DeliveryOutcome = (
+    String,
+    Pending,
+    Option<Subscription>,
+    Result<(), PushFailure>,
+);
 pub fn batch(state: &State, results: Vec<DeliveryOutcome>) -> io::Result<()> {
-    if results.is_empty() {
-        return single::idle(state);
-    }
     let mut data = state
         .data
         .lock()

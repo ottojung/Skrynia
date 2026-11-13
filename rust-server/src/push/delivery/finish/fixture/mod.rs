@@ -1,6 +1,6 @@
 mod create;
 mod persist;
-use crate::{Notification, State, Subscription};
+use crate::{Pending, State, Subscription};
 use std::fs;
 use std::path::PathBuf;
 pub struct Fixture {
@@ -15,7 +15,7 @@ impl Fixture {
         let state = create::state(&path, &sub, generation);
         Self { path, state, sub }
     }
-    pub fn read(&self) -> Notification {
+    pub fn read(&self) -> Pending {
         crate::read_outbox(&self.path).unwrap()[&self.sub.id].clone()
     }
 }

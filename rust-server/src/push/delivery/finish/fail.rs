@@ -1,9 +1,9 @@
-use crate::{Notification, PushFailure, Snapshot, State, Subscription};
+use crate::{Pending, PushFailure, Snapshot, State, Subscription};
 pub fn retry(
     state: &State,
     data: &mut Snapshot,
-    current: &Notification,
-    original: &Notification,
+    current: &Pending,
+    original: &Pending,
     sub: &Subscription,
     failure: PushFailure,
 ) -> bool {

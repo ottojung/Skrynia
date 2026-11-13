@@ -1,11 +1,10 @@
-use crate::{Notification, PushConfig, PushState, Snapshot, State, Subscription, Vapid};
+use crate::{Pending, PushConfig, PushState, Snapshot, State, Subscription, Vapid};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
 pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
-    let notice = Notification {
-        subscription_id: sub.id.clone(),
+    let notice = Pending {
         generation,
         attempts: 0,
         next_at: 0,

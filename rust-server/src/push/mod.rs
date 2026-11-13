@@ -7,7 +7,7 @@ mod state;
 mod vapid;
 
 pub use config::PushConfig;
-pub use model::{Notification, Pending, PushKeys, Subscription, Vapid};
+pub use model::{Pending, PushKeys, Subscription, Vapid};
 pub use security::{endpoint_allowed, parse_endpoint, public_address};
 pub use state::{PushState, load_push, persist_outbox, read_outbox, validate_push};
 pub use vapid::load_vapid;
@@ -23,7 +23,7 @@ pub use delivery::{
 
 pub use delivery::{PushFailure, push_send};
 
-pub use delivery::{DeliveryOutcome, push_finish, push_finish_batch, push_run};
+pub use delivery::{DeliveryOutcome, push_finish_batch, push_run};
 
 #[cfg(test)]
 pub use state::outbox_write_count;

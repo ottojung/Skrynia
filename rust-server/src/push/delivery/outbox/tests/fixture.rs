@@ -1,4 +1,4 @@
-use crate::{Notification, PushState, Snapshot};
+use crate::{Pending, PushState, Snapshot};
 mod subscription;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -12,8 +12,7 @@ pub fn pending(n: usize) -> (PathBuf, Snapshot, Vec<String>) {
     let mut push = PushState::default();
     for index in 0..n {
         let id = format!("{index:032x}");
-        let notification = Notification {
-            subscription_id: id.clone(),
+        let notification = Pending {
             generation: 1,
             attempts: 0,
             next_at: 0,

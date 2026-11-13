@@ -6,8 +6,8 @@ pub fn change(
     report: DeliveryOutcome,
     retired: &mut Vec<String>,
 ) -> bool {
-    let (original, subscription, outcome) = report;
-    let Some(current) = data.push.outbox.get(&original.subscription_id).cloned() else {
+    let (id, original, subscription, outcome) = report;
+    let Some(current) = data.push.outbox.get(&id).cloned() else {
         return false;
     };
     match (subscription, outcome) {
@@ -19,7 +19,7 @@ pub fn change(
         }
         (sub, _) => {
             if sub.is_none() || current.generation == original.generation {
-                ack::remove(data, &original.subscription_id);
+                ack::remove(data, &id);
                 true
             } else {
                 false

@@ -10,11 +10,13 @@ Integration tests exercise root credential retrieval, public reads,
 conditional object mutations, grant attenuation, missing/invalid keys,
 private state isolation, and rejection of unsafe notification endpoints.
 The crate's unit tests cover journal replay, one canonical durable outbox
-write for one or 50 subscribers, one durable write for 50 acknowledgments
-in one delivery tick, generation checks, retry behavior, and fault recovery.
+write for one or 50 subscribers, one write for 50 acknowledgments,
+periodic acknowledgement flushing despite a slow delivery, generation checks,
+retry behavior, and fault recovery.
 Integration tests verify fan-out generations, attempts, and due times
 across a process kill and restart, reject orphaned or corrupted records,
-and recover interrupted grant revocations without orphaned notifications.
+recover interrupted grant revocations without orphaned notifications,
+and verify that deleting an idle subscription does not rewrite the outbox.
 Additional tests cover Web Push encryption, TLS, DNS filtering, quotas,
 and stage-file cleanup.
 

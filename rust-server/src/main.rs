@@ -39,8 +39,8 @@ pub use store::{Kind, Snapshot, State, open_regular};
 
 pub use grants::{random_secret, secure_match, valid_identifier, valid_sha256};
 pub use push::{
-    Notification, Pending, PushConfig, PushKeys, PushState, Subscription, Vapid, endpoint_allowed,
-    load_push, load_vapid, parse_endpoint as parse_push_endpoint, public_address, validate_push,
+    Pending, PushConfig, PushKeys, PushState, Subscription, Vapid, endpoint_allowed, load_push,
+    load_vapid, parse_endpoint as parse_push_endpoint, public_address, validate_push,
 };
 
 pub use push::{
@@ -50,7 +50,7 @@ pub use push::{
 
 pub use push::{persist_outbox, push_delay, push_enqueue, push_now, push_preflight, read_outbox};
 
-pub use push::{DeliveryOutcome, PushFailure, push_finish, push_finish_batch, push_run, push_send};
+pub use push::{DeliveryOutcome, PushFailure, push_finish_batch, push_run, push_send};
 
 pub use http::{ListParams, validate_build_info};
 pub use net::config_number;
