@@ -192,3 +192,28 @@ the server must not continue accepting writes with an unprotected pending
 notification. The mutation lock, journal recovery, failure injection and
 Node/Rust on-disk interoperability are covered by dedicated tests. The
 at-least-once notification contract remains unchanged.
+
+### Journal fast-path measurements (Nov 13 UTC, 2026)
+
+Release builds of exact commits `d53dccb` (durable committed-marker rewrite
+on every mutation) and `b8a6f3c` (only persist the marker on enqueue failure)
+were verified to have different SHA-256 binary hashes. We ran **four**
+sequential, alternating 32-worker trials (baseline, optimized, optimized,
+baseline) on `marceline-dev`: 10 seconds per trial, 4 KiB objects, 90% public
+GETs and 10% synchronous content-hash CAS writes, 20-second client timeout,
+private throwaway data directories. Every trial passed complete-byte and
+ETag assertions, drained the transaction journal and reopened the data
+successfully under Node.
+
+| Run | Build | Operations/s | Write p95 ms | Write p99 ms | Peak RSS MiB |
+|---|---|---:|---:|---:|---:|
+| 1 | d53dccb | 535.6 | 876.0 | 1,274.1 | 12.5 |
+| 2 | b8a6f3c | 779.5 | 645.8 | 883.4 | 12.5 |
+| 3 | b8a6f3c | 754.6 | 609.9 | 807.1 | 12.7 |
+| 4 | d53dccb | 526.8 | 872.3 | 1,151.7 | 12.3 |
+
+The improvement is about 44% in measured operations/second across these two
+runs per build. p99 writes remain hundreds of milliseconds, and the
+experiment cannot determine production tail latency or a confidence interval.
+Compare again on target disks, with more trials and realistic notification
+subscriptions before authorizing a production migration.
