@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build isolated Rust preview image
-        run: docker build --file Dockerfile.rust --tag skrynia-rust-preview .
+        run: docker build --file Dockerfile.rust --tag skrynia-rust-preview --build-arg SKRYNIA_VERSION=0.3.0-preview --build-arg SKRYNIA_COMMIT=${{ github.sha }} .
       - name: Verify non-root startup and graceful SIGTERM
         run: |
           docker run --rm -d --name skrynia-rust-check \
@@ -67,5 +67,8 @@ jobs:
             sleep 0.2
           done
           test "$ready" = 1 || { docker logs skrynia-rust-check; exit 1; }
+          version=$(curl --fail --silent http://127.0.0.1:38912/base/version)
+          printf "%s\n" "$version" | grep -F '"version":"0.3.0-preview"'
+          printf "%s\n" "$version" | grep -F "${{ github.sha }}"
           test "$(docker exec skrynia-rust-check id -u)" = 1000
           timeout 8s docker stop -t 5 skrynia-rust-check > /dev/null
