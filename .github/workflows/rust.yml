@@ -33,6 +33,7 @@ jobs:
           cargo build --locked --package skrynia-server
           node tests/rust-server-smoke.js
           node tests/rust-protocol-parity.js
+          node tests/rust-large-read.js
       - name: Real SIGKILL durability and Node restart validation
         run: |
           node tests/rust-crash-recovery.js
