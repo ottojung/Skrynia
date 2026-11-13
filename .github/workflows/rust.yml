@@ -34,7 +34,9 @@ jobs:
           node tests/rust-server-smoke.js
           node tests/rust-protocol-parity.js
       - name: Real SIGKILL durability and Node restart validation
-        run: node tests/rust-crash-recovery.js
+        run: |
+          node tests/rust-crash-recovery.js
+          node tests/rust-crash-grants.js
 
   container-preview:
     runs-on: ubuntu-latest
