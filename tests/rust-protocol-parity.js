@@ -9,6 +9,7 @@ const http=require('node:http');
 const net=require('node:net');
 const crypto=require('node:crypto');
 const {spawn}=require('node:child_process');
+const seededScenarios=require('./parity/random');
 const sha=value=>crypto.createHash('sha256').update(value).digest('hex');
 const sleep=ms=>new Promise(done=>setTimeout(done,ms));
 async function freePort() {
@@ -213,6 +214,7 @@ async function main() {
     assert.deepEqual(remaining[0].json.keys,['team.second']);
     checked++;
     await compare('list after','GET','/store?locations=*&after=team.first');
+    await seededScenarios(compare,Number(process.env.SKRYNIA_PARITY_RANDOM_CASES||200));
     console.log(`Verified ${checked} paired Node/Rust request outcomes`);
     if(failures.length) {
       for(const failure of failures)console.error('PROTOCOL MISMATCH',JSON.stringify(failure));
