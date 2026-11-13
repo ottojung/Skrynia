@@ -43,3 +43,10 @@ rust-migration-test:
 	node tests/rust-migration-rehearsal.js
 
 .PHONY: rust-migration-test
+
+# Container-level cgroup enforcement and concurrent upload pressure.
+# Requires Podman (rootless) or Docker (set SKRYNIA_CONTAINER_ENGINE=docker).
+rust-container-memory-test:
+	sh scripts/test-rust-container-memory.sh
+
+.PHONY: rust-container-memory-test

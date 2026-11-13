@@ -234,3 +234,24 @@ different keys sharing an aggregate one-object grant quota. Both Node and
 Rust must accept exactly one quota winner and leave no temporary files. The
 existing crash/fault suites and four-run performance comparison were also
 repeated. See `docs/rust-benchmarks.md` for exact measurements and caveats.
+
+### Container memory pressure gate
+
+`make rust-container-memory-test` builds an isolated Rust preview image and
+starts it with a requested 96 MiB cgroup memory limit and a 24 MiB aggregate
+upload-buffer limit. A Node driver submits 24 concurrent 4 MiB uploads,
+allows successful HTTP 201 or explicit HTTP 503 / early client socket-close
+when memory backpressure terminates a request, and verifies the **original
+expected bytes and SHA-256 ETags** of every durable object, including requests
+with ambiguous responses. It also verifies no remaining staged files or
+journal records, zero OOM kills when cgroup-v2 events are available, and a
+successful Node restart on the same directory. The test explicitly checks
+that `memory.max` (or cgroup-v1 memory limit) is **100663296 bytes**; silently
+ignored container memory flags fail the gate. The preview image is already
+separately checked for non-root UID 1000.
+
+The local rootless Podman environment currently *does not enforce* `--memory`:
+its `memory.max` reported 30 GiB despite the 96 MiB flag. A smoke-only run
+using `SKRYNIA_CONTAINER_SKIP_CGROUP_ASSERT=1` passed the upload integrity
+and Node-restart checks but **does not qualify memory limits**. The strict
+Docker-based CI run is required before this gate can be marked satisfied.
