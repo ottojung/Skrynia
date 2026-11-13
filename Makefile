@@ -25,6 +25,7 @@ rust-crash-test:
 	node tests/rust-disk-failure.js
 	node tests/rust-root-rotation.js
 	node tests/rust-metadata-failure.js
+	node tests/rust-key-races.js
 
 .PHONY: rust-crash-test
 

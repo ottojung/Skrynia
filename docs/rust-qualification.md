@@ -150,3 +150,16 @@ another delivery in the same tick. Unexpected Push delivery task failures
 also mark the server unhealthy. Unit tests inject a malformed on-disk journal
 record, require the recovery call to fail and refuse subsequent mutations.
 Startup recovery remains mandatory before serving requests.
+
+### Contended key linearizability
+
+`tests/rust-key-races.js` races 16 independent HTTP clients against the same
+key in each of six rounds, first to create (exactly one 201, others 409), then
+to replace with the same SHA-256 CAS precondition (exactly one 200, others
+412), then to delete with the matching precondition (exactly one 200, others
+404). The persisted bytes and SHA-256 ETag must exactly match each winning
+mutation. It runs independently under Node and Rust, then restarts the *other*
+server on each data directory to check durable compatibility. This is a
+regression test for the synchronous CAS/state-lock boundary, not proof of
+linearizability for all possible multi-key protocols. Configure
+`SKRYNIA_RACE_ROUNDS` and `SKRYNIA_RACE_WIDTH` for longer runs.
