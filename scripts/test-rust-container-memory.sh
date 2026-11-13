@@ -7,9 +7,13 @@ port=${SKRYNIA_CONTAINER_PORT:-39877}
 root=$(mktemp -d)
 container=skrynia-memory-$$
 cleanup() {
-  "$engine" rm -f "$container" >/dev/null 2>&1 || :
   if [ "$engine" = podman ]; then
+    "$engine" rm -f "$container" >/dev/null 2>&1 || :
     "$engine" unshare chown -R 0:0 "$root" >/dev/null 2>&1 || :
+  else
+    "$engine" rm -f "$container" >/dev/null 2>&1 || :
+    "$engine" run --rm --user 0 -v "$root:/data" \
+      --entrypoint /bin/chown "$image" -R "$(id -u):$(id -g)" /data >/dev/null 2>&1 || :
   fi
   rm -rf "$root" "$root.events"
 }
@@ -19,12 +23,13 @@ if [ "${SKRYNIA_CONTAINER_SKIP_BUILD:-0}" != 1 ]; then
 fi
 if [ "$engine" = podman ]; then
   "$engine" unshare chown -R 1000:1000 "$root"
-  set --
 else
-  # Rootful Docker maps the runner's UID directly to the bind mount.
-  set -- --user "$(id -u):$(id -g)"
+  # Docker's production image runs as UID 1000. Prepare its bind-mount
+  # permissions as root, without changing the application's runtime UID.
+  "$engine" run --rm --user 0 -v "$root:/data" \
+    --entrypoint /bin/chown "$image" -R 1000:1000 /data >/dev/null
 fi
-"$engine" run -d --name "$container" --memory=96m --memory-swap=96m "$@" \
+"$engine" run -d --name "$container" --memory=96m --memory-swap=96m \
   -v "$root:/var/lib/skrynia" -p "127.0.0.1:$port:17380" \
   -e SKRYNIA_URL="http://127.0.0.1:$port/crash" \
   -e SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES=25165824 \
@@ -46,7 +51,11 @@ if [ "$limit" != 100663296 ]; then
   fi
   printf 'WARNING: cgroup not enforced; this is an HTTP smoke test ONLY\n' >&2
 fi
-test "$("$engine" exec "$container" id -u)" = 1000
+container_uid=$("$engine" exec "$container" id -u)
+if [ "$container_uid" != 1000 ]; then
+  printf 'Wrong container user: %s (expected UID 1000)\n' "$container_uid" >&2
+  exit 1
+fi
 node tests/rust-container-pressure.js "$root" "$port" "$container"
 # Require the kernel to report zero OOM kills during this test.
 if "$engine" exec "$container" cat /sys/fs/cgroup/memory.events > "$root.events" 2>/dev/null; then
@@ -58,6 +67,9 @@ fi
 "$engine" stop -t 5 "$container" >/dev/null
 if [ "$engine" = podman ]; then
   "$engine" unshare chown -R 0:0 "$root"
+else
+  "$engine" run --rm --user 0 -v "$root:/data" \
+    --entrypoint /bin/chown "$image" -R "$(id -u):$(id -g)" /data >/dev/null
 fi
 # Validate on-disk interoperability after releasing Rust's writer lock.
 SKRYNIA_CONTAINER_EXPECTED_ROOT="$root" node tests/rust-container-reopen.js
