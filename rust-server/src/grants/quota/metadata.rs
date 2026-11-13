@@ -9,6 +9,10 @@ impl Snapshot {
         let mut current = Some(id);
         while let Some(id) = current {
             let grant = &self.grants[id];
+            if grant.max_bytes.is_none() && grant.max_objects.is_none() {
+                current = grant.parent.as_deref();
+                continue;
+            }
             let (bytes, objects) = self.usage(id, None);
             if grant
                 .max_bytes

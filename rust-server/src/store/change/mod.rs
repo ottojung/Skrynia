@@ -16,7 +16,9 @@ impl State {
         token: &str,
     ) -> Result<bool> {
         // Preflight before I/O, then revalidate after parallel staging.
-        drop(lock::checked(self, key, kind, body, expected, token)?);
+        drop(lock::checked(
+            self, key, kind, body, expected, token, false,
+        )?);
         let staged = if kind == "delete" {
             None
         } else {
@@ -25,13 +27,9 @@ impl State {
                     .map_err(|e| crate::error::transient_io(&e))?,
             )
         };
-        let mut data = lock::checked(self, key, kind, body, expected, token)?;
+        let mut data = lock::checked(self, key, kind, body, expected, token, true)?;
         let path = self.dir.join("store").join(key);
-        let digest = if kind == "delete" {
-            None
-        } else {
-            Some(crate::sha(body))
-        };
+        let digest = (kind != "delete").then(|| crate::sha(body));
         let pending = journal::commit(
             &self.dir,
             key,

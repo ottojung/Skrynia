@@ -21,7 +21,14 @@ pub async fn run(state: Arc<State>) {
             }
         }
         ticks = ticks.wrapping_add(1);
-        let entries = select::due(&state);
+        let snapshot = Arc::clone(&state);
+        let entries = match tokio::task::spawn_blocking(move || select::due(&snapshot)).await {
+            Ok(entries) => entries,
+            Err(error) => {
+                eprintln!("Skrynia notification selection failed: {error}");
+                return;
+            }
+        };
         for chunk in entries.chunks(state.push_config.concurrency) {
             batch::process(&state, chunk).await;
         }

@@ -2,14 +2,18 @@ use crate::{Fail, Result, Snapshot};
 use axum::http::StatusCode;
 use std::path::Path;
 
+pub enum Mode<'a> {
+    Initial,
+    Final(Option<&'a str>),
+}
 pub fn preflight(
     data: &Snapshot,
     key: &str,
     kind: &str,
     body: &[u8],
-    expected: Option<&str>,
     path: &Path,
     token: &str,
+    mode: Mode<'_>,
 ) -> Result<()> {
     let old = data.objects.get(key).copied();
     if kind == "create" && old.is_some() {
@@ -20,13 +24,13 @@ pub fn preflight(
     }
     let operation = if kind == "replace" { "modify" } else { kind };
     let grant = data.grant_for(token, operation, key)?;
-    if let Some(expected) = expected {
+    if let Mode::Final(Some(expected)) = mode {
         let observed = crate::sha_file(path).map_err(|_| crate::internal())?;
         if observed != expected {
             return Err(Fail(StatusCode::PRECONDITION_FAILED, "content_mismatch"));
         }
     }
-    if kind != "delete" {
+    if kind != "delete" && matches!(mode, Mode::Final(_)) {
         data.check_quota(&grant.id, key, body.len() as u64)?;
     }
     Ok(())

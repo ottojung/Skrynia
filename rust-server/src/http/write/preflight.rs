@@ -15,3 +15,19 @@ pub fn authorize(state: &State, key: &str, kind: &str, token: &str) -> Result<()
     data.grant_for(token, operation, key)?;
     Ok(())
 }
+
+pub async fn exists_async(state: std::sync::Arc<State>, key: String) -> Result<()> {
+    tokio::task::spawn_blocking(move || exists(&state, &key))
+        .await
+        .map_err(|_| crate::internal())?
+}
+pub async fn authorize_async(
+    state: std::sync::Arc<State>,
+    key: String,
+    kind: &'static str,
+    token: String,
+) -> Result<()> {
+    tokio::task::spawn_blocking(move || authorize(&state, &key, kind, &token))
+        .await
+        .map_err(|_| crate::internal())?
+}

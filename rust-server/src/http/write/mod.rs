@@ -12,7 +12,7 @@ pub async fn mutation(state: Arc<State>, raw_name: String, req: Request) -> Resu
     let expected = auth::precondition(req.headers(), req.method())?;
     // POST and PUT instead reject unauthorized upload bodies before buffering.
     if req.method() == Method::DELETE {
-        preflight::exists(&state, &key)?;
+        preflight::exists_async(Arc::clone(&state), key.clone()).await?;
     }
     let token = replies::token(req.headers())?.to_string();
     let method = req.method().clone();
@@ -21,7 +21,7 @@ pub async fn mutation(state: Arc<State>, raw_name: String, req: Request) -> Resu
         Method::PUT => "replace",
         _ => "delete",
     };
-    preflight::authorize(&state, &key, kind, &token)?;
+    preflight::authorize_async(Arc::clone(&state), key.clone(), kind, token.clone()).await?;
     let upload = if method == Method::DELETE {
         upload::Upload::empty(Arc::clone(&state.upload))
     } else {
