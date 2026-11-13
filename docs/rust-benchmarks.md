@@ -164,3 +164,16 @@ and the final Node restart was successful. An earlier run with a benchmark-side
 timeout). The benchmark timeout is now explicit and configurable. This is an
 important tail-latency bottleneck under filesystem contention, not a data
 corruption finding; it remains a production-capacity qualification item.
+
+### Staging-directory sync optimization
+
+The Rust staging path `fsync`s each complete temporary **file** before the
+public hard-link/rename and `fsync`s the destination `store/` directory
+afterward. It no longer separately syncs `store-tmp/`: a temporary pathname
+is never an authority-bearing durable reference, whereas the committed store
+pathname is. After a crash, Rust discards abandoned staging files with the
+recognizable Node (24-hex suffix) and Rust (32-hex suffix) formats under the
+exclusive writer lock; unrelated filenames are preserved. Regression coverage
+includes staged-file cleanup, journal replay, real SIGKILL of concurrent
+writes, full-object checks, and Node restart. This reduces redundant metadata
+syncs without weakening the durable destination-file requirements.

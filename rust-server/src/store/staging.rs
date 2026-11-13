@@ -1,4 +1,3 @@
-use super::disk::sync_dir;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -18,7 +17,6 @@ pub fn create(dir: &Path, bytes: &[u8]) -> io::Result<PathBuf> {
         }
         file.write_all(bytes)?;
         file.sync_all()?;
-        sync_dir(&folder)?;
         Ok::<_, io::Error>(())
     })();
     if result.is_err() {

@@ -1,4 +1,5 @@
 mod legacy;
+mod staging;
 use std::fs;
 use std::io;
 use std::path::Path;
@@ -39,6 +40,7 @@ pub fn abandoned(root: &Path) -> io::Result<()> {
             crate::sync_dir(&dir)?;
         }
     }
+    staging::abandoned(root)?;
     Ok(())
 }
 #[cfg(test)]

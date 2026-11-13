@@ -82,6 +82,8 @@ async function main() {
         assert(pending.generation>=created,
           `lost Push wake-up: ${pending.generation} generations for ${created} applied creates`);
       }
+      assert.deepEqual(readdirSync(join(root,'store-tmp')),[],
+        'abandoned staged files not cleaned after crash recovery');
       const journal=join(root,'state/store-transactions');
       assert.deepEqual(readdirSync(journal),[],`journal not fully recovered in round ${round}`);
       await stop(child,'SIGTERM');child=undefined;

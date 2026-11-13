@@ -81,8 +81,17 @@ async function run() {
     const discarded=[join(dir,'state/grants',tempName),
       join(dir,'state/push/outbox',tempName),join(dir,'state/push-subs',tempName)];
     for(const path of discarded)writeFileSync(path,'incomplete atomic JSON');
+    // Node and Rust use different random suffix lengths for staged objects.
+    const tmpDir=join(dir,'store-tmp');
+    const staged=[join(tmpDir,'obj.123.'+'a'.repeat(24)),
+      join(tmpDir,'obj.456.'+'b'.repeat(32))];
+    for(const path of staged)writeFileSync(path,'abandoned staged bytes');
+    const unknownStage=join(tmpDir,'keep-me');
+    writeFileSync(unknownStage,'not a known staged object');
     server=await start(binary,[],dir,p);
     for(const path of discarded)assert.equal(existsSync(path),false);
+    for(const path of staged)assert.equal(existsSync(path),false);
+    assert.equal(existsSync(unknownStage),true);
     assert.deepEqual(JSON.parse(readFileSync(join(dir,'state/push/vapid.json'))),vapidBefore);
     assert.equal((await request(p,'GET','/store/legacy.txt')).body.toString(),'legacy');
     const created=await request(p,'POST','/store/new.txt','abc',user);

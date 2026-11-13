@@ -20,6 +20,7 @@ fn remove_only_atomic_writer_orphans() {
         .unwrap();
         fs::write(folder.join(".skrynia-not-an-atomic-id"), b"preserve").unwrap();
     }
+    fs::create_dir_all(root.join("store-tmp")).unwrap();
     abandoned(&root).unwrap();
     for dir in [
         "state/grants",
