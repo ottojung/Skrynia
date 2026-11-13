@@ -36,19 +36,26 @@ are green. Tests and build procedures must not require other runtime languages.
 Run `SKRYNIA_BENCH_SAMPLES=100 make benchmark`. The Rust workload driver
 builds the release binary, starts it with a fresh private temporary data
 directory on a loopback port, issues a root user credential, and measures
-sequential 4 KiB GET and SHA-256-conditioned PUT requests. It verifies HTTP
-statuses, response bytes and content hashes; every PUT changes the stored
-content. All files and the process are cleaned up afterward.
+sequential 4 KiB GET, SHA-256-conditioned PUT, and unconditional PUT
+operations, in that order. Each PUT replaces the same key with a new
+4 KiB payload. The conditional PUT computes the prior-body digest outside
+the timed interval. Requests verify successful HTTP responses; the
+unconditional PUT workload also reads back the final bytes. The benchmark
+server and its files are cleaned up afterward.
 
-Illustrative single run on shared `marceline-dev` (2026-11-13, release
+Three successive runs on shared `marceline-dev` (2026-11-13, release
 binary, 100 operations per workload, local filesystem):
 
-| Workload | Operations/s | p50 (ms) | p95 (ms) | p99 (ms) |
-| --- | ---: | ---: | ---: | ---: |
-| GET 4 KiB | 6146.8 | 0.15 | 0.23 | 0.39 |
-| CAS PUT 4 KiB | 67.7 | 12.48 | 21.64 | 47.43 |
+| Run | GET (ops/s) | CAS PUT (ops/s) | Plain PUT (ops/s) |
+| --- | ---: | ---: | ---: |
+| 1 | 6751.5 | 66.4 | 75.3 |
+| 2 | 8161.3 | 20.8 | 70.7 |
+| 3 | 6039.7 | 22.2 | 76.2 |
 
-This is **not** a controlled measurement or a cross-version comparison.
-Synchronous fsync and shared-host contention dominate write latency.
-Repeat on the intended deployment filesystem under sustained concurrency
-and notification load before asserting performance or resource capacity.
+Plain PUT p50 was 12.22–13.13 ms and p99 was 20.55–23.92 ms.
+CAS PUT p50 was 13.30–16.44 ms, with unusually large p95 values
+(329–358 ms) in two runs. This is **not** a controlled comparison:
+the operations execute in a fixed order on a shared host, and resource
+contention may explain the tail-latency outliers. Re-run with interleaved
+orders, intended deployment storage, sustained concurrency, and notification
+load before claiming a CAS overhead or production capacity.
