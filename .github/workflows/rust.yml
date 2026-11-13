@@ -74,3 +74,9 @@ jobs:
           printf "%s\n" "$version" | grep -F "${{ github.sha }}"
           test "$(docker exec skrynia-rust-check id -u)" = 1000
           timeout 8s docker stop -t 5 skrynia-rust-check > /dev/null
+      - name: Enforce 96 MiB cgroup memory limit and verify upload integrity
+        env:
+          SKRYNIA_CONTAINER_ENGINE: docker
+          SKRYNIA_CONTAINER_IMAGE: skrynia-rust-preview
+          SKRYNIA_CONTAINER_SKIP_BUILD: "1"
+        run: sh scripts/test-rust-container-memory.sh
