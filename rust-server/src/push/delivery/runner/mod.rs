@@ -1,4 +1,4 @@
-mod batch;
+mod deliver;
 mod dispatch;
 mod select;
 use crate::State;
@@ -32,8 +32,14 @@ pub async fn run(state: Arc<State>) {
         };
         let work = entries.into_iter().map(|entry| {
             let state = Arc::clone(&state);
-            async move { batch::process(&state, &[entry]).await }
+            async move { deliver::process(state, entry).await }
         });
-        dispatch::run(work, state.push_config.concurrency).await;
+        if !dispatch::run(work, state.push_config.concurrency).await {
+            eprintln!("Skrynia push delivery worker panicked");
+            state
+                .failed
+                .store(true, std::sync::atomic::Ordering::Release);
+            return;
+        }
     }
 }
