@@ -4,5 +4,6 @@ mod e2e {
     mod objects;
     mod races;
     mod resilience;
+    mod security;
     mod subscriptions;
 }

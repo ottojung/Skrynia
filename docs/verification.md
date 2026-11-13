@@ -2,7 +2,7 @@
 
 The Rust test suite checks the actual server and persistent state through
 isolated temporary directories. The release gate is `make test`, which
-includes unit tests, HTTP integration tests, default rustfmt, strict Clippy,
+includes a source-language gate, unit tests, HTTP integration tests, default rustfmt, strict Clippy,
 and the structural linter (50 code lines per Rust file, 10 direct entries
 per source directory, sibling-only local imports).
 

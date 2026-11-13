@@ -2,6 +2,7 @@ use super::fixture::Server;
 use reqwest::{Method, StatusCode};
 use sha2::{Digest, Sha256};
 mod concurrency;
+mod stress;
 #[tokio::test]
 async fn concurrent_create_and_cas_have_one_winner() {
     let server = Server::new().await;

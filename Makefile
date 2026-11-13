@@ -1,5 +1,5 @@
-.PHONY: test build lint check docker-build
-test: lint
+.PHONY: test build lint check docker-build source-check
+test: source-check lint
 	cargo test --locked --all-targets
 
 lint:
@@ -16,3 +16,6 @@ check: test
 
 docker-build:
 	docker build -t skrynia:local .
+
+source-check:
+	@if git ls-files | grep -E '\.(js|jsx|mjs|cjs|ts|tsx)$$'; then 	  echo 'Non-Rust implementation source is forbidden'; exit 1; fi
