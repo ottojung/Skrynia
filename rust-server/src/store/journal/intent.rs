@@ -2,12 +2,12 @@ use std::io;
 use std::path::Path;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Intent {
     pub key: String,
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sha256: Option<String>,
-    #[serde(default)]
     pub committed: bool,
 }
 impl Intent {

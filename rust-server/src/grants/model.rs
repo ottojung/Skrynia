@@ -1,5 +1,6 @@
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct Grant {
     pub id: String,
     pub parent: Option<String>,
@@ -13,6 +14,7 @@ pub struct Grant {
     pub users: Vec<User>,
 }
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct User {
     pub id: String,
     pub hash: String,

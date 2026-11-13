@@ -1,4 +1,5 @@
 #[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Revocation {
     pub id: String,
     pub ids: Vec<String>,
