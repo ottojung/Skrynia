@@ -24,6 +24,25 @@ function exactlyOne(outcomes,success,loser,context) {
     `${context}: unexpected statuses ${statuses}`);
   return statuses.indexOf(success);
 }
+async function quotaRace(p,root,user,name) {
+  const spec={locations:'quota_*',operations:['create','list'],
+    maxBytes:10000,maxObjects:1};
+  const created=await request(p,'POST','/grants',user,JSON.stringify(spec));
+  assert.equal(created.status,200,created.body.toString());
+  const child=JSON.parse(created.body);
+  const issued=await request(p,'POST',`/grants/${child.id}/users`,child.issuerToken);
+  assert.equal(issued.status,200,issued.body.toString());
+  const writer=JSON.parse(issued.body).userToken;
+  const values=Array.from({length:width},(_,i)=>Buffer.alloc(1024,65+i%24));
+  const outcomes=await Promise.all(values.map((bytes,i)=>
+    request(p,'POST',`/store/quota_${i}`,writer,bytes)));
+  const winner=exactlyOne(outcomes,201,507,`${name} shared quota`);
+  const key=`quota_${winner}`;
+  assert((await request(p,'GET',`/store/${key}`)).body.equals(values[winner]));
+  assert.deepEqual(fs.readdirSync(join(root,'store-tmp')),[],
+    `${name} left staged files after rejected quota writes`);
+  return {key,bytes:values[winner]};
+}
 async function run(name,command,args) {
   const root=mkdtempSync(join(tmpdir(),`skrynia-cas-race-${name}-`));
   let server;
@@ -55,13 +74,15 @@ async function run(name,command,args) {
       exactlyOne(deletions,200,404,`${name} delete ${round}`);
       assert.equal((await request(p,'GET',`/store/${key}`)).status,404);
     }
+    const retained=await quotaRace(p,root,user,name);
     await stop(server,'SIGTERM');server=undefined;
     server=await start(name==='Rust'?process.execPath:binary,
       name==='Rust'?[resolve('src/server.js')]:[],root,p);
     for(let round=0;round<rounds;round++) {
       assert.equal((await request(p,'GET',`/store/race_${round}`)).status,404);
     }
-    console.log(`${name}: ${rounds} rounds x ${width} create/CAS/delete contenders, rollback check: OK`);
+    assert((await request(p,'GET',`/store/${retained.key}`)).body.equals(retained.bytes));
+    console.log(`${name}: ${rounds} rounds x ${width} create/CAS/delete contenders + shared-quota race, rollback check: OK`);
   } finally {
     if(server)await stop(server,'SIGKILL');
     rmSync(root,{recursive:true,force:true});

@@ -20,10 +20,10 @@ impl State {
             std::fs::remove_file(path).and_then(|_| crate::sync_dir(path.parent().unwrap())),
         )
     }
-    pub fn fail_on_io(&self, result: io::Result<()>) -> crate::Result<()> {
+    pub fn fail_on_io<T>(&self, result: io::Result<T>) -> crate::Result<T> {
         result.map_err(|error| {
             self.failed.store(true, Ordering::Release);
-            eprintln!("Skrynia metadata persistence recovery required: {error}");
+            eprintln!("Skrynia filesystem persistence recovery required: {error}");
             crate::internal()
         })
     }

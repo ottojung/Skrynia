@@ -1,7 +1,8 @@
 mod apply;
 mod check;
+mod lock;
+use super::staging;
 use super::{State, journal};
-use super::{disk, staging};
 use crate::Result;
 use std::sync::atomic::Ordering;
 
@@ -14,11 +15,15 @@ impl State {
         expected: Option<&str>,
         token: &str,
     ) -> Result<bool> {
-        let mut data = self.data.lock().map_err(|_| crate::internal())?;
-        self.require_healthy()?;
+        // Preflight before I/O, then revalidate after parallel staging.
+        drop(lock::checked(self, key, kind, body, expected, token)?);
+        let staged = if kind == "delete" {
+            None
+        } else {
+            Some(self.fail_on_io(staging::Staged::prepare(&self.dir, body))?)
+        };
+        let mut data = lock::checked(self, key, kind, body, expected, token)?;
         let path = self.dir.join("store").join(key);
-        check::preflight(&data, key, kind, body, expected, &path, token)?;
-        crate::push_preflight(&data, key, kind, self.push_config.max_outbox)?;
         let digest = if kind == "delete" {
             None
         } else {
@@ -29,7 +34,7 @@ impl State {
             key,
             kind,
             digest,
-            || apply::commit(&self.dir, &path, kind, body),
+            || apply::commit(&self.dir, &path, kind, staged.as_ref()),
             || crate::push_enqueue(&mut data, &self.dir, key, kind, self.push_config.max_outbox),
         )
         .map_err(|error| {

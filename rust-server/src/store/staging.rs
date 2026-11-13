@@ -24,3 +24,19 @@ pub fn create(dir: &Path, bytes: &[u8]) -> io::Result<PathBuf> {
     }
     result.map(|_| path)
 }
+
+// Own the temporary name until commit or rejection; never leak staged files.
+pub struct Staged(PathBuf);
+impl Staged {
+    pub fn prepare(dir: &Path, bytes: &[u8]) -> io::Result<Self> {
+        create(dir, bytes).map(Self)
+    }
+    pub fn path(&self) -> &Path {
+        &self.0
+    }
+}
+impl Drop for Staged {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}

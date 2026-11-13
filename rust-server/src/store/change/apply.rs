@@ -1,20 +1,23 @@
-use super::{disk, staging};
+use super::staging;
 use std::fs;
 use std::io;
 use std::path::Path;
 
-pub fn commit(dir: &Path, path: &Path, kind: &str, body: &[u8]) -> io::Result<()> {
+pub fn commit(
+    dir: &Path,
+    path: &Path,
+    kind: &str,
+    staged: Option<&staging::Staged>,
+) -> io::Result<()> {
     if kind == "delete" {
         fs::remove_file(path)?;
     } else {
-        let temp = staging::create(dir, body)?;
-        let result = if kind == "create" {
-            fs::hard_link(&temp, path)
+        let staged = staged.ok_or_else(|| io::Error::other("staging missing"))?;
+        if kind == "create" {
+            fs::hard_link(staged.path(), path)?;
         } else {
-            fs::rename(&temp, path)
-        };
-        let _ = fs::remove_file(temp);
-        result?;
+            fs::rename(staged.path(), path)?;
+        }
     }
-    disk::sync_dir(&dir.join("store"))
+    crate::sync_dir(&dir.join("store"))
 }
