@@ -11,7 +11,7 @@ async fn ready_work_continues_while_an_earlier_delivery_is_slow() {
             events.lock().unwrap().push(id);
         }
     });
-    assert!(run(work, 2).await);
+    assert!(run(work, 2).await.1);
     assert_eq!(*events.lock().unwrap(), vec![1, 2, 0]);
 }
 #[tokio::test]
@@ -21,5 +21,5 @@ async fn worker_panics_are_reported_without_discarding_other_work() {
             panic!("simulated worker panic");
         }
     });
-    assert!(!run(work, 2).await);
+    assert!(!run(work, 2).await.1);
 }

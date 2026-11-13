@@ -9,10 +9,14 @@ per source directory, sibling-only local imports).
 Integration tests exercise root credential retrieval, public reads,
 conditional object mutations, grant attenuation, missing/invalid keys,
 private state isolation, and rejection of unsafe notification endpoints.
-The crate's unit tests cover replay invariants, persisted notifications,
-multi-subscriber durable generation batching, acknowledgment and fault replay,
-Web Push signing and independent decryption, TLS verification, DNS filtering,
-quota accounting, and stage-file cleanup.
+The crate's unit tests cover journal replay, one canonical durable outbox
+write for one or 50 subscribers, one durable write for 50 acknowledgments
+in one delivery tick, generation checks, retry behavior, and fault recovery.
+Integration tests verify fan-out generations, attempts, and due times
+across a process kill and restart, reject orphaned or corrupted records,
+and recover interrupted grant revocations without orphaned notifications.
+Additional tests cover Web Push encryption, TLS, DNS filtering, quotas,
+and stage-file cleanup.
 
 Any deployment must use persistent storage, external HTTPS rate limiting,
 a tested consistent backup/restore procedure, and a verified isolated

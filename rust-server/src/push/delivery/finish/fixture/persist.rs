@@ -2,7 +2,7 @@ use crate::{Notification, PushKeys, Subscription, write_json};
 use std::fs;
 use std::path::Path;
 pub fn prepare(path: &Path, generation: u64) -> Subscription {
-    for sub in ["state/push-subs", "state/push/outbox"] {
+    for sub in ["state/push-subs", "state/push"] {
         fs::create_dir_all(path.join(sub)).unwrap();
     }
     let id = "a".repeat(32);
@@ -29,10 +29,6 @@ pub fn prepare(path: &Path, generation: u64) -> Subscription {
         &sub,
     )
     .unwrap();
-    write_json(
-        &path.join("state/push/outbox").join(format!("{id}.json")),
-        &notice,
-    )
-    .unwrap();
+    crate::persist_outbox(path, &std::collections::HashMap::from([(id, notice)])).unwrap();
     sub
 }

@@ -35,10 +35,8 @@ async fn root_revocation_rotates_authority_without_deleting_bytes() {
             .join(format!("state/push-subs/{id}.json"))
             .exists()
     );
-    assert!(
-        fs::read_dir(server.home.join("state/push/outbox"))
-            .unwrap()
-            .next()
-            .is_none()
-    );
+    let records: serde_json::Value =
+        serde_json::from_slice(&fs::read(server.home.join("state/push/outbox.json")).unwrap())
+            .unwrap();
+    assert!(records.as_object().unwrap().is_empty());
 }

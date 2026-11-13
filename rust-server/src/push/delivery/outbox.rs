@@ -1,4 +1,3 @@
-mod group;
 mod persist;
 mod plan;
 use super::preflight::matching;
@@ -17,5 +16,3 @@ pub fn enqueue(
 }
 #[cfg(test)]
 mod tests;
-
-pub use group::sync_active as sync_index;

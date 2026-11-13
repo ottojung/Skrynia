@@ -9,7 +9,6 @@ fn remove_only_atomic_writer_orphans() {
         "state/grant-revocations",
         "state/push",
         "state/push-subs",
-        "state/push/outbox",
     ] {
         let folder = root.join(dir);
         fs::create_dir_all(&folder).unwrap();
@@ -28,7 +27,6 @@ fn remove_only_atomic_writer_orphans() {
         "state/grant-revocations",
         "state/push",
         "state/push-subs",
-        "state/push/outbox",
     ] {
         let folder = root.join(dir);
         assert!(!folder.join(format!(".skrynia-{}", "a".repeat(32))).exists());

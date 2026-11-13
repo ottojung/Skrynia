@@ -1,6 +1,7 @@
 mod cleanup;
 mod load;
 mod options;
+mod outbox;
 mod verify;
 use super::{Snapshot, State, locking, paths};
 use std::io;
@@ -18,13 +19,13 @@ impl State {
         let push_config = crate::PushConfig::load(&config.public)?;
         paths::dirs(&dir)?;
         let lock = locking::acquire(&dir.join("state"))?;
+        outbox::initialize(&dir)?;
         cleanup::abandoned(&dir)?;
         crate::recover_pending(&dir)?;
         let objects = paths::scan(&dir)?;
         let grants = load::grants(&dir)?;
         let tokens = load::tokens(&grants);
-        let mut push = crate::load_push(&dir)?;
-        crate::prune_orphan_notifications(&dir, &mut push)?;
+        let push = crate::load_push(&dir)?;
         let vapid = crate::load_vapid(&dir)?;
         let state = Self {
             dir,

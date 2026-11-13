@@ -26,10 +26,7 @@ fn queued_mutation_rechecks_health_after_acquiring_lock() {
 fn push_io_failure_blocks_later_delivery_completions() {
     let fixture = super::Fixture::new(1);
     let pending = fixture.read();
-    let file = fixture
-        .path
-        .join("state/push/outbox")
-        .join(format!("{}.json", fixture.sub.id));
+    let file = fixture.path.join("state/push/outbox.json");
     std::fs::remove_file(&file).unwrap();
     std::fs::create_dir(&file).unwrap();
     assert!(crate::push_finish(&fixture.state, &pending, Some(&fixture.sub), Ok(())).is_err());

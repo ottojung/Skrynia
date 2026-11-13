@@ -1,11 +1,16 @@
 use super::Server;
 use reqwest::Method;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 impl Server {
     pub async fn restart_after_kill(&mut self) {
+        self.restart_with(|_| {}).await
+    }
+    pub async fn restart_with(&mut self, change: impl FnOnce(&Path)) {
         self.child.kill().unwrap();
         self.child.wait().unwrap();
+        change(&self.home);
         let port = url::Url::parse(&self.address).unwrap().port().unwrap();
         self.child = Command::new(env!("CARGO_BIN_EXE_skrynia-server"))
             .env("SKRYNIA_DATA_DIR", &self.home)

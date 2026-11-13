@@ -11,7 +11,6 @@ pub fn dirs(dir: &Path) -> std::io::Result<()> {
         ("state/grant-revocations", 0o700),
         ("state/push", 0o700),
         ("state/push-subs", 0o700),
-        ("state/push/outbox", 0o700),
     ] {
         let folder = dir.join(path);
         fs::create_dir_all(&folder)?;

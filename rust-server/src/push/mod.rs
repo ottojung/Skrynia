@@ -7,9 +7,9 @@ mod state;
 mod vapid;
 
 pub use config::PushConfig;
-pub use model::{Notification, PushKeys, Subscription, Vapid};
+pub use model::{Notification, Pending, PushKeys, Subscription, Vapid};
 pub use security::{endpoint_allowed, parse_endpoint, public_address};
-pub use state::{PushState, load_push, validate_push};
+pub use state::{PushState, load_push, persist_outbox, read_outbox, validate_push};
 pub use vapid::load_vapid;
 
 pub use api::{PushInput, parse_push_input, route, same_events as same_push_events};
@@ -23,8 +23,7 @@ pub use delivery::{
 
 pub use delivery::{PushFailure, push_send};
 
-pub use delivery::{push_finish, push_run};
+pub use delivery::{DeliveryOutcome, push_finish, push_finish_batch, push_run};
 
-pub use state::prune_orphan_notifications;
-
-pub use delivery::sync_outbox_index;
+#[cfg(test)]
+pub use state::outbox_write_count;

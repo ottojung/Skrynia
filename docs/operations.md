@@ -37,12 +37,17 @@ credentials must never be logged or placed in public objects.
 
 `store/` contains public, byte-preserving regular files. Everything under
 `state/` and `store-tmp/` is private. Root and grant records, subscription
-state, transaction intents, and notification outboxes must be backed up together.
-For multi-subscriber notifications, `state/push/outbox-generations.json`
-is the authoritative durable generation index. A subscription may have no
-individual `state/push/outbox/{id}.json` file while it is pending; both
-forms are replayed at startup. Back up the index and all subscription records
-along with the store and journal, and never edit or discard them separately.
+state, transaction intents, and notification state must be backed up together.
+The only durable pending-notification representation is
+`state/push/outbox.json`. It is a JSON object mapping subscription IDs
+to records containing `generation`, `attempts`, and `nextAt`.
+Every mutation with matching subscriptions durably replaces that file once.
+Each delivery tick persists all completed acknowledgments and retries in
+one replacement. The file must be a regular file; missing subscriptions,
+invalid IDs, invalid generations, and malformed records reject startup.
+Grant revocation recovery removes affected records before their
+subscriptions. Back up the entire `state/` tree with the public store;
+do not separately discard or edit notification records.
 
 The server holds an exclusive kernel writer lock in
 `state/writer.lock`. Leave the lock inode in place across restarts. A

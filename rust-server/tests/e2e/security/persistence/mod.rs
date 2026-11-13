@@ -1,6 +1,7 @@
 mod grant;
-mod index;
+mod invalid;
 mod journal;
 mod notification;
+mod outbox;
 mod subscription;
 mod vapid;

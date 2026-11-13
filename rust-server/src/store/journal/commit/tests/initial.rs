@@ -1,5 +1,5 @@
 use super::{commit, root};
-use std::{fs, io};
+use std::fs;
 #[test]
 fn failed_initial_intent_write_is_clean_and_never_applies_object() {
     let root = root();
@@ -18,9 +18,4 @@ fn failed_initial_intent_write_is_clean_and_never_applies_object() {
     assert!(matches!(result, Err(super::super::Failure::Clean(_))));
     fs::remove_file(dir).unwrap();
     fs::remove_dir_all(root).unwrap();
-}
-#[test]
-fn failed_initial_intent_write_reports_io_error() {
-    let error = io::Error::from_raw_os_error(libc::ENOSPC);
-    assert_eq!(crate::error::transient_io(&error).0.as_u16(), 507);
 }

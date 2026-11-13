@@ -1,6 +1,6 @@
 use super::subscription::setup;
-use crate::e2e::fixture::corrupt::inject;
 use reqwest::Method;
+use std::fs;
 #[tokio::test]
 async fn unknown_notification_fields_fail_startup() {
     let (mut server, id) = setup().await;
@@ -13,9 +13,9 @@ async fn unknown_notification_fields_fail_startup() {
         .await
         .unwrap();
     assert!(reply.status().is_success());
-    inject(
-        &server.home.join(format!("state/push/outbox/{id}.json")),
-        None,
-    );
+    let path = server.home.join("state/push/outbox.json");
+    let mut record: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    record[&id]["unexpected"] = true.into();
+    fs::write(path, serde_json::to_vec(&record).unwrap()).unwrap();
     server.reject_restart().await;
 }

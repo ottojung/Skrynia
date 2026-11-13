@@ -25,7 +25,14 @@ pub fn commit(
         sha256: digest,
         committed: false,
     };
-    write_json(&file, &intent).map_err(|error| Failure::initial(&file, error))?;
+    if let Err(error) = write_json(&file, &intent) {
+        if let Err(cleanup) = fs::remove_file(&file)
+            && cleanup.kind() != io::ErrorKind::NotFound
+        {
+            eprintln!("Skrynia initial intent cleanup: {cleanup}");
+        }
+        return Err(Failure::Clean(error));
+    }
     if let Err(error) = change() {
         if !intent.applied(root).map_err(Failure::Uncertain)? {
             fs::remove_file(&file).map_err(Failure::Uncertain)?;

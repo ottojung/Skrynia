@@ -16,15 +16,7 @@ impl Fixture {
         Self { path, state, sub }
     }
     pub fn read(&self) -> Notification {
-        serde_json::from_slice(
-            &fs::read(
-                self.path
-                    .join("state/push/outbox")
-                    .join(format!("{}.json", self.sub.id)),
-            )
-            .unwrap(),
-        )
-        .unwrap()
+        crate::read_outbox(&self.path).unwrap()[&self.sub.id].clone()
     }
 }
 impl Drop for Fixture {

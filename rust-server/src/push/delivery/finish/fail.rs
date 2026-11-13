@@ -1,5 +1,4 @@
-use crate::{Notification, PushFailure, Snapshot, State, Subscription, write_json};
-use std::io;
+use crate::{Notification, PushFailure, Snapshot, State, Subscription};
 pub fn retry(
     state: &State,
     data: &mut Snapshot,
@@ -7,7 +6,7 @@ pub fn retry(
     original: &Notification,
     sub: &Subscription,
     failure: PushFailure,
-) -> io::Result<()> {
+) -> bool {
     let attempts = current.attempts.max(original.attempts).saturating_add(1);
     let retired = failure != PushFailure::Retry || attempts >= state.push_config.max_attempts;
     if retired
@@ -17,8 +16,8 @@ pub fn retry(
             .get(&sub.id)
             .is_some_and(|now| super::retire::unchanged(now, sub))
     {
-        super::retire::remove(state, data, &sub.id)?;
-        return super::ack::remove(&state.dir, data, &sub.id);
+        super::ack::remove(data, &sub.id);
+        return true;
     }
     let mut next = current.clone();
     if retired {
@@ -28,13 +27,6 @@ pub fn retry(
         next.attempts = attempts;
         next.next_at = crate::push_now() + crate::push_delay(attempts);
     }
-    write_json(
-        &state
-            .dir
-            .join("state/push/outbox")
-            .join(format!("{}.json", sub.id)),
-        &next,
-    )?;
     data.push.outbox.insert(sub.id.clone(), next);
-    Ok(())
+    false
 }

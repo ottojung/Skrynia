@@ -16,7 +16,6 @@ pub fn abandoned(root: &Path) -> io::Result<()> {
         "state/grant-revocations",
         "state/push",
         "state/push-subs",
-        "state/push/outbox",
     ] {
         let dir = root.join(name);
         let mut removed = false;

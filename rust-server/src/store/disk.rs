@@ -6,14 +6,6 @@ pub fn sync_dir(dir: &Path) -> std::io::Result<()> {
     File::open(dir)?.sync_all()
 }
 pub fn write_atomic(path: &Path, bytes: &[u8], private: bool) -> std::io::Result<()> {
-    write_atomic_inner(path, bytes, private, true)
-}
-fn write_atomic_inner(
-    path: &Path,
-    bytes: &[u8],
-    private: bool,
-    sync_parent: bool,
-) -> std::io::Result<()> {
     let parent = path.parent().unwrap();
     let tmp = parent.join(format!(".skrynia-{}", crate::random_id()));
     let result = (|| {
@@ -30,19 +22,11 @@ fn write_atomic_inner(
         file.write_all(bytes)?;
         file.sync_all()?;
         fs::rename(&tmp, path)?;
-        if sync_parent {
-            sync_dir(parent)
-        } else {
-            Ok(())
-        }
+        sync_dir(parent)
     })();
     let _ = fs::remove_file(&tmp);
     result
 }
 pub fn write_json(path: &Path, value: &impl serde::Serialize) -> std::io::Result<()> {
     write_atomic(path, &serde_json::to_vec(value)?, true)
-}
-
-pub fn write_json_unsynced(path: &Path, value: &impl serde::Serialize) -> std::io::Result<()> {
-    write_atomic_inner(path, &serde_json::to_vec(value)?, true, false)
 }

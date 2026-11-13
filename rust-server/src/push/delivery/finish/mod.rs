@@ -1,19 +1,20 @@
 mod ack;
+mod apply;
 mod fail;
 #[cfg(test)]
 mod fixture;
 mod retire;
+mod single;
+pub use single::finish;
 #[cfg(test)]
 mod tests;
 use crate::{Notification, PushFailure, State, Subscription};
-use std::io;
-use std::sync::atomic::Ordering;
-pub fn finish(
-    state: &State,
-    original: &Notification,
-    sub: Option<&Subscription>,
-    outcome: Result<(), PushFailure>,
-) -> io::Result<()> {
+use std::{io, sync::atomic::Ordering};
+pub type DeliveryOutcome = (Notification, Option<Subscription>, Result<(), PushFailure>);
+pub fn batch(state: &State, results: Vec<DeliveryOutcome>) -> io::Result<()> {
+    if results.is_empty() {
+        return single::idle(state);
+    }
     let mut data = state
         .data
         .lock()
@@ -21,24 +22,26 @@ pub fn finish(
     if state.failed.load(Ordering::Acquire) {
         return Err(io::Error::other("recovery required"));
     }
-    let Some(current) = data.push.outbox.get(&original.subscription_id).cloned() else {
-        return Ok(());
-    };
-    let persisted = match (sub, outcome) {
-        (Some(sub), Err(failure)) => {
-            fail::retry(state, &mut data, &current, original, sub, failure)
-        }
-        (subscription, _) => {
-            if subscription.is_none() || current.generation == original.generation {
-                ack::remove(&state.dir, &mut data, &original.subscription_id)
-            } else {
-                Ok(())
+    let before = data.push.outbox.clone();
+    let mut retired = Vec::new();
+    let mut changed = false;
+    for result in results {
+        changed |= apply::change(state, &mut data, result, &mut retired);
+    }
+    let result = (|| {
+        if changed {
+            if let Err(error) = crate::persist_outbox(&state.dir, &data.push.outbox) {
+                data.push.outbox = before;
+                return Err(error);
             }
         }
-    };
-    // A failing ack must freeze subsequent completions before unlocking.
-    if persisted.is_err() {
+        for id in retired {
+            retire::remove(state, &mut data, &id)?;
+        }
+        Ok(())
+    })();
+    if result.is_err() {
         state.failed.store(true, Ordering::Release);
     }
-    persisted
+    result
 }

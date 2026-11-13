@@ -1,3 +1,4 @@
+mod commit;
 mod deliver;
 mod dispatch;
 mod select;
@@ -34,8 +35,9 @@ pub async fn run(state: Arc<State>) {
             let state = Arc::clone(&state);
             async move { deliver::process(state, entry).await }
         });
-        if !dispatch::run(work, state.push_config.concurrency).await {
-            eprintln!("Skrynia push delivery worker panicked");
+        let (outcomes, healthy) = dispatch::run(work, state.push_config.concurrency).await;
+        if !commit::completed(&state, outcomes).await || !healthy {
+            eprintln!("Skrynia push delivery worker or persistence failure");
             state
                 .failed
                 .store(true, std::sync::atomic::Ordering::Release);
