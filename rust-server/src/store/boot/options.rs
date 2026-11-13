@@ -1,4 +1,5 @@
 mod length;
+mod public;
 use std::io;
 use std::path::PathBuf;
 pub struct Config {
@@ -15,14 +16,7 @@ pub fn read() -> io::Result<Config> {
         .into();
     let public =
         std::env::var("SKRYNIA_URL").map_err(|_| io::Error::other("SKRYNIA_URL required"))?;
-    let url: axum::http::Uri = public.parse().map_err(io::Error::other)?;
-    if !["http", "https"].contains(&url.scheme_str().unwrap_or(""))
-        || url.query().is_some()
-        || url.authority().is_none()
-        || public.contains('#')
-    {
-        return Err(io::Error::other("invalid SKRYNIA_URL"));
-    }
+    let base = public::base(&public)?;
     let max_key_length = length::key()?;
     let max_object = std::env::var("SKRYNIA_MAX_OBJECT_SIZE")
         .ok()
@@ -41,7 +35,7 @@ pub fn read() -> io::Result<Config> {
     Ok(Config {
         public,
         dir,
-        base: url.path().trim_end_matches('/').into(),
+        base,
         max_object,
         max_key_length,
         max_buffered,

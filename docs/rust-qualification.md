@@ -174,3 +174,13 @@ commit, and `/version` returns the effective values. An incomplete/invalid
 pair refuses to start. The Rust protocol smoke test exercises a populated
 release pair and an invalid commit. These flags identify a build; they are
 not proof of its provenance without trusted CI/image signing.
+
+### Public URL normalization parity
+
+The Rust server now parses `SKRYNIA_URL` with WHATWG-compatible URL semantics,
+matching the Node reference on case-insensitive HTTP(S) schemes, dot segments
+(including percent-encoded `.` / `..`), empty search/hash delimiters, and
+trailing slashes. It rejects relative URLs and nonempty search/hash values.
+A live persisted-state smoke test starts Rust with an encoded parent directory
+in its configured public path and verifies that requests succeed under the
+normalized mount point. Unit tests cover valid and invalid public URLs.

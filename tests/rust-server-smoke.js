@@ -234,6 +234,12 @@ async function run() {
     assert.equal((await request(p,'POST','/store/abcd','yes',user)).status,201);
     assert.equal((await request(p,'GET','/health')).status,200);
     await stop(server);server=undefined;
+    // Node's WHATWG URL normalizes escaped dot segments before route mounting.
+    server=await start(binary,[],dir,p,{SKRYNIA_URL:
+      `http://127.0.0.1:${p}/extra/%2e%2e/platform/`});
+    assert.equal((await request(p,'GET','/health')).status,200);
+    assert.equal((await request(p,'GET','/store/team.a')).body.toString(),'member');
+    await stop(server);server=undefined;
     const releaseCommit='a'.repeat(40);
     server=await start(binary,[],dir,p,{SKRYNIA_VERSION:'preview-1',SKRYNIA_COMMIT:releaseCommit});
     assert.deepEqual((await request(p,'GET','/version')).json,
