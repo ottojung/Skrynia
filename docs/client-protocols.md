@@ -31,8 +31,7 @@ application-specific server code, or private read operation.
 **Byte-content preconditions.** PUT and DELETE can require the SHA-256
 of the current object's bytes using `X-Skrynia-If-SHA256`. The digest is
 64 lowercase hexadecimal characters and may be computed from bytes read
-through **any** static server, or from Skrynia's browser client
-`meta.sha256`. Skrynia's own GET/HEAD ETag is `"<sha256>"`, serving as
+through **any** static server. Skrynia's own GET/HEAD ETag is `"<sha256>"`, serving as
 an HTTP cache validator; external static servers may use their own ETags.
 `POST` rejects existing keys, and `PUT` requires an existing key.
 
@@ -54,8 +53,8 @@ A returned digest is not a guarantee that a write happened only once.
    provenance and transition rules they verify. Detecting invalid data is not
    the same as preventing its publication, overwriting, deletion or starvation.
 
-Do not call a client protocol secure merely because its JavaScript performs
-validation: clients can modify or bypass their own JavaScript. Security must
+Do not call a client protocol secure merely because a cooperating client performs
+validation: untrusted clients can modify or bypass their own checks. Security must
 come from **Skrynia-enforced authority boundaries** or **independent
 verification of accepted data**.
 

@@ -1,18 +1,23 @@
-FROM node:20-alpine
+FROM docker.io/library/rust:1.93-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /work
+COPY Cargo.toml Cargo.lock ./
+COPY rust-server/Cargo.toml rust-server/Cargo.toml
+COPY rust-server/src/ rust-server/src/
+RUN cargo build --locked --release -p skrynia-server
+
+FROM docker.io/library/debian:bookworm-slim
 ARG SKRYNIA_VERSION=development
 ARG SKRYNIA_COMMIT=development
-# flock provides the kernel-backed single-writer lock.
-RUN apk add --no-cache util-linux \
-    && mkdir -p /var/lib/skrynia \
-    && chown node:node /var/lib/skrynia
-WORKDIR /app/src
-COPY package.json package-lock.json /app/
-RUN npm ci --omit=dev --prefix /app && npm cache clean --force
-COPY src/ /app/src/
-COPY scripts/root-credentials.js /app/scripts/root-credentials.js
-RUN printf '%s\n' "$SKRYNIA_VERSION" > /app/VERSION \
-    && printf '%s\n' "$SKRYNIA_COMMIT" > /app/COMMIT
+ENV SKRYNIA_VERSION=${SKRYNIA_VERSION}
+ENV SKRYNIA_COMMIT=${SKRYNIA_COMMIT}
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+RUN groupadd -g 1000 skrynia && useradd -u 1000 -g 1000 -M skrynia \
+    && mkdir -p /var/lib/skrynia && chown skrynia:skrynia /var/lib/skrynia
+COPY --from=build /work/target/release/skrynia-server /usr/local/bin/skrynia-server
+USER 1000:1000
 ENV SKRYNIA_HOST=0.0.0.0
-USER node
 EXPOSE 17380
-ENTRYPOINT ["node", "/app/src/server.js"]
+ENTRYPOINT ["/usr/local/bin/skrynia-server"]

@@ -1,4 +1,3 @@
-mod legacy;
 mod staging;
 use std::fs;
 use std::io;
@@ -27,9 +26,7 @@ pub fn abandoned(root: &Path) -> io::Result<()> {
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             let file_name = entry.file_name();
-            if file_name
-                .to_str()
-                .is_some_and(|file| generated(file) || legacy::generated(name, file))
+            if file_name.to_str().is_some_and(|file| generated(file))
                 && entry.file_type()?.is_file()
             {
                 fs::remove_file(entry.path())?;

@@ -1,197 +1,87 @@
-# Running Skrynia
+# Operating Skrynia
 
-Skrynia has one HTTP server and one authoritative data directory.
-The HTTP API does not contain special administrative endpoints.
+Skrynia runs one Rust HTTP server over one authoritative filesystem directory.
+It never interprets object contents as executable application instructions.
 
 ## Configuration
 
-| Variable | Default | Purpose |
+| Environment variable | Default | Purpose |
 | --- | --- | --- |
-| SKRYNIA_URL | required | Canonical absolute HTTP API URL, optionally including a path |
-| SKRYNIA_PORT | 17380 | HTTP listen port |
-| SKRYNIA_HOST | 127.0.0.1 | Listener bind address; Docker image defaults to 0.0.0.0 for port mapping |
-| SKRYNIA_DATA_DIR | /var/lib/skrynia | Persistent object and private authority state |
-| SKRYNIA_MAX_KEY_LENGTH | 256 | Max length of each object identifier |
-| SKRYNIA_MAX_OBJECT_SIZE | 10485760 | Max bytes per uploaded value |
-| SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES | 41943040 | Aggregate buffered upload chunks per process |
-| SKRYNIA_MAX_CONNECTIONS | 512 | Maximum accepted HTTP connections |
-| SKRYNIA_PUSH_SUBJECT | SKRYNIA_URL | Web Push VAPID contact |
-| SKRYNIA_PUSH_SEND_TIMEOUT_MS | 10000 | Delivery timeout in milliseconds |
-| SKRYNIA_PUSH_CONCURRENCY | 8 | Maximum concurrent Web Push deliveries |
-| SKRYNIA_PUSH_MAX_ATTEMPTS | 12 | Failed delivery attempts before retiring a subscription |
-| SKRYNIA_PUSH_ALLOWED_HOSTS | empty (unrestricted public HTTPS hosts) | Optional comma-separated exact hostname allowlist for Web Push |
-| SKRYNIA_SOCKET_IDLE_TIMEOUT_MS | 30000 | Close HTTP sockets after this many milliseconds of inactivity |
+| `SKRYNIA_URL` | required | Public absolute HTTP URL, including optional path prefix |
+| `SKRYNIA_DATA_DIR` | `/var/lib/skrynia` | Persistent object and private authority state |
+| `SKRYNIA_HOST` | `127.0.0.1` | Listener interface |
+| `SKRYNIA_PORT` | `17380` | Listener port |
+| `SKRYNIA_MAX_KEY_LENGTH` | `256` | Maximum flat key length |
+| `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Maximum object bytes |
+| `SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES` | `41943040` | Aggregate upload-buffer budget |
+| `SKRYNIA_MAX_CONNECTIONS` | `512` | Active connection limit |
+| `SKRYNIA_SOCKET_IDLE_TIMEOUT_MS` | `30000` | Idle client timeout |
+| `SKRYNIA_PUSH_CONCURRENCY` | `8` | Parallel notification deliveries |
+| `SKRYNIA_PUSH_SEND_TIMEOUT_MS` | `10000` | Notification request timeout |
+| `SKRYNIA_PUSH_MAX_ATTEMPTS` | `12` | Retry attempts before retirement |
+| `SKRYNIA_PUSH_ALLOWED_HOSTS` | empty | Optional exact HTTPS endpoint host allowlist |
+| `SKRYNIA_PUSH_SUBJECT` | public URL | VAPID contact |
 
-Start the server after installing Node.js 20+, util-linux `flock`, and
-the Node dependencies. The server fails closed if `flock` is unavailable:
-
-```sh
-npm ci
-SKRYNIA_DATA_DIR="$HOME/.local/share/skrynia" \
-SKRYNIA_URL="http://127.0.0.1:17380" \
-node src/server.js
-```
-
-The initial startup creates a private, durable root grant record.
-To retrieve its ID and issuer credential **on the host**, run:
+Use the root-credential CLI on the authorized host only:
 
 ```sh
-SKRYNIA_DATA_DIR="$HOME/.local/share/skrynia" node scripts/root-credentials.js
+SKRYNIA_DATA_DIR=/var/lib/skrynia skrynia-server root-credentials
 ```
 
-This displays a live bearer secret; use only on an authorized terminal.
-The record's plaintext issuer secret is stored only on the host in
-`state/grants/<root-grant-id>.json` (0600); the containing directory is
-0700. Root revocation removes this file. On the next startup, Skrynia
-creates a new root over all surviving object data.
+This command only reads the private root grant record. User and issuer
+credentials must never be logged or placed in public objects.
 
-Skrynia's single writer process uses synchronous filesystem fsync
-operations to preserve durability. Consequently, high write rates can
-delay reads and push deliveries on its event loop. Benchmark on the
-target storage medium and apply request rate limits at the reverse proxy
-before exposing the service to high-volume anonymous traffic.
+## Filesystem and authority
 
-Skrynia acquires an exclusive kernel advisory lock on
-`state/writer.lock` before accessing persistent grants or objects. Another
-instance using the same directory fails startup. The lock releases after
-normal shutdown, or automatically on process death; leave the lock file in
-place, since removing a locked inode invalidates mutual exclusion. All
-instances must share a filesystem with reliable Linux `flock` semantics
-(including when mounted into containers). Store data on a persistent volume
-and never run competing writers.
-Back up the directory consistently, including `state/` and `store/`.
-Restore private credentials and object files together when recovering state.
+`store/` contains public, byte-preserving regular files. Everything under
+`state/` and `store-tmp/` is private. Root and grant records, subscription
+state, transaction intents, and notification outboxes must be backed up together.
 
-## Container and network security
+The server holds an exclusive kernel writer lock in
+`state/writer.lock`. Leave the lock inode in place across restarts. A
+second server using the same directory must refuse startup. Every required
+state directory must be a real directory, never a symlink. Public files are
+opened without following symlinks. Nonregular filesystem entries fail closed.
 
-The host process defaults to listening only on `127.0.0.1`. The Docker
-image binds to `0.0.0.0` inside its container, runs as the unprivileged
-`node` user (UID/GID 1000), and includes the `flock` utility. Give that
-user write access to `SKRYNIA_DATA_DIR`; named volumes inherit the image's
-directory ownership, while bind mounts must be owned or writable by
-UID 1000. If a persistent volume is owned by another UID, stop all
-writers and set its ownership to UID/GID 1000 before starting Skrynia.
-The root filesystem can be read-only:
+Object creation and replacement are journaled. A process interruption can
+leave an incomplete intent, which must be replayed on the next startup.
+Never manually discard transaction records.
 
-```sh
-docker run --name skrynia --read-only --tmpfs /tmp \
-  -p 127.0.0.1:17380:17380 \
-  -v skrynia-data:/var/lib/skrynia \
-  -e SKRYNIA_URL=http://127.0.0.1:17380 \
-  ghcr.io/ottojung/skrynia:latest
-```
+## Container and reverse proxy
 
-Images are built and smoke-tested only after Node 20/22 tests pass.
-Publication to the registry happens after the container smoke test and
-includes an image tag derived from the full source commit SHA.
+The container runs under UID/GID 1000. Give that UID write permissions to
+the persistent mounted data directory. A read-only root filesystem with a
+writable data mount is supported.
 
-Use HTTPS and a reverse proxy in public deployments. Never expose private
-grant credentials or `state/`. Authorized API requests use explicit
-`Authorization: Bearer` tokens rather than cookies.
+Terminate HTTPS at a reverse proxy, apply rate and connection limits, and
+restrict access to private filesystem paths. The example nginx configuration
+serves separate publisher origins with `disable_symlinks on` and dedicated
+API routing. Different publishers cannot be isolated merely by key prefixes.
+Use independent hostnames to prevent browser-origin privilege sharing.
 
-Web Push uses HTTPS endpoints with no embedded credentials. At connection
-time, Skrynia pins DNS resolution to public routable IP addresses, rejecting
-loopback and private services. Enforce an outbound firewall as defense in
-depth. `SKRYNIA_PUSH_SEND_TIMEOUT_MS` sets the delivery timeout, and
-`SKRYNIA_PUSH_CONCURRENCY` (default 8) bounds simultaneous sends.
+Only public GET/HEAD responses may be served through an independent static
+file server; mutation and grant endpoints require the Rust service.
+Static validators may differ from Skrynia's quoted SHA-256 ETag. Conditional
+writes therefore use a digest of the observed bytes.
 
-`SKRYNIA_PUSH_ALLOWED_HOSTS`, when configured, restricts subscription
-endpoints to a comma-separated list of **exact** public HTTPS hostnames,
-for example `updates.push.services.mozilla.com,fcm.googleapis.com`.
-Existing subscriptions outside a newly applied allowlist are retired
-without connecting to their endpoints. Other failures back off
-exponentially (to at most 30 minutes), and after
-`SKRYNIA_PUSH_MAX_ATTEMPTS` failures the subscription is removed.
-The client must register a fresh subscription if it wants notifications
-again. New writes do not reset failure counts or backoff.
+## Notifications
 
-A socket inactivity timeout protects against completely idle readers.
-Slow readers that continue making progress and CPU-intensive requests
-still require front-end rate limiting and reverse-proxy controls;
-connection limits alone are not a full denial-of-service defense.
+Web Push uses authenticated VAPID and HTTPS. Delivery rejects local, private,
+special-use and unresolved destinations. Configure an outbound firewall as
+defense in depth. Pending generations are durable and can coalesce; receipt
+can be duplicated. A removed or exhausted endpoint is retired.
 
-## Filesystem and static serving
+## Backup and restore
 
-- `store/{key}`: public raw object files, mode 0644.
-- `store-tmp/`: staging files, private.
-- `state/grants/`: private grant records and root issuer credential.
-- `state/push-subs/`: private Web Push subscription records.
-- `state/push/`: VAPID key and persistent delivery queue.
-- `state/store-transactions/`: recoverable object mutation intents.
-- `state/grant-revocations/`: recoverable subtree revocation intents.
+A consistent backup includes `store/`, `store-tmp/`, and all of `state/`.
+Stop the writer before taking an offline snapshot, preserve owner/modes,
+and verify the copy before replacing a deployment. Restore the complete
+directory as a unit and restart only one writer. Do not delete the writer-lock
+file or attempt to manually complete an interrupted journal.
 
-Only serve `store/` through a public static web server, never `state/`.
-If using nginx, enable `disable_symlinks on` for every public store
-origin (as in `examples/nginx-origins.conf`). The origin example may be
-checked using real nginx with `SKRYNIA_NGINX=/path/to/nginx make nginx-origin-test`.
-This prevents filesystem symlinks from circumventing publisher prefixes;
-no untrusted process should ever write directly into `store/`.
-Do not allow untrusted actors to create symlinks or special files in
-`store/`. The Rust preview rejects such files in its built-in public reader;
-nginx or other independent static servers must have their own symlink policy.
-File names have no separators and never begin with a dot.
-nginx or any other static server can serve `GET /store/{key}` directly
-from the public directory with its own HTTP cache validators, MIME mapping
-and cache policy. Skrynia's GET/HEAD sends `ETag: "<sha256>"` computed
-from the bytes for caching. A conditional PUT/DELETE uses
-`X-Skrynia-If-SHA256` computed from the bytes read through any server.
+## Validation
 
-Object files retain filesystem-provided modification times.
-Create/replace journals record SHA-256 of the resulting bytes for recovery.
-
-The standalone server streams reads from already-open file descriptors,
-bounds in-progress upload memory and connections, and defaults to 1000 keys
-per listing page. Use `next` / `after` to retrieve further pages.
-
-Skrynia is not tied to nginx; its own HTTP server implements public reads.
-Static HTML and JavaScript served to browsers from mutually untrusted
-publishers must use separate origins/hostnames. Key scopes do not provide
-browser security isolation.
-
-Push traffic and public reads are not quota-metered by grants. Grant quotas
-apply to storage objects, grant metadata and push subscriptions. The server
-also has bounded request size, number of subscriptions and notification queue
-capacity as independent resource safeguards.
-
-## Public hosting and origin isolation
-
-**Production requirement:** use a reverse proxy with request rate limits
-for the public API and anonymous object reads. Skrynia uses asynchronous
-file hashing on its own GET/HEAD path, but durable writes still perform
-synchronous filesystem synchronization; excessive traffic can delay
-mutations and push notifications. Prefer a static web server for high-volume
-object reads. Choose rate and connection limits for your storage device.
-
-Independent publishers whose JavaScript is mutually untrusted must use
-distinct HTTPS browser origins, not just different object-key prefixes or
-URL paths. Prefix grants control mutation authority; they do not separate
-DOM access, localStorage, or cookies.
-
-[`examples/nginx-origins.conf`](../examples/nginx-origins.conf) shows nginx
-hosts `alice.apps.example.org` and `bob.apps.example.org` mapping their
-respective flat-key prefixes directly to public store files, plus an
-independent `api.apps.example.org` reverse proxy to the Skrynia HTTP API.
-Supply certificates and hostnames and configure
-`SKRYNIA_URL=https://api.apps.example.org/platform`. The API uses explicit
-bearer tokens; never embed root credentials in untrusted pages. Objects
-remain publicly readable regardless of which publisher serves them.
-The example uses `Cache-Control: no-store` so mutable keys are fetched
-without relying on static-server timestamp validators. Immutable
-content-addressed assets can use longer cache lifetimes in deployments
-that keep their bytes unchanged.
-
-Use `node benchmarks/storage.js` to measure read, write and grant overhead
-on the actual filesystem before choosing production rate limits. The
-benchmark starts an isolated temporary server and deletes its data. Set
-`SKRYNIA_BENCH_OBJECTS`, `SKRYNIA_BENCH_GRANTS`, `SKRYNIA_BENCH_READS`,
-`SKRYNIA_BENCH_WRITES` and `SKRYNIA_BENCH_BYTES` to compare workload
-sizes. Results report throughput, p50/p95 request latency and event-loop
-delay, not universal performance guarantees.
-
-## Deployment by clients
-
-An application publisher can upload static objects, arrange a versioned
-immutable manifest, and CAS a root pointer to publish a complete release.
-Serving HTML with standard MIME types requires only a conventional static
-server configuration. This is a client protocol; the storage server is
-unaware of application identities, builds, releases or rollbacks.
+`make test` runs default Rust formatting verification, structural linting,
+strict Clippy, unit tests, and independent HTTP integration tests.
+`make docker-build` produces the unprivileged release container.
+See [verification](verification.md) for qualification evidence and limits.

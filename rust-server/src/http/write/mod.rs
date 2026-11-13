@@ -10,7 +10,6 @@ use std::sync::Arc;
 pub async fn mutation(state: Arc<State>, raw_name: String, req: Request) -> Result<Response> {
     let key = auth::key(&raw_name, state.max_key_length)?;
     let expected = auth::precondition(req.headers(), req.method())?;
-    // Node DELETE reports a nonexistent object before reading credentials.
     // POST and PUT instead reject unauthorized upload bodies before buffering.
     if req.method() == Method::DELETE {
         preflight::exists(&state, &key)?;

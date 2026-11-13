@@ -2,11 +2,20 @@ mod error;
 mod grants;
 mod http;
 mod net;
+mod operator;
 mod push;
 mod store;
 
 #[tokio::main]
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args().skip(1);
+    if let Some(action) = args.next() {
+        if action != "root-credentials" || args.next().is_some() {
+            return Err("usage: skrynia-server [root-credentials]".into());
+        }
+        operator::run()?;
+        return Ok(());
+    }
     let server = store::State::open()?;
     let address = std::env::var("SKRYNIA_HOST").unwrap_or_else(|_| "127.0.0.1".into());
     let port = std::env::var("SKRYNIA_PORT").unwrap_or_else(|_| "17380".into());

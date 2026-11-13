@@ -1,14 +1,11 @@
 use super::abandoned;
 use std::fs;
 #[test]
-fn clears_only_verified_abandoned_node_and_rust_staging_files() {
+fn clears_only_verified_abandoned_staging_files() {
     let root = std::env::temp_dir().join(format!("skrynia-stage-{}", crate::random_id()));
     let folder = root.join("store-tmp");
     fs::create_dir_all(&folder).unwrap();
-    let names = [
-        format!("obj.123.{}", "a".repeat(24)),
-        format!("obj.456.{}", "b".repeat(32)),
-    ];
+    let names = [format!("obj.456.{}", "b".repeat(32))];
     for name in &names {
         fs::write(folder.join(name), b"abandoned").unwrap();
     }

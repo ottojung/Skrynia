@@ -10,7 +10,7 @@ fn generated(name: &str) -> bool {
     };
     !pid.is_empty()
         && pid.bytes().all(|b| b.is_ascii_digit())
-        && (id.len() == 24 || id.len() == 32)
+        && id.len() == 32
         && id
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))

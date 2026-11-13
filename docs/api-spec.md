@@ -86,7 +86,7 @@ the mutable value itself and verify it through their protocol.
 ### Scoped key listing
 
 `GET /store?locations=alice.*` returns JSON like
-`{"keys":["alice.app.js","alice.index.html"]}`. The requester supplies
+`{"keys":["alice.app.css","alice.index.html"]}`. The requester supplies
 its user token in `Authorization: Bearer`; the server checks the `list` operation
 and requires `locations` to be a non-strict subset of the token's grant
 scope. Exact matches, prefix matchers, `*` (all), and the empty matcher
@@ -244,7 +244,7 @@ to publicly routable addresses.
 
 ## Other endpoints
 
-`GET /health`, `GET /version`, and `GET /client/skrynia.js` are public.
+`GET /health` and `GET /version` are public.
 
 For browser applications, the API provides
 `Access-Control-Allow-Origin: *`, CORS preflight (including

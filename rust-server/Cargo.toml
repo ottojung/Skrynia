@@ -17,7 +17,7 @@ libc = "0.2"
 form_urlencoded = "1.2"
 # Standards-based Web Push encoding, TLS, and verified VAPID keys.
 web-push = { version = "0.11", default-features = false }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 openssl = "0.10"
 base64 = "0.22"
 url = "2"

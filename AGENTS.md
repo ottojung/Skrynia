@@ -6,9 +6,9 @@ The implementation must fit in a maintainer's head. Prefer small explicit module
 
 ## Development Rules
 
-- Use shell (sh) for scripts. Rust is the target storage server, while the existing Node.js server remains the production and protocol reference until full Rust qualification; the browser client remains JavaScript.
+- Keep implementation, administration, tests and benchmarks in Rust. Documentation describes only the current system.
 - Every Rust source (including lint/test code) must have at most 50 nonblank, noncomment code lines. Every directory under Rust source/lint/test trees may have at most 10 direct entries, files and directories combined. Local Rust imports must stay within sibling modules. Apply unmodified default `rustfmt`, and enforce the rules mechanically with Ivanka's source linter, `cargo fmt --all -- --check`, and strict Clippy checks.
-- Do not replace the production binary, Docker release image, or deployed data without full protocol, crash, push, security, and performance acceptance tests.
+- Test changes against isolated temporary data. Never modify deployed data as part of development or CI. Use reversible releases and explicit operational review.
 - Keep dependencies minimal. Prefer standard-library facilities.
 - Before committing, run the test suite and ensure it passes.
 

@@ -1,6 +1,6 @@
 use super::base;
 #[test]
-fn whatwg_public_url_normalization_matches_node() {
+fn public_url_paths_are_normalized() {
     let cases = [
         ("http://example.org", ""),
         ("HTTP://Example.Org/a//b///", "/a//b"),

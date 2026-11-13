@@ -1,5 +1,5 @@
 use std::io;
-// Match Node's WHATWG URL parsing, including dot-segment normalization.
+// Normalize public URL paths, including dot segments.
 pub fn base(input: &str) -> io::Result<String> {
     let url = url::Url::parse(input).map_err(|_| io::Error::other("invalid SKRYNIA_URL"))?;
     if !["http", "https"].contains(&url.scheme())

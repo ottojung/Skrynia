@@ -4,7 +4,7 @@ date: 2026/11/12
 source: @ottojung
 kind: requirement
 
-Skrynia's authoritative HTTP and persistence server shall be implemented in Rust, preserving all current storage, grant, quota, conditional byte-hash mutation, crash recovery, public static serving, Web Push, and privilege-boundary semantics. The Rust implementation must read existing Node.js-format state safely. Unsupported state must fail closed, never be ignored or discarded. Rust must not replace the production server before full external HTTP, persisted-state, push, crash, and concurrency qualification. All application meaning stays exclusively in clients.
+Skrynia's authoritative HTTP and persistence server shall be implemented exclusively in Rust. Preserve storage, grant, quota, conditional byte-hash mutation, crash recovery, public static serving, Web Push, and privilege-boundary semantics. Unsupported persistent state must fail closed, never be ignored or discarded. The server must pass HTTP, persistent-state, notification, crash and concurrency qualification. All application meaning stays exclusively in clients.
 
 $id-0381283944881954
 title: Rust source quality and verified throughput

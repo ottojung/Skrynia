@@ -1,210 +1,100 @@
 # Skrynia
 
-**A durable public object store with delegable, resource-bounded authority.**
+Skrynia is a durable public object store with delegable, resource-bounded
+authority, implemented entirely in Rust.
 
-Skrynia stores opaque bytes at named keys. Every object is publicly readable.
-Bearer-token grants separately authorize object creation, modification, and
-deletion, as well as key listing, delegation and subscriptions. A single global root grant
-provides all authority. Applications, websites, indexes, logs, and versioned
-releases are **client-side protocols** built on ordinary stored objects.
+Objects are opaque byte strings addressed by flat keys. Reads are public;
+authenticated, scoped grants independently authorize creation, modification,
+deletion, listing, delegation, and Web Push subscriptions. Skrynia implements no
+application-specific schemas, business logic, or privileged deployment API.
 
-Skrynia currently runs one production Node.js process. A Rust rewrite is under development on a separate branch. Neither executes application code.
-It has no application registry or privileged HTTP administration API.
+## Build and run
 
-**For public hosting:** mutually untrusted publishers need separate HTTPS
-browser origins. Prefix grants do not isolate JavaScript or browser storage.
-See the [nginx multi-origin example](examples/nginx-origins.conf) and
-[operational guidance](docs/operations.md).
-
-## Experimental Rust server (not production-ready)
-
-The Rust rewrite is tracked by [issue #84](https://github.com/ottojung/Skrynia/issues/84)
-and reviewed in its separate pull request. The existing Node.js implementation
-remains the **supported production server** until every compatibility gate passes.
-Do **not** deploy the experimental Rust binary against production data.
-
-For local development on **throwaway data**, install Rust and Node.js 20+, then:
+Install Rust 1.93 or newer, an OpenSSL development package, and pkg-config.
 
 ```sh
-npm ci
-cargo build --locked --package skrynia-server
-make rust-test
-SKRYNIA_DATA_DIR="$(mktemp -d)" SKRYNIA_URL=http://127.0.0.1:17380 \
-    target/debug/skrynia-server
-```
-
-The experimental binary implements public storage, grant APIs, SHA-256 CAS,
-Web Push subscriptions, durable notification coalescing, retry delivery and
-recovery. Its VAPID and subscription records interoperate with the existing
-Node.js server; its Push delivery path is not yet qualified against real push
-services, and complete failure/recovery and resource-limit parity remain open.
-Passing its interoperability smoke tests is **not** release qualification.
-[Rust qualification ledger](docs/rust-qualification.md),
-[offline migration and rollback checklist](docs/rust-cutover-runbook.md), and
-[reproducible Rust/Node performance measurements](docs/rust-benchmarks.md)
-are provided without weakening durability or claiming general superiority.
-The conventional `Dockerfile` and published image continue to run Node.js.
-`Dockerfile.rust` is an intentionally separate experimental build.
-
-## Start
-
-Requires Node.js 20+ and util-linux `flock` on the server host.
-
-```sh
-npm ci
+make test
+cargo build --locked --release --package skrynia-server
 export SKRYNIA_DATA_DIR="$HOME/.local/share/skrynia"
 export SKRYNIA_URL="http://127.0.0.1:17380"
-node src/server.js
+target/release/skrynia-server
 ```
 
-On startup Skrynia ensures a root grant exists, creating one if absent.
-The root has `locations: "*"`, all operations, and **unlimited** `maxBytes`
-and `maxObjects` (represented by JSON `null`). It is a normal,
-revocable grant. Revocation preserves object values; the next server start
-issues a fresh root and fresh issuer credential.
-
-The root's issuer token is stored **only in its private, mode-0600 grant file**
-alongside the root record. Retrieve the root ID and issuer token on the host:
+The server creates an unrestricted root grant if none exists. To inspect
+the root ID and issuer credential **on the authorized host**, run:
 
 ```sh
-node scripts/root-credentials.js
+SKRYNIA_DATA_DIR="$HOME/.local/share/skrynia" \
+    target/release/skrynia-server root-credentials
 ```
 
-The command reads `SKRYNIA_DATA_DIR`; treat its output as a secret.
-The container image runs as non-root UID 1000; mounted data directories
-must be writable by that user.
-There is no endpoint that reveals or rotates the root issuer token.
-Do not place this credential in browser JavaScript.
+The output is a secret JSON object with `id` and `issuerToken`.
+Never publish it or embed it in untrusted content. Root credentials remain
+in the private data directory, not in an HTTP endpoint.
 
-Issue a root user token with the issuer credential:
+## Basic HTTP operations
+
+Use the root issuer credential to obtain a separate user token:
 
 ```sh
 curl -fsS -X POST "$SKRYNIA_URL/grants/$ROOT_GRANT_ID/users" \
   -H "Authorization: Bearer $ROOT_ISSUER_TOKEN"
 ```
 
-## Use the store
-
-Store keys begin with an ASCII letter, digit, or underscore. Subsequent
-characters may also be dots, with any number of consecutive dots allowed.
-Slashes are not permitted.
-Examples include `index.html`, `alice.app.js`, `alice.settings.json`.
+With the resulting user token:
 
 ```sh
 curl -fsS -X POST "$SKRYNIA_URL/store/alice.index.html" \
   -H "Authorization: Bearer $ROOT_USER_TOKEN" \
-  --data-binary '<h1>Hello</h1>'
+  --data-binary '<h1>Hello from Skrynia</h1>'
 
-# Anybody can read it. The response includes an ETag.
 curl -i "$SKRYNIA_URL/store/alice.index.html"
 ```
 
-`POST` creates only if absent and requires `create`; `PUT` replaces an
-existing object and requires `modify`; `DELETE` requires `delete`.
-`PUT` and `DELETE` accept `X-Skrynia-If-SHA256` for byte-content
-compare-and-swap. Pass the 64-character lowercase SHA-256 of the current
-object bytes; a mismatch returns 412 and a malformed value returns 400.
-Any static file server can provide the bytes used to compute this digest,
-regardless of its own HTTP cache validators.
+`POST` creates only if absent; `PUT` updates existing keys; `DELETE`
+removes them. `PUT` and `DELETE` optionally accept
+`X-Skrynia-If-SHA256` with the current lowercase SHA-256 of the bytes.
+A mismatch returns HTTP 412. The HTTP reader provides a quoted SHA-256
+ETag and supports conditional requests, HEAD, and single byte ranges.
 
-Skrynia's GET/HEAD sends a quoted SHA-256 ETag for cache validation and
-supports `If-None-Match`, `If-Range`, HEAD and byte ranges. Listings
-support `limit` / `after` pagination.
-Grants can delegate these permissions independently—for example, `create`
-without `modify` or `delete` lets a contributor add new keys but not
-rewrite or remove existing entries.
-
-A grant with `list` can enumerate all objects in any matching subrange:
-
-```sh
-curl -fsS "$SKRYNIA_URL/store?locations=alice.*" \
-  -H "Authorization: Bearer $ROOT_USER_TOKEN"
-```
-
-Results are sorted keys, regardless of who created them. A listing needs
-a user token with `list` and its matcher must be a subset of that grant's
-`locations`. It can be delegated without granting mutation access. For
-participant cleanup, give each participant a separate prefix: listing
-by prefix does not establish who created a key.
-
-Skrynia serves standard extensions with their normal HTTP MIME types,
-including HTML, JavaScript, CSS, and JSON. nginx or another configured static
-server may serve the same object files directly from
-`SKRYNIA_DATA_DIR/store/`. Keep everything else in the data directory private.
-If hosting **mutually untrusted HTML applications**, isolate their browser
-origins using separate hostnames; key prefixes aren't browser sandboxes.
-
-### Delegate a subspace
+To delegate a limited key prefix:
 
 ```sh
 curl -fsS -X POST "$SKRYNIA_URL/grants" \
   -H "Authorization: Bearer $ROOT_USER_TOKEN" \
   -H 'Content-Type: application/json' \
-  --data '{"locations":"alice.*","operations":["create","modify","delete","list","delegate","subscribe"],
-           "maxBytes":1048576,"maxObjects":100}'
+  --data '{"locations":"alice.*","operations":["create","modify","delete","list"],"maxBytes":1048576,"maxObjects":100}'
 ```
 
-The response returns a new grant ID and **issuer token**. The issuer uses
-`POST /grants/{id}/users` to issue independent user tokens. User tokens
-perform the granted operations; issuer tokens issue/revoke credentials and
-revoke grant subtrees. Each child may narrow its parent's key scope and
-operations. Its quota is evaluated on writes through its grant or descendants.
-No object belongs to a grant, and revoking a grant never deletes objects.
+Child grants can narrow scope and operations but never extend them. Creating
+a child returns its issuer credential, which separately issues user tokens.
+Revoking a grant invalidates descendants and subscriptions, but preserves
+public object bytes. Each grant's quotas include its scoped storage and
+delegated metadata.
 
-A client can publish a website, index, or immutable manifest within its scope.
-An external deployment tool can implement atomic publication by CAS on a
-single small root object, without server-side deployment logic.
+## Hosting and notifications
 
-### Web Push
+Objects are ordinary files under `SKRYNIA_DATA_DIR/store/`. A static
+server can serve them directly; never publish `state/`. Independent,
+mutually untrusted publishers require **separate HTTPS browser origins**.
+See [the nginx example](examples/nginx-origins.conf).
 
-A user token with `subscribe` authority can register interest in any
-location scope contained in its own grant:
+Web Push subscriptions are grant-scoped and use a separate update capability.
+Notifications carry a generic `changed` wake-up; recipients fetch current
+values. Delivery state persists across restarts and duplicate wake-ups are
+possible. The server validates public HTTPS endpoints and pins DNS resolution.
 
-```json
-{
-  "locations": "alice.*",
-  "events": ["create", "replace", "delete"],
-  "endpoint": "https://push-service.example/subscription",
-  "keys": {"p256dh": "browser-p256dh", "auth": "browser-auth"}
-}
-```
-
-POST this to `/push/subscriptions` with `Authorization: Bearer`. The response
-contains a subscription ID and a separate capability for updating/removing
-that subscription. Skrynia sends a generic `changed` wake-up; clients fetch
-current values. Delivery attempts are durable and retryable, so duplicate
-wake-ups are possible; pending changes coalesce per subscription. Permanent
-failures and exhaustion of the retry budget retire the subscription.
-Each subscription consumes the sponsoring grant's quotas.
-
-## Architectural properties
-
-- **Shared memory:** Public objects are independently retrievable without
-  running application-specific backend code.
-- **CAS:** Byte-hash conditional mutation can serialize client-authored
-  logical transactions over immutable objects and a uniquely identified
-  mutable commit head.
-- **Delegation:** Grants constrain operations, location prefixes, and budgets.
-  Scoped `list` enables key discovery and delegated cleanup without giving
-  broader enumeration authority.
-- **Client protocols:** Applications define schemas, indexing, publication,
-  cryptographic validation, and computation outside Skrynia.
-- **One writer process:** An exclusive kernel file lock prevents multiple
-  Skrynia instances from owning a data directory. HTTP API mutations
-  are serialized; static readers can be served separately.
-
-Skrynia supports CORS for bearer-authenticated browser requests from other
-origins. It does not use cookie authentication.
-
-See the [HTTP API](docs/api-spec.md),
-[grant semantics](docs/intent-location-authority.md),
-[client-constructed protocols](docs/client-protocols.md), and
-[operations](docs/operations.md).
-
-## Development
+The container image runs as UID 1000. Build and check it with:
 
 ```sh
-make test
+make docker-build
 ```
+
+## Documentation
+
+The [HTTP API](docs/api-spec.md), [grant semantics](docs/intent-location-authority.md),
+[client protocols](docs/client-protocols.md), [operations](docs/operations.md),
+and [verification](docs/verification.md) specify the current system.
+Intent Records in `docs/intent-records/` capture the live requirements.
 
 Skrynia is Free Software under **AGPL-3.0-or-later**.

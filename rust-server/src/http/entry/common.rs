@@ -20,16 +20,6 @@ pub fn public(path: &str, method: &Method) -> Option<Response> {
     match path {
         "/health" => Some(replies::ok(serde_json::json!({"ok":true}))),
         "/version" => Some(replies::ok(super::build::info())),
-        "/client/skrynia.js" => Some(
-            (
-                [
-                    ("content-type", "text/javascript"),
-                    ("cache-control", "no-cache"),
-                ],
-                include_str!("../../../../src/client.js"),
-            )
-                .into_response(),
-        ),
         _ => None,
     }
 }
@@ -45,4 +35,15 @@ pub fn failed(state: &crate::State) -> Option<Response> {
         )
         .into_response(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::public;
+    #[test]
+    fn only_server_health_and_version_are_public_utilities() {
+        let method = axum::http::Method::GET;
+        assert!(public("/health", &method).is_some());
+        assert!(public("/version", &method).is_some());
+    }
 }

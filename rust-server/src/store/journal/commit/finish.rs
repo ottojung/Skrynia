@@ -18,7 +18,7 @@ pub fn run(
         return Ok(true);
     }
     if let Err(error) = fs::remove_file(file).and_then(|_| sync_dir(dir)) {
-        // Push is already durably enqueued; an old intent can be replayed.
+        // Push is already durably enqueued; a pending intent can be replayed.
         eprintln!("Skrynia notification completed, journal cleanup pending: {error}");
         return Ok(true);
     }
