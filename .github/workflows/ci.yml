@@ -79,12 +79,15 @@ jobs:
           printf Alice > "$tmp/store/alice.index.html"
           printf Bob > "$tmp/store/bob.index.html"
           printf secret > "$tmp/private/key"
-          ln -s "$tmp/private/key" "$tmp/store/alice.leak"
+          printf cross > "$tmp/store/bob.secret.txt"
+          ln -s ../state/key "$tmp/store/alice.leak"
+          ln -s bob.secret.txt "$tmp/store/alice.cross"
           docker run --rm -d --name skrynia-static \
             -p 127.0.0.1:17443:443 \
             -v "$PWD/examples/nginx-origins.conf:/etc/nginx/conf.d/skrynia.conf:ro" \
             -v "$tmp/certs:/etc/nginx/certs:ro" \
-            -v "$tmp/store:/var/lib/skrynia/store:ro" nginx:stable
+            -v "$tmp/store:/var/lib/skrynia/store:ro" \
+            -v "$tmp/private:/var/lib/skrynia/state:ro" nginx:stable
           for i in $(seq 1 50); do
             if curl -kfsS --noproxy '*' \
               --resolve alice.apps.example.org:17443:127.0.0.1 \
@@ -103,6 +106,9 @@ jobs:
           test "$(curl -k -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
             --resolve alice.apps.example.org:17443:127.0.0.1 \
             https://alice.apps.example.org:17443/leak)" != 200
+          test "$(curl -k -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
+            --resolve alice.apps.example.org:17443:127.0.0.1 \
+            https://alice.apps.example.org:17443/cross)" != 200
       - name: Log in to registry
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: docker/login-action@v3
