@@ -1,15 +1,19 @@
-use super::{Kind, lock};
+use super::{Kind, check, lock};
 use crate::{Result, State};
 pub fn staged(
     state: &State,
     key: &str,
     kind: Kind,
     body: &[u8],
-    expected: Option<&str>,
     token: &str,
 ) -> Result<Option<super::super::staging::Staged>> {
     drop(lock::checked(
-        state, key, kind, body, expected, token, false,
+        state,
+        key,
+        kind,
+        body,
+        token,
+        check::Mode::Initial,
     )?);
     if kind == Kind::Delete {
         return Ok(None);

@@ -25,7 +25,7 @@ pub fn commit(
         sha256: digest,
         committed: false,
     };
-    write_json(&file, &intent).map_err(Failure::Uncertain)?;
+    write_json(&file, &intent).map_err(|error| Failure::initial(&file, error))?;
     if let Err(error) = change() {
         if !intent.applied(root).map_err(Failure::Uncertain)? {
             fs::remove_file(&file).map_err(Failure::Uncertain)?;

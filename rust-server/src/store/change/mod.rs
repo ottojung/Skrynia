@@ -18,8 +18,8 @@ impl State {
         token: &str,
     ) -> Result<bool> {
         // Preflight before I/O, then revalidate after parallel staging.
-        let staged = prepare::staged(self, key, kind, body, expected, token)?;
-        let mut data = lock::checked(self, key, kind, body, expected, token, true)?;
+        let staged = prepare::staged(self, key, kind, body, token)?;
+        let mut data = lock::checked(self, key, kind, body, token, check::Mode::Final(expected))?;
         let path = self.dir.join("store").join(key);
         let digest = (kind != Kind::Delete).then(|| crate::sha(body));
         let pending = journal::commit(
