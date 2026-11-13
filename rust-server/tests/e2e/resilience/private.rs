@@ -1,4 +1,4 @@
-use super::fixture::Server;
+use super::Server;
 use reqwest::{Method, StatusCode};
 use std::fs;
 #[tokio::test]
