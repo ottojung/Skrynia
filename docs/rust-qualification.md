@@ -222,6 +222,19 @@ and successful startup on an ordinary fresh directory. It runs from `rust-public
 `make rust-crash-test` and Rust preview CI. This is defense in depth,
 not permission for untrusted processes to modify the data directory.
 
+### External nginx static-origin symlink protection
+
+The public multi-origin nginx example now enables `disable_symlinks on` on
+both publisher virtual hosts. `make nginx-origin-test` exercises the actual
+example with real nginx using isolated loopback HTTP listeners and temporary
+objects. The test verifies independent Alice/Bob host routing, absence of
+cross-prefix asset retrieval, and refusal to follow public-store symlinks to
+private grant-like data or another publisher's object. It also checks nginx
+configuration syntax. On `marceline-dev`, nginx 1.28.0 passed this probe
+on 2026-11-13. This is not a test of production TLS certificates, actual
+reverse-proxy deployment, or third-party browser-origin isolation; those
+must still be reviewed on the final host configuration.
+
 ### Independently decryptable Web Push receipts
 
 A separate Rust test `signature::tests::receipt` decrypts the encrypted

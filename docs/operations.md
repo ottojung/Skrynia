@@ -121,6 +121,11 @@ connection limits alone are not a full denial-of-service defense.
 - `state/grant-revocations/`: recoverable subtree revocation intents.
 
 Only serve `store/` through a public static web server, never `state/`.
+If using nginx, enable `disable_symlinks on` for every public store
+origin (as in `examples/nginx-origins.conf`). The origin example may be
+checked using real nginx with `SKRYNIA_NGINX=/path/to/nginx make nginx-origin-test`.
+This prevents filesystem symlinks from circumventing publisher prefixes;
+no untrusted process should ever write directly into `store/`.
 Do not allow untrusted actors to create symlinks or special files in
 `store/`. The Rust preview rejects such files in its built-in public reader;
 nginx or other independent static servers must have their own symlink policy.

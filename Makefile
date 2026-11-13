@@ -57,3 +57,9 @@ rust-snapshot-test:
 	node tests/rust-offline-snapshot-test.js
 
 .PHONY: rust-snapshot-test
+
+# Real nginx integration probe; separate from the fast portable test suite.
+nginx-origin-test:
+	node tests/nginx-origins.js
+
+.PHONY: nginx-origin-test
