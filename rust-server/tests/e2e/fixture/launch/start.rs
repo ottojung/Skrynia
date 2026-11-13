@@ -1,15 +1,11 @@
-use std::fs;
-use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::time::Duration;
-pub struct Server {
-    pub home: PathBuf,
-    pub address: String,
-    pub client: reqwest::Client,
-    pub(super) child: Child,
-}
+use super::Server;
+use std::{
+    fs,
+    process::{Command, Stdio},
+    time::Duration,
+};
 impl Server {
-    pub async fn new() -> Self {
+    pub async fn attempt() -> Result<Self, String> {
         let home = std::env::temp_dir().join(format!("skrynia-e2e-{}", rand::random::<u64>()));
         fs::create_dir(&home).unwrap();
         let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -32,17 +28,16 @@ impl Server {
             child,
         };
         for _ in 0..100 {
-            assert!(
-                instance.child.try_wait().unwrap().is_none(),
-                "server exited during startup: {}",
-                fs::read_to_string(instance.home.join("startup.log")).unwrap_or_default()
-            );
-            let reply = instance.call(reqwest::Method::GET, "/health").send().await;
-            if reply.is_ok_and(|response| response.status().is_success()) {
-                return instance;
+            if instance.child.try_wait().unwrap().is_some() {
+                return Err(fs::read_to_string(instance.home.join("startup.log"))
+                    .unwrap_or_else(|error| error.to_string()));
+            }
+            let response = instance.call(reqwest::Method::GET, "/health").send().await;
+            if response.is_ok_and(|r| r.status().is_success()) {
+                return Ok(instance);
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-        panic!("server never became healthy");
+        Err("server never became healthy".into())
     }
 }
