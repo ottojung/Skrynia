@@ -132,3 +132,11 @@ test replaces an outbox JSON path with a directory to produce an actual
 filesystem error, confirms the fail-closed transition and verifies that a
 second completion is refused. Recovery still replays the unacknowledged
 notification at least once after restart.
+
+### Startup-only staging cleanup
+
+The writer lock protects startup removal of recognized abandoned Node/Rust
+staging files. Background journal replay no longer repeats that sweep or
+syncs an empty journal directory every minute; it only syncs the transaction
+directory after removing actual journal records. The startup clean/replay
+ordering and process-crash tests remain in place.

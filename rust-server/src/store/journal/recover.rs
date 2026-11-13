@@ -5,8 +5,8 @@ use std::io;
 use std::path::Path;
 
 pub fn recover(root: &Path, mut notify: impl FnMut(&Intent) -> io::Result<()>) -> io::Result<()> {
-    super::cleanup::cleanup_temp(root)?;
     let dir = root.join("state/store-transactions");
+    let mut removed = false;
     for item in fs::read_dir(&dir)? {
         let file = item?.path();
         let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
@@ -26,8 +26,9 @@ pub fn recover(root: &Path, mut notify: impl FnMut(&Intent) -> io::Result<()>) -
             notify(&intent)?;
         }
         fs::remove_file(file)?;
+        removed = true;
     }
-    sync_dir(&dir)
+    if removed { sync_dir(&dir) } else { Ok(()) }
 }
 
 #[cfg(test)]

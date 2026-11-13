@@ -1,5 +1,4 @@
 use super::disk;
-mod cleanup;
 mod commit;
 mod intent;
 mod recover;
