@@ -1,4 +1,5 @@
 mod batch;
+mod dispatch;
 mod select;
 use crate::State;
 use std::sync::Arc;
@@ -29,8 +30,10 @@ pub async fn run(state: Arc<State>) {
                 return;
             }
         };
-        for chunk in entries.chunks(state.push_config.concurrency) {
-            batch::process(&state, chunk).await;
-        }
+        let work = entries.into_iter().map(|entry| {
+            let state = Arc::clone(&state);
+            async move { batch::process(&state, &[entry]).await }
+        });
+        dispatch::run(work, state.push_config.concurrency).await;
     }
 }
