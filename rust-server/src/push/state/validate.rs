@@ -22,9 +22,10 @@ pub fn validate_push(
             || !subset(&sub.locations, &grant.locations)
             || !grant.operations.iter().any(|op| op == "subscribe")
             || sub.events.is_empty()
-            || sub.events.iter().any(|event| {
-                !["create", "replace", "delete"].contains(&event.as_str()) || !seen.insert(event)
-            })
+            || sub
+                .events
+                .iter()
+                .any(|event| crate::Kind::parse(event).is_none() || !seen.insert(event))
             || !crate::valid_sha256(&sub.cap_hash)
             || !endpoint_allowed(&sub.endpoint, config)
             || !valid_keys(&sub.keys)

@@ -1,4 +1,4 @@
-use crate::{Result, State};
+use crate::{Kind, Result, State};
 pub fn exists(state: &State, key: &str) -> Result<()> {
     let data = state.data.lock().map_err(|_| crate::internal())?;
     state.require_healthy()?;
@@ -8,11 +8,10 @@ pub fn exists(state: &State, key: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn authorize(state: &State, key: &str, kind: &str, token: &str) -> Result<()> {
-    let operation = if kind == "replace" { "modify" } else { kind };
+pub fn authorize(state: &State, key: &str, kind: Kind, token: &str) -> Result<()> {
     let data = state.data.lock().map_err(|_| crate::internal())?;
     state.require_healthy()?;
-    data.grant_for(token, operation, key)?;
+    data.grant_for(token, kind.operation(), key)?;
     Ok(())
 }
 
@@ -24,7 +23,7 @@ pub async fn exists_async(state: std::sync::Arc<State>, key: String) -> Result<(
 pub async fn authorize_async(
     state: std::sync::Arc<State>,
     key: String,
-    kind: &'static str,
+    kind: Kind,
     token: String,
 ) -> Result<()> {
     tokio::task::spawn_blocking(move || authorize(&state, &key, kind, &token))

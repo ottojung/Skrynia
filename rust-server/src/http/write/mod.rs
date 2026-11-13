@@ -1,7 +1,7 @@
 mod preflight;
 mod upload;
 use super::{auth, replies};
-use crate::{Result, State};
+use crate::{Kind, Result, State};
 use axum::extract::Request;
 use axum::http::{Method, StatusCode};
 use axum::response::Response;
@@ -17,9 +17,9 @@ pub async fn mutation(state: Arc<State>, raw_name: String, req: Request) -> Resu
     let token = replies::token(req.headers())?.to_string();
     let method = req.method().clone();
     let kind = match method {
-        Method::POST => "create",
-        Method::PUT => "replace",
-        _ => "delete",
+        Method::POST => Kind::Create,
+        Method::PUT => Kind::Replace,
+        _ => Kind::Delete,
     };
     preflight::authorize_async(Arc::clone(&state), key.clone(), kind, token.clone()).await?;
     let upload = if method == Method::DELETE {

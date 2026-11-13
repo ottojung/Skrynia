@@ -1,5 +1,6 @@
 mod boot;
 mod change;
+pub use change::Kind;
 pub(crate) mod disk;
 mod journal;
 mod locking;

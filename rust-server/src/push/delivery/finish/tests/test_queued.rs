@@ -8,7 +8,8 @@ fn queued_mutation_rechecks_health_after_acquiring_lock() {
     std::thread::scope(|scope| {
         let write = scope.spawn(|| {
             started.send(()).unwrap();
-            f.state.change("queued", "create", b"bytes", None, "bad")
+            f.state
+                .change("queued", crate::Kind::Create, b"bytes", None, "bad")
         });
         ready.recv().unwrap();
         f.state.failed.store(true, Ordering::Release);

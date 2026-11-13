@@ -9,7 +9,7 @@ fn previously_admitted_mutations_cannot_cross_failed_state() {
     assert_eq!(f.state.require_healthy().unwrap_err().0, unavailable);
     assert_eq!(
         f.state
-            .change("x", "create", b"bytes", None, "bad")
+            .change("x", crate::Kind::Create, b"bytes", None, "bad")
             .unwrap_err()
             .0,
         unavailable

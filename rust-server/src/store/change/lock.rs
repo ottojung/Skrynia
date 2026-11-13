@@ -1,10 +1,10 @@
-use super::check;
+use super::{Kind, check};
 use crate::{Result, Snapshot, State};
 use std::sync::MutexGuard;
 pub fn checked<'a>(
     state: &'a State,
     key: &str,
-    kind: &str,
+    kind: Kind,
     body: &[u8],
     expected: Option<&str>,
     token: &str,
@@ -19,6 +19,6 @@ pub fn checked<'a>(
         check::Mode::Initial
     };
     check::preflight(&data, key, kind, body, &path, token, mode)?;
-    crate::push_preflight(&data, key, kind, state.push_config.max_outbox)?;
+    crate::push_preflight(&data, key, kind.event(), state.push_config.max_outbox)?;
     Ok(data)
 }

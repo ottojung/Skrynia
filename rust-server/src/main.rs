@@ -35,7 +35,7 @@ pub use error::{Fail, Result, bad, forbidden, internal, missing};
 pub use grants::{Grant, matches, random_id, sha, sha_file, subset, valid_key, valid_scope};
 pub use grants::{OPERATIONS, recover_pending};
 pub use store::disk::{sync_dir, write_json, write_json_unsynced};
-pub use store::{Snapshot, State, open_regular};
+pub use store::{Kind, Snapshot, State, open_regular};
 
 pub use grants::{random_secret, secure_match, valid_identifier, valid_sha256};
 pub use push::{

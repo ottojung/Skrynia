@@ -13,7 +13,7 @@ fn malformed_pending_journal_fails_closed_before_delivery_recovery() {
     assert_eq!(retry.to_string(), "recovery required");
     assert_eq!(
         f.state
-            .change("blocked", "create", b"x", None, "bad")
+            .change("blocked", crate::Kind::Create, b"x", None, "bad")
             .unwrap_err()
             .0,
         axum::http::StatusCode::SERVICE_UNAVAILABLE

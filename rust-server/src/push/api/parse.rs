@@ -27,7 +27,7 @@ pub fn parse(value: &serde_json::Value, config: &PushConfig) -> Result<Input> {
         || events.is_empty()
         || events
             .iter()
-            .any(|e| !["create", "replace", "delete"].contains(&e.as_str()) || !seen.insert(e))
+            .any(|e| crate::Kind::parse(e).is_none() || !seen.insert(e))
     {
         return Err(bad("invalid_subscription"));
     }

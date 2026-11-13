@@ -13,7 +13,7 @@ pub struct Intent {
 impl Intent {
     pub fn valid(&self) -> bool {
         crate::valid_key(&self.key)
-            && ["create", "replace", "delete"].contains(&self.kind.as_str())
+            && crate::Kind::parse(&self.kind).is_some()
             && if self.kind == "delete" {
                 self.sha256.is_none()
             } else {
