@@ -1,0 +1,59 @@
+mod error;
+mod grants;
+mod http;
+mod net;
+mod operator;
+mod push;
+mod push_mode;
+mod store;
+
+#[tokio::main]
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let mut args = std::env::args().skip(1);
+    if let Some(action) = args.next() {
+        if action != "root-credentials" || args.next().is_some() {
+            return Err("usage: skrynia-server [root-credentials]".into());
+        }
+        operator::run()?;
+        return Ok(());
+    }
+    let server = store::State::open()?;
+    let address = std::env::var("SKRYNIA_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+    let port = std::env::var("SKRYNIA_PORT").unwrap_or_else(|_| "17380".into());
+    let listener = tokio::net::TcpListener::bind(format!("{address}:{port}")).await?;
+    let router = http::router(server, push_mode::delivery_enabled());
+    let options = net::NetworkOptions::load()?;
+    let listener = net::BoundedListener::new(listener, options);
+    axum::serve(listener, router)
+        .with_graceful_shutdown(net::shutdown_signal())
+        .await?;
+    Ok(())
+}
+
+// Public crate-level vocabulary keeps nested modules independent of topology.
+pub use error::{Fail, Result, bad, forbidden, internal, missing};
+pub use grants::{Grant, matches, random_id, sha, sha_file, subset, valid_key, valid_scope};
+pub use grants::{OPERATIONS, recover_pending};
+pub use store::disk::{sync_dir, write_json};
+pub use store::{Kind, Snapshot, State, open_regular};
+
+pub use grants::{random_secret, secure_match, valid_identifier, valid_sha256};
+pub use push::{
+    Pending, PushConfig, PushKeys, PushState, Subscription, Vapid, endpoint_allowed, load_push,
+    load_vapid, parse_endpoint as parse_push_endpoint, public_address, validate_push,
+};
+
+pub use push::{
+    PushInput, parse_push_input, persist_push_subscription, route as push_route, same_push_events,
+    valid_push_keys,
+};
+
+pub use push::{persist_outbox, push_delay, push_enqueue, push_now, push_preflight, read_outbox};
+
+pub use push::{DeliveryOutcome, PushFailure, push_finish_batch, push_run, push_send};
+
+pub use http::{ListParams, validate_build_info};
+pub use net::config_number;
+
+#[cfg(test)]
+pub use push::outbox_write_count;

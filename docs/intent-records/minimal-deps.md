@@ -1,7 +1,7 @@
 $id-6214634120670208
 title: Small storage core
-date: 2026/11/10
+date: 2026/11/12
 source: @ottojung
 kind: requirement
 
-Prefer Node.js standard libraries and minimal dependencies. Skrynia implements generic storage, delegated grants and Web Push, not application-defined code or release mechanisms.
+Implement all server, operator and test code in Rust, preferring standard-library facilities and a minimal dependency graph. Skrynia implements generic storage, delegated grants and Web Push, not application-defined code or release mechanisms.

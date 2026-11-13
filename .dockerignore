@@ -1,7 +1,3 @@
-.git
-node_modules
-tests
-docs
-examples
-*.md
-Makefile
+target/
+.git/
+.cache/

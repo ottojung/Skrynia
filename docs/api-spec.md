@@ -7,7 +7,7 @@ Use HTTPS outside local development. No API request relies on cookies.
 ## Object names and authority scopes
 
 An object key must be a nonempty ASCII string, at most
-`SKRYNIA_MAX_KEY_LENGTH` characters (default 256), matching
+`SKRYNIA_MAX_KEY_LENGTH` characters (default 255; maximum 255), matching
 `[A-Za-z0-9_][A-Za-z0-9_.]*`. Keys cannot begin with a dot;
 consecutive dots are unrestricted after the first character.
 Case matters; `/`, spaces and `*` are not valid object-key characters.
@@ -86,7 +86,7 @@ the mutable value itself and verify it through their protocol.
 ### Scoped key listing
 
 `GET /store?locations=alice.*` returns JSON like
-`{"keys":["alice.app.js","alice.index.html"]}`. The requester supplies
+`{"keys":["alice.app.css","alice.index.html"]}`. The requester supplies
 its user token in `Authorization: Bearer`; the server checks the `list` operation
 and requires `locations` to be a non-strict subset of the token's grant
 scope. Exact matches, prefix matchers, `*` (all), and the empty matcher
@@ -244,19 +244,12 @@ to publicly routable addresses.
 
 ## Other endpoints
 
-`GET /health`, `GET /version`, and `GET /client/skrynia.js` are public.
+`GET /health` and `GET /version` are public.
 
 For browser applications, the API provides
 `Access-Control-Allow-Origin: *`, CORS preflight (including
 `X-Skrynia-If-SHA256`, `If-None-Match`, `If-Range` and `Range`), and exposure
 of the ETag header. Mutations require explicit bearer credentials, not browser cookies.
-
-The bundled browser helper rejects failed HTTP requests with an `Error`
-containing `status` (HTTP status), `code` (the server's JSON `error`
-string, when available), and `response` (the parsed JSON error body, when
-available). For example, a failed content-hash CAS exposes
-`error.code === 'content_mismatch'` so clients can read fresh bytes and
-retry with an updated precondition.
 
 The filesystem is authoritative; object-size indexes are rebuilt on startup.
 Skrynia requires a **single writer process per data directory**, and
