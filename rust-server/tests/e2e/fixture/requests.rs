@@ -18,15 +18,17 @@ impl Server {
     }
     pub async fn user(&self) -> String {
         let (id, issuer) = self.root();
-        let reply: Value = self
+        let response = self
             .call(Method::POST, &format!("/grants/{id}/users"))
             .bearer_auth(issuer)
             .send()
             .await
-            .unwrap()
-            .json()
-            .await
             .unwrap();
+        assert!(
+            response.status().is_success(),
+            "root token issuance rejected"
+        );
+        let reply: Value = response.json().await.unwrap();
         reply["userToken"].as_str().unwrap().into()
     }
     pub fn operator_credentials(&self) -> Value {
