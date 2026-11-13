@@ -17,6 +17,7 @@ pub async fn run(state: Arc<State>) {
             let result = tokio::task::spawn_blocking(move || recovering.recover_journal()).await;
             if let Err(error) = result.unwrap_or_else(|e| Err(std::io::Error::other(e))) {
                 eprintln!("Skrynia pending notification recovery: {error}");
+                return;
             }
         }
         ticks = ticks.wrapping_add(1);

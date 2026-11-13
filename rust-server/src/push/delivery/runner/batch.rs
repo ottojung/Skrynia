@@ -32,6 +32,9 @@ pub async fn process(state: &Arc<State>, entries: &[Entry]) {
     while let Some(result) = tasks.join_next().await {
         if let Err(error) = result {
             eprintln!("Skrynia push worker failure: {error}");
+            state
+                .failed
+                .store(true, std::sync::atomic::Ordering::Release);
         }
     }
 }

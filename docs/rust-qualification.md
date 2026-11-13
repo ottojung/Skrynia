@@ -140,3 +140,13 @@ staging files. Background journal replay no longer repeats that sweep or
 syncs an empty journal directory every minute; it only syncs the transaction
 directory after removing actual journal records. The startup clean/replay
 ordering and process-crash tests remain in place.
+
+### Periodic journal replay failures
+
+The asynchronous Push runner replays pending committed mutations every minute.
+That replay now checks health under the storage mutex, sets `recovery_required`
+*inside* the mutex on any failure, and stops the runner rather than attempting
+another delivery in the same tick. Unexpected Push delivery task failures
+also mark the server unhealthy. Unit tests inject a malformed on-disk journal
+record, require the recovery call to fail and refuse subsequent mutations.
+Startup recovery remains mandatory before serving requests.
