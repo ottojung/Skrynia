@@ -101,9 +101,41 @@ checks that the journal is empty after the workload and that Node reads each
 final value after Rust exits. Collects p95/p99 read/write request latency,
 throughput, and peak resident memory (`/proc/<pid>/status` when available).
 Set `SKRYNIA_SOAK_SECONDS` and `SKRYNIA_SOAK_WORKERS` to control duration and
-load; set `SKRYNIA_SOAK_SERVER=node` to run the same fixture against the
+load. Set `SKRYNIA_SOAK_SUBSCRIPTIONS` (0–64, default 0) to register matching
+Web Push subscribers *before* timing, then verify that every subscriber has a
+durably coalesced pending notification after the workload and Node restart.
+The harness uses manual Push mode: it measures durable notification
+enqueueing, **not** real delivery latency or external provider receipts.
+Set `SKRYNIA_SOAK_SERVER=node` to run the same fixture against the
 reference server. This workload is a probe, not a production-size stress test
 or statistically controlled latency benchmark.
+
+### Manual Web Push outbox coalescing probe — November 13, 2026
+
+The same mixed-workload harness now supports optional matching Web Push
+subscriptions with `SKRYNIA_SOAK_SUBSCRIPTIONS`. Every replacement enqueues
+a durable, coalesced generation for each subscriber. The test requires exactly
+one pending outbox entry per subscriber, then reopens all state under Node
+and verifies retained subscriptions, outbox entries and object bytes.
+No outbound push delivery occurs.
+
+Illustrative individual runs on shared `marceline-dev` (8 clients, 4 KiB
+objects, target duration 4 seconds, 90% GET and 10% SHA-256-CAS PUT):
+
+| Server | Subscribers | Operations/s | Read p99 (ms) | Write p99 (ms) | Peak RSS (MiB) |
+|---|---:|---:|---:|---:|---:|
+| Node | 4 | 43.1 | 3,389.52 | 3,386.27 | 69.4 |
+| Rust | 4 | 317.9 | 0.71 | 384.28 | 10.9 |
+| Rust | 16 | 101.1 | 0.84 | 1,095.91 | 10.0 |
+
+All runs checked complete payloads, SHA-256 ETags, clean journals and pending
+notification recovery through Node. Their totals include final in-flight
+requests after the target elapsed time. They were **not simultaneous or
+statistically controlled**, and storage/writeback contention can dominate
+the measurements; do not infer production throughput ratios. The decrease
+from 4 to 16 subscribers motivates further write-persistence profiling.
+External provider latency and actual browser notification receipt remain
+unverified.
 
 ### Mixed-load sample — November 12, 2026
 
