@@ -97,6 +97,8 @@ The [HTTP API](docs/api-spec.md), [grant semantics](docs/intent-location-authori
 [application feasibility examples](docs/application-feasibility.md),
 [operations](docs/operations.md), and [verification](docs/verification.md)
 describe the current system and its boundaries.
+The [idealized complexity model](docs/idealized-complexity.md) defines
+asymptotic targets under explicitly stronger environmental assumptions.
 Intent Records in `docs/intent-records/` capture the live requirements.
 
 Skrynia is Free Software under **AGPL-3.0-or-later**.
