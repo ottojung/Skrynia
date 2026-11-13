@@ -37,6 +37,7 @@ jobs:
         run: |
           node tests/rust-crash-recovery.js
           node tests/rust-crash-grants.js
+          node tests/rust-disk-failure.js
 
   container-preview:
     runs-on: ubuntu-latest
