@@ -87,3 +87,12 @@ and credential boundary in a synthetic deployment-like dataset. It is **not**
 proof that arbitrary historical production data or external integrations
 will migrate safely. Before release, rehearse with a full *copy* of real data,
 with a documented backup and rollback plan.
+
+### Root authority rotation
+
+`tests/rust-root-rotation.js` proves that deleting the root grant (a permitted
+action) invalidates old bearer/issuer tokens without deleting public object
+data, and that the next Rust startup creates a fresh root with different
+credentials. It also validates that new authority can create new objects and
+that the original Node server can read all retained values while old user
+credentials remain revoked. Runs in `make rust-crash-test` and Rust CI.
