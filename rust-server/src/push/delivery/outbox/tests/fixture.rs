@@ -1,0 +1,38 @@
+use crate::{Notification, PushState, Snapshot};
+mod subscription;
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    path::PathBuf,
+};
+pub fn pending(n: usize) -> (PathBuf, Snapshot, Vec<String>) {
+    let root = std::env::temp_dir().join(format!("skrynia-fanout-{}", crate::random_id()));
+    fs::create_dir_all(root.join("state/push/outbox")).unwrap();
+    fs::create_dir_all(root.join("state/push-subs")).unwrap();
+    let mut push = PushState::default();
+    for index in 0..n {
+        let id = format!("{index:032x}");
+        let notification = Notification {
+            subscription_id: id.clone(),
+            generation: 1,
+            attempts: 0,
+            next_at: 0,
+        };
+        fs::write(
+            root.join(format!("state/push/outbox/{id}.json")),
+            serde_json::to_vec(&notification).unwrap(),
+        )
+        .unwrap();
+        push.outbox.insert(id.clone(), notification);
+        push.subscriptions
+            .insert(id.clone(), subscription::create(&root, &id));
+    }
+    let ids = push.outbox.keys().cloned().collect();
+    let snapshot = Snapshot {
+        objects: BTreeMap::new(),
+        grants: HashMap::new(),
+        tokens: HashMap::new(),
+        push,
+    };
+    (root, snapshot, ids)
+}

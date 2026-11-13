@@ -50,7 +50,7 @@ pub use push::{
 
 pub use push::{push_delay, push_enqueue, push_now, push_preflight};
 
-pub use push::{PushFailure, push_finish, push_run, push_send};
+pub use push::{PushFailure, push_finish, push_run, push_send, sync_outbox_index};
 
 pub use http::ListParams;
 pub use net::config_number;

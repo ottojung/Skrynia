@@ -10,5 +10,5 @@ pub fn remove(root: &Path, data: &mut Snapshot, id: &str) -> io::Result<()> {
         sync_dir(&dir)?;
     }
     data.push.outbox.remove(id);
-    Ok(())
+    crate::sync_outbox_index(data, root)
 }

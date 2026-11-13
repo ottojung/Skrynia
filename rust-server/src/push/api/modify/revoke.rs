@@ -16,5 +16,5 @@ pub fn remove(state: &State, id: &str, cap: &str) -> Result<()> {
         state.persist_remove(&notice)?;
     }
     data.push.outbox.remove(id);
-    Ok(())
+    state.fail_on_io(crate::sync_outbox_index(&data, &state.dir))
 }

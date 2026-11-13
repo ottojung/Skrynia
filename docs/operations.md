@@ -38,6 +38,11 @@ credentials must never be logged or placed in public objects.
 `store/` contains public, byte-preserving regular files. Everything under
 `state/` and `store-tmp/` is private. Root and grant records, subscription
 state, transaction intents, and notification outboxes must be backed up together.
+For multi-subscriber notifications, `state/push/outbox-generations.json`
+is the authoritative durable generation index. A subscription may have no
+individual `state/push/outbox/{id}.json` file while it is pending; both
+forms are replayed at startup. Back up the index and all subscription records
+along with the store and journal, and never edit or discard them separately.
 
 The server holds an exclusive kernel writer lock in
 `state/writer.lock`. Leave the lock inode in place across restarts. A

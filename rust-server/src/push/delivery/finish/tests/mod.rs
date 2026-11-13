@@ -1,4 +1,5 @@
 use super::fixture::Fixture;
+mod test_group;
 mod test_health;
 mod test_queued;
 mod test_replay;

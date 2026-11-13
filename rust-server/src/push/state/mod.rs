@@ -1,3 +1,4 @@
+mod generations;
 mod load;
 mod prune;
 mod validate;
@@ -13,7 +14,8 @@ pub struct PushState {
 }
 pub fn load_push(root: &Path) -> io::Result<PushState> {
     let subscriptions = load::read(&root.join("state/push-subs"))?;
-    let outbox = load::read(&root.join("state/push/outbox"))?;
+    let mut outbox = load::read(&root.join("state/push/outbox"))?;
+    generations::restore(root, &subscriptions, &mut outbox)?;
     Ok(PushState {
         subscriptions,
         outbox,

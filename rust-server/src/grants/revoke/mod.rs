@@ -37,6 +37,7 @@ impl State {
             data.push.subscriptions.remove(&id);
             data.push.outbox.remove(&id);
         }
+        self.fail_on_io(crate::sync_outbox_index(&data, &self.dir))?;
         for id in record.ids {
             if let Some(grant) = data.grants.remove(&id) {
                 for user in grant.users {

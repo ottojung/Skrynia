@@ -5,7 +5,7 @@ mod retry;
 mod runner;
 mod sender;
 
-pub use outbox::enqueue;
+pub use outbox::{enqueue, sync_index as sync_outbox_index};
 pub use preflight::preflight;
 pub use retry::{delay, now};
 

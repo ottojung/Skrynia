@@ -10,6 +10,7 @@ Integration tests exercise root credential retrieval, public reads,
 conditional object mutations, grant attenuation, missing/invalid keys,
 private state isolation, and rejection of unsafe notification endpoints.
 The crate's unit tests cover replay invariants, persisted notifications,
+multi-subscriber durable generation batching, acknowledgment and fault replay,
 Web Push signing and independent decryption, TLS verification, DNS filtering,
 quota accounting, and stage-file cleanup.
 
