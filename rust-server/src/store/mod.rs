@@ -6,6 +6,7 @@ mod locking;
 mod paths;
 mod persist;
 mod read;
+pub use read::open_regular;
 mod staging;
 
 use crate::{Grant, PushConfig, PushState, Vapid};

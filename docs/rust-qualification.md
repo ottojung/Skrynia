@@ -184,3 +184,19 @@ trailing slashes. It rejects relative URLs and nonempty search/hash values.
 A live persisted-state smoke test starts Rust with an encoded parent directory
 in its configured public path and verifies that requests succeed under the
 normalized mount point. Unit tests cover valid and invalid public URLs.
+
+### Public-store symlink and special-file injection
+
+Rust's built-in public GET/HEAD handler and conditional-write SHA-256 reader
+open a **pinned regular file descriptor** with `O_NOFOLLOW | O_NONBLOCK`.
+This prevents a symbolic link or blocking named pipe introduced after startup
+from redirecting an object read into private grant files or hanging an HTTP
+worker. The smoke/fault test injects a symlink from `store/` to the private
+root-grant JSON *after* Rust has started, verifies GET/HEAD and SHA-256 CAS
+fail without exposing credentials, and confirms ordinary reads and writes
+still work after the invalid entry is removed. Rust unit tests also exercise
+a real FIFO. Startup scanning already rejects nonregular stored entries.
+This protects only Rust's built-in file reader: **nginx or another external
+static server must independently forbid symlink traversal and untrusted
+filesystem writes**. Never give untrusted publishers direct write access to
+`SKRYNIA_DATA_DIR/store/`.

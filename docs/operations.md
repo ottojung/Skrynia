@@ -121,6 +121,9 @@ connection limits alone are not a full denial-of-service defense.
 - `state/grant-revocations/`: recoverable subtree revocation intents.
 
 Only serve `store/` through a public static web server, never `state/`.
+Do not allow untrusted actors to create symlinks or special files in
+`store/`. The Rust preview rejects such files in its built-in public reader;
+nginx or other independent static servers must have their own symlink policy.
 File names have no separators and never begin with a dot.
 nginx or any other static server can serve `GET /store/{key}` directly
 from the public directory with its own HTTP cache validators, MIME mapping

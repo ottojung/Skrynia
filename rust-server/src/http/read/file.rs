@@ -7,7 +7,7 @@ use std::sync::Arc;
 pub async fn open(state: Arc<State>, key: &str) -> Result<(File, u64, String)> {
     let path = state.dir.join("store").join(key);
     tokio::task::spawn_blocking(move || {
-        let mut file = File::open(path)?;
+        let mut file = crate::open_regular(&path)?;
         let size = file.metadata()?.len();
         let mut digest = Sha256::new();
         let mut block = [0; 65536];

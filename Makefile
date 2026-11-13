@@ -26,6 +26,7 @@ rust-crash-test:
 	node tests/rust-root-rotation.js
 	node tests/rust-metadata-failure.js
 	node tests/rust-key-races.js
+	node tests/rust-public-symlink.js
 
 .PHONY: rust-crash-test
 
