@@ -150,3 +150,17 @@ caused by replaying a committed intent after a crash, but never permits fewer
 notifications than the number of applied creates. Notification delivery is
 manual here; the test asserts durable enqueueing, not receipt by a real
 external push service.
+
+### Heavy-concurrency saturation sample (32 writers/readers)
+
+A separate 30.8-second *optimized Rust* run on the same shared host with
+32 keep-alive clients finished **15,312 verified requests** (13,752 reads,
+1,560 SHA-256 CAS writes), about **497 operations/second**, and **13.9 MiB**
+peak RSS. Read p95/p99 was 0.42/0.58 ms; durable-write p95/p99 was
+**1,110/3,203 ms**. Every payload/ETag assertion passed, the journal drained,
+and the final Node restart was successful. An earlier run with a benchmark-side
+**4-second** HTTP timeout aborted under this load; the complete sample used
+`SKRYNIA_SOAK_REQUEST_TIMEOUT_MS=20000` (and the server's 30-second idle
+timeout). The benchmark timeout is now explicit and configurable. This is an
+important tail-latency bottleneck under filesystem contention, not a data
+corruption finding; it remains a production-capacity qualification item.

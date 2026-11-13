@@ -39,7 +39,8 @@ recovery. Its VAPID and subscription records interoperate with the existing
 Node.js server; its Push delivery path is not yet qualified against real push
 services, and complete failure/recovery and resource-limit parity remain open.
 Passing its interoperability smoke tests is **not** release qualification.
-[Reproducible Rust/Node performance measurements](docs/rust-benchmarks.md)
+[Rust qualification ledger](docs/rust-qualification.md) and
+[reproducible Rust/Node performance measurements](docs/rust-benchmarks.md)
 are provided without weakening durability or claiming general superiority.
 The conventional `Dockerfile` and published image continue to run Node.js.
 `Dockerfile.rust` is an intentionally separate experimental build.

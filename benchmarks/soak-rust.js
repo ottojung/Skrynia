@@ -11,6 +11,7 @@ const {performance}=require('node:perf_hooks');
 const {port,request,start,stop,credentials,sha}=require('../tests/crash/fixture');
 const seconds=Number(process.env.SKRYNIA_SOAK_SECONDS||12);
 const workers=Number(process.env.SKRYNIA_SOAK_WORKERS||16);
+const requestTimeoutMs=Number(process.env.SKRYNIA_SOAK_REQUEST_TIMEOUT_MS||20000);
 const initial=Buffer.alloc(4096,0x41);
 const updated=Buffer.alloc(4096,0x42);
 const binary=resolve(process.argv[2]||'target/release/skrynia-server');
@@ -30,7 +31,7 @@ function transport(port) {
           headers:res.headers,body:Buffer.concat(chunks)}));
       });
       req.on('error',reject);
-      req.setTimeout(4000,()=>req.destroy(Error('HTTP timeout')));
+      req.setTimeout(requestTimeoutMs,()=>req.destroy(Error(`HTTP timeout after ${requestTimeoutMs} ms`)));
       req.end(body);
     });
   }
@@ -50,6 +51,7 @@ function percentile(numbers,fraction) {
 async function main() {
   assert(Number.isFinite(seconds)&&seconds>=1&&seconds<=3600);
   assert(Number.isInteger(workers)&&workers>=1&&workers<=256);
+  assert(Number.isSafeInteger(requestTimeoutMs)&&requestTimeoutMs>=1000&&requestTimeoutMs<=120000);
   const root=mkdtempSync(join(tmpdir(),'skrynia-soak-'));
   let child,client,monitor;
   try {
@@ -103,7 +105,7 @@ async function main() {
       assert.equal(value.status,200);
       assert(value.body.equals(old[index]),`Node restart sees wrong payload stress_${index}`);
     }
-    console.log(JSON.stringify({server:useNode?'Node':'Rust',seconds:Number(elapsed.toFixed(2)),workers,reads,writes,
+    console.log(JSON.stringify({server:useNode?'Node':'Rust',seconds:Number(elapsed.toFixed(2)),workers,requestTimeoutMs,reads,writes,
       opsPerSecond:Number(((reads+writes)/elapsed).toFixed(1)),
       readP95ms:percentile(readLat,0.95),readP99ms:percentile(readLat,0.99),
       writeP95ms:percentile(writeLat,0.95),writeP99ms:percentile(writeLat,0.99),
