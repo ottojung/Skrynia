@@ -185,10 +185,28 @@ range and read their contents publicly. Keys do not inherently define
 a chronological order: an application can encode sequence identifiers,
 follow predecessor links, or impose an order in a signed manifest.
 
-When clients require a canonical ordered history, a CAS-linked log or
-committed manifest supplies its ordering. `list` alone is key discovery,
-not a tamper-resistance guarantee against holders of `modify` or `delete`
-authority: those can still replace or remove entries. A maintainer can list a delegated key range
+A `create`-only grant prevents its holder from replacing or deleting
+already-created entries. This is a valuable storage-enforced invariant,
+not just a client convention. In particular, a grant scoped to one exact
+key can allow at most one successful initial publication **at that key**,
+provided no broader authority replaces or deletes it.
+
+Sequentially named entries (`log.0`, `log.1`, ...) do **not** by themselves
+form a canonical append order: `log.2` may be created before `log.1`, and
+a later insertion can change sorted replay order. Requiring a contiguous
+prefix avoids observing holes but risks blocking on missing, invalid, or
+maliciously occupied slots. Skipping invalid contents deterministically
+does not eliminate these ordering and liveness problems. A designated
+sequencer can publish numbered slots under restricted authority, with a
+single point of trust and availability.
+
+When clients require a canonical ordered history without such a sequencer,
+a CAS-linked log or committed manifest can supply its ordering. A holder
+of `modify` authority over the head can still publish arbitrary bytes:
+clients must verify acceptable transitions and the application must limit
+that authority. `list` alone is key discovery, not a tamper-resistance
+guarantee against holders of `modify` or `delete` authority: those can
+still replace or remove entries. A maintainer can list a delegated key range
 and explicitly delete unwanted contributions with an appropriate write
 token. Subspace isolation, cryptographic validation, and client protocols
 control what histories participants accept.
@@ -270,6 +288,10 @@ More examples follow the same recipe: collaborative documents use a
 versioned state or operation log; directories and registries are CAS
 indexes; polls or voting systems store independently verifiable signed
 ballots and a derived tally; shared games publish ordered valid moves.
+For an invited poll, a trusted issuer can give each voter a create-only
+grant restricted to one exact ballot key, enforcing at most one creation
+for that issued slot. That does not establish voter eligibility, protect
+ballot secrecy, prevent Sybil identities, or make the tally trustworthy.
 Application-specific validation and presentation remain client-side.
 
 ## 4. Fine-grained trust, identity and privacy
@@ -290,12 +312,17 @@ accepted history. A malicious client with head-modification authority can still
 replace/delete it or repeatedly win races, so cryptographic validity and
 service availability are distinct claims.
 
-**Private payloads over public reads.** Applications can encrypt values
-client-side and distribute decryption keys independently. This provides
-payload confidentiality under appropriate cryptographic assumptions, but
-Skrynia still exposes ciphertext, object names, sizes and access patterns.
-Revoking a grant does not revoke a previously distributed decryption key or
-erase copies already downloaded.
+**Private payloads over public reads.** Reading an existing object requires
+knowing its key but no read token; key enumeration through the Skrynia API
+requires `list`. High-entropy unlisted keys can discourage casual discovery,
+but are not enforced private reads: keys can leak through URLs, referrers,
+logs, or other clients. Applications can encrypt values client-side and
+distribute decryption keys independently. This provides payload
+confidentiality under appropriate cryptographic assumptions, but Skrynia
+still exposes ciphertext, object names, sizes and access patterns to the
+storage operator and to anyone who discovers the relevant keys. Exposed
+ciphertext is available for offline attacks. Revoking a grant does not
+revoke a previously distributed decryption key or erase downloaded copies.
 
 **Quotas are scope-based, not reservations.** Usage of a grant counts
 matching objects, *including objects another grant created*, plus descendant

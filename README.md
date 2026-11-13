@@ -93,8 +93,10 @@ make docker-build
 ## Documentation
 
 The [HTTP API](docs/api-spec.md), [grant semantics](docs/intent-location-authority.md),
-[client protocols](docs/client-protocols.md), [operations](docs/operations.md),
-and [verification](docs/verification.md) specify the current system.
+[client protocols](docs/client-protocols.md),
+[application feasibility examples](docs/application-feasibility.md),
+[operations](docs/operations.md), and [verification](docs/verification.md)
+describe the current system and its boundaries.
 Intent Records in `docs/intent-records/` capture the live requirements.
 
 Skrynia is Free Software under **AGPL-3.0-or-later**.
