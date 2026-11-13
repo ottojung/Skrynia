@@ -50,3 +50,10 @@ rust-container-memory-test:
 	sh scripts/test-rust-container-memory.sh
 
 .PHONY: rust-container-memory-test
+
+# Offline-state clone check on synthetic fixtures; does not touch production.
+rust-snapshot-test:
+	cargo build --locked --package skrynia-server
+	node tests/rust-offline-snapshot-test.js
+
+.PHONY: rust-snapshot-test

@@ -277,3 +277,19 @@ consecutive **warm** `make test` runs on `marceline-dev` passed in **8.5,
 4.7 and 9.4 seconds** (wall clock), satisfying the project's local warm-test
 speed goal. Build-from-scratch times and shared-host CPU contention vary;
 CI is also required to pass all checks on its own runner.
+
+### Non-destructive offline historical-data rehearsal
+
+`tests/rust-offline-snapshot.js` now accepts an **offline coherent snapshot**
+and creates a second private temporary copy. Rust and Node open only the
+temporary copy in succession, with outbound Push disabled, and both must
+return the exact same public object bytes and SHA-256 ETags. The checker
+compares hashes for public files, grant records, subscription records, VAPID
+keys, and the durable outbox before and after each startup; the source is
+never modified. Its regression target `make rust-snapshot-test` builds a
+synthetic snapshot with real stored objects and a Push subscription, verifies
+the upgrade/rollback check, and proves the original fixture is unchanged.
+The procedure and prerequisites are in
+[`rust-cutover-runbook.md`](rust-cutover-runbook.md). **This tool is tested,
+but a complete copy of actual deployment data has not yet been provided or
+qualified.**

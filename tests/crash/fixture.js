@@ -30,12 +30,12 @@ function request(port,method,route,token,data,headers={}) {
     req.end(body);
   });
 }
-async function start(command,args,root,port) {
+async function start(command,args,root,port,tries=100) {
   const child=spawn(command,args,{stdio:'ignore',env:{...process.env,
     SKRYNIA_DATA_DIR:root,SKRYNIA_PORT:String(port),
     SKRYNIA_URL:`http://127.0.0.1:${port}/crash`,SKRYNIA_PUSH_MANUAL:'1'}});
   let dead=false;child.once('exit',()=>{dead=true;});
-  for(let tries=0;tries<100;tries++) {
+  for(let attempt=0;attempt<tries;attempt++) {
     if(dead)throw Error('server exited unexpectedly');
     try {if((await request(port,'GET','/health')).status===200)return child;}catch{}
     await pause(25);
