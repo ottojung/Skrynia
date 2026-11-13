@@ -4,6 +4,7 @@ pub(crate) mod disk;
 mod journal;
 mod locking;
 mod paths;
+mod persist;
 mod read;
 mod staging;
 

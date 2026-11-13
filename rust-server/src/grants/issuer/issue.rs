@@ -2,7 +2,7 @@ use super::User;
 use super::secret;
 use crate::random_id;
 use crate::sha;
-use crate::{Result, State, write_json};
+use crate::{Result, State};
 impl State {
     pub fn issue_user(&self, id: &str, issuer: &str) -> Result<serde_json::Value> {
         let mut data = self.data.lock().map_err(|_| crate::internal())?;
@@ -19,11 +19,10 @@ impl State {
             return Err(crate::internal());
         }
         grant.users.push(user.clone());
-        write_json(
+        self.persist_json(
             &self.dir.join("state/grants").join(format!("{id}.json")),
             &grant,
-        )
-        .map_err(|_| crate::internal())?;
+        )?;
         data.grants.insert(id.into(), grant);
         data.tokens.insert(user.hash, id.into());
         Ok(serde_json::json!({"grantId":id,"userId":user.id,"userToken":token}))

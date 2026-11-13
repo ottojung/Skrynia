@@ -96,3 +96,15 @@ data, and that the next Rust startup creates a fresh root with different
 credentials. It also validates that new authority can create new objects and
 that the original Node server can read all retained values while old user
 credentials remain revoked. Runs in `make rust-crash-test` and Rust CI.
+
+### Fail-closed credential and subscription metadata I/O
+
+`tests/rust-metadata-failure.js` independently denies writes to the private
+grant and subscription directories during grant creation, user issuance, user
+revocation, subscription creation, capability-protected update, and deletion.
+Each failure must return HTTP 500 and force `recovery_required` for subsequent
+requests, so a possible post-rename directory-sync error cannot leave live
+authority disagreeing with persisted state. Once permissions are restored, a
+restart reloads records and restores normal access; checks cover retained
+user credentials and subscription records. Runs as non-root under `make
+rust-crash-test` and in preview CI.

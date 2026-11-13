@@ -1,7 +1,7 @@
 mod disk;
 mod record;
 mod recover;
-use crate::{Result, State, write_json};
+use crate::{Result, State};
 use std::sync::atomic::Ordering;
 
 pub use recover::recover_pending;
@@ -19,7 +19,7 @@ impl State {
             .dir
             .join("state/grant-revocations")
             .join(format!("{id}.json"));
-        write_json(&marker, &record).map_err(|_| crate::internal())?;
+        self.persist_json(&marker, &record)?;
         if let Err(error) = disk::apply(&self.dir, &marker, &record) {
             self.failed.store(true, Ordering::Release);
             eprintln!("Skrynia revocation recovery required: {error}");

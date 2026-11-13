@@ -1,7 +1,7 @@
 mod spec;
 use super::Grant;
 use super::keys::{random_id, secret, sha};
-use crate::{Result, State, write_json};
+use crate::{Result, State};
 
 impl State {
     pub fn child(&self, token: &str, value: &serde_json::Value) -> Result<serde_json::Value> {
@@ -21,14 +21,13 @@ impl State {
             root_issuer_token: None,
             users: vec![],
         };
-        write_json(
+        self.persist_json(
             &self
                 .dir
                 .join("state/grants")
                 .join(format!("{}.json", child.id)),
             &child,
-        )
-        .map_err(|_| crate::internal())?;
+        )?;
         data.grants.insert(child.id.clone(), child.clone());
         Ok(
             serde_json::json!({"id":child.id,"issuerToken":issuer_token,"locations":spec.locations,

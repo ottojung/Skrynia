@@ -1,0 +1,21 @@
+use super::State;
+use std::io;
+use std::path::Path;
+use std::sync::atomic::Ordering;
+impl State {
+    pub fn persist_json(&self, path: &Path, value: &impl serde::Serialize) -> crate::Result<()> {
+        self.fail_on_io(crate::write_json(path, value))
+    }
+    pub fn persist_remove(&self, path: &Path) -> crate::Result<()> {
+        self.fail_on_io(
+            std::fs::remove_file(path).and_then(|_| crate::sync_dir(path.parent().unwrap())),
+        )
+    }
+    pub fn fail_on_io(&self, result: io::Result<()>) -> crate::Result<()> {
+        result.map_err(|error| {
+            self.failed.store(true, Ordering::Release);
+            eprintln!("Skrynia metadata persistence recovery required: {error}");
+            crate::internal()
+        })
+    }
+}
