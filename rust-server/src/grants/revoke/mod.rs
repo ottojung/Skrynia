@@ -8,6 +8,7 @@ pub use recover::recover_pending;
 impl State {
     pub fn revoke_grant(&self, id: &str, token: &str) -> Result<()> {
         let mut data = self.data.lock().map_err(|_| crate::internal())?;
+        self.require_healthy()?;
         data.issuer(id, token)?;
         let ids = data
             .children_of(id)

@@ -6,6 +6,7 @@ use crate::{Result, State};
 impl State {
     pub fn issue_user(&self, id: &str, issuer: &str) -> Result<serde_json::Value> {
         let mut data = self.data.lock().map_err(|_| crate::internal())?;
+        self.require_healthy()?;
         let mut grant = data.issuer(id, issuer)?.clone();
         if !grant.users.is_empty() {
             data.check_metadata(id, 128)?;

@@ -4,6 +4,10 @@ mod fail;
 mod fixture;
 mod retire;
 #[cfg(test)]
+mod test_health;
+#[cfg(test)]
+mod test_queued;
+#[cfg(test)]
 mod test_retry;
 #[cfg(test)]
 mod test_success;

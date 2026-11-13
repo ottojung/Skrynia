@@ -2,6 +2,7 @@ use crate::{Result, State, missing};
 impl State {
     pub fn revoke_user(&self, id: &str, issuer: &str, user: &str) -> Result<()> {
         let mut data = self.data.lock().map_err(|_| crate::internal())?;
+        self.require_healthy()?;
         let mut grant = data.issuer(id, issuer)?.clone();
         let removed = grant
             .users

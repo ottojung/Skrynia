@@ -3,6 +3,15 @@ use std::io;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 impl State {
+    pub fn require_healthy(&self) -> crate::Result<()> {
+        if self.failed.load(Ordering::Acquire) {
+            return Err(crate::Fail(
+                axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                "recovery_required",
+            ));
+        }
+        Ok(())
+    }
     pub fn persist_json(&self, path: &Path, value: &impl serde::Serialize) -> crate::Result<()> {
         self.fail_on_io(crate::write_json(path, value))
     }

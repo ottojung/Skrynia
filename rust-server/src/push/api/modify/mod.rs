@@ -9,6 +9,7 @@ impl State {
         value: &serde_json::Value,
     ) -> Result<()> {
         let mut data = self.data.lock().map_err(|_| crate::internal())?;
+        self.require_healthy()?;
         let mut sub = data
             .push
             .subscriptions

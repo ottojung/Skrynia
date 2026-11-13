@@ -15,6 +15,7 @@ impl State {
         token: &str,
     ) -> Result<bool> {
         let mut data = self.data.lock().map_err(|_| crate::internal())?;
+        self.require_healthy()?;
         let path = self.dir.join("store").join(key);
         check::preflight(&data, key, kind, body, expected, &path, token)?;
         crate::push_preflight(&data, key, kind, self.push_config.max_outbox)?;

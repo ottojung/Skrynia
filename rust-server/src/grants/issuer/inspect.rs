@@ -2,6 +2,7 @@ use crate::{Result, State, forbidden};
 impl State {
     pub fn inspect(&self, id: &str, token: &str) -> Result<serde_json::Value> {
         let data = self.data.lock().map_err(|_| crate::internal())?;
+        self.require_healthy()?;
         let grant = data.user(token)?;
         if grant.id != id {
             return Err(forbidden("invalid_grant_user_token"));

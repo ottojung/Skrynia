@@ -108,3 +108,14 @@ authority disagreeing with persisted state. Once permissions are restored, a
 restart reloads records and restores normal access; checks cover retained
 user credentials and subscription records. Runs as non-root under `make
 rust-crash-test` and in preview CI.
+
+### Recovery-required state under concurrency
+
+A persistence error freezes the server until restart. HTTP entry checks alone
+cannot protect requests which already entered and are waiting for the storage
+mutex: every storage, grant, scoped-listing and subscription operation now
+rechecks `recovery_required` **after** acquiring the state lock and before
+reading private authority or making changes. A threaded unit test explicitly
+queues a write behind that lock, marks the state failed, releases the lock,
+and requires HTTP 503 with no mutation. The existing filesystem fault-injection
+suite still verifies failure recovery across restarts.

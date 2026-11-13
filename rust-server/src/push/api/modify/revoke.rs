@@ -1,6 +1,7 @@
 use crate::{Result, State, missing};
 pub fn remove(state: &State, id: &str, cap: &str) -> Result<()> {
     let mut data = state.data.lock().map_err(|_| crate::internal())?;
+    state.require_healthy()?;
     let sub = data
         .push
         .subscriptions

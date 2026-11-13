@@ -14,6 +14,7 @@ pub async fn listing(state: Arc<State>, req: Request) -> Result<Response> {
     let params = params::parse(req.uri().query().unwrap_or(""))?;
     let response = tokio::task::spawn_blocking(move || {
         let snapshot = state.data.lock().map_err(|_| crate::internal())?;
+        state.require_healthy()?;
         page::list(&snapshot, &token, params)
     })
     .await
