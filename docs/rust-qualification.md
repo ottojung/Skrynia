@@ -265,3 +265,15 @@ its `memory.max` reported 30 GiB despite the 96 MiB flag. A smoke-only run
 using `SKRYNIA_CONTAINER_SKIP_CGROUP_ASSERT=1` passed the upload integrity
 and Node-restart checks but **does not qualify memory limits**; the GitHub
 Docker-based enforced-cgroup result above is the authoritative evidence.
+
+### Fast default development test command
+
+`make test` runs the independent Node reference suite and Rust suite in
+parallel, then runs Rust's four independent Node-based integration suites
+concurrently through Node's built-in test runner. It retains all existing
+assertions and the full 16-file Node reference suite; extended process-kill,
+filesystem-fault and cgroup tests still have their separate targets. Three
+consecutive **warm** `make test` runs on `marceline-dev` passed in **8.5,
+4.7 and 9.4 seconds** (wall clock), satisfying the project's local warm-test
+speed goal. Build-from-scratch times and shared-host CPU contention vary;
+CI is also required to pass all checks on its own runner.

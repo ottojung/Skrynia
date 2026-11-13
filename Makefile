@@ -1,4 +1,6 @@
-test: test-node rust-test
+# Node and Rust suites have independent fixtures and may run concurrently.
+test:
+	$(MAKE) --no-print-directory -j2 test-node rust-test
 
 test-node:
 	npm test
@@ -10,10 +12,8 @@ rust-test:
 	rustc --test rust-server/source_lints/mod.rs -o target/skrynia-source-lint-tests
 	target/skrynia-source-lint-tests
 	cargo build --locked --package skrynia-server
-	node tests/rust-server-smoke.js
-	node tests/rust-protocol-parity.js
-	node tests/rust-large-read.js
-	node tests/rust-push-parity.js
+	node --test tests/rust-server-smoke.js tests/rust-protocol-parity.js \
+	  tests/rust-large-read.js tests/rust-push-parity.js
 
 .PHONY: test test-node rust-test
 
