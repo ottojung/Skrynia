@@ -44,6 +44,8 @@ jobs:
           node tests/rust-disk-failure.js
           node tests/rust-root-rotation.js
           node tests/rust-metadata-failure.js
+          node tests/rust-key-races.js
+          node tests/rust-public-symlink.js
 
   container-preview:
     runs-on: ubuntu-latest
