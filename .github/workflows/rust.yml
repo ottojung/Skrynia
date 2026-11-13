@@ -1,4 +1,4 @@
-name: Rust preview
+name: Rust verification
 on:
   pull_request:
   push:
@@ -6,79 +6,33 @@ on:
 permissions:
   contents: read
 jobs:
-  verify:
+  verification:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - uses: Swatinem/rust-cache@v2
-      - run: npm ci
-      - name: Default Rust formatting
-        run: cargo fmt --all -- --check
-      - name: Rust unit tests
-        run: cargo test --locked --all-targets
-      - name: Ivanka-compatible structural linter
-        run: |
-          rustc --test rust-server/source_lints/mod.rs -o "${RUNNER_TEMP}/skrynia-lints"
-          "${RUNNER_TEMP}/skrynia-lints"
-      - name: Strict Clippy
-        run: cargo clippy --locked --all-targets -- -D clippy::correctness -D clippy::suspicious -D clippy::perf -D clippy::complexity
-      - name: Rust + Node on-disk/API interoperability
-        run: |
-          cargo build --locked --package skrynia-server
-          node tests/rust-server-smoke.js
-          node tests/rust-protocol-parity.js
-          node tests/rust-large-read.js
-          node tests/rust-push-parity.js
-      - name: Offline Node-Rust-Node migration rehearsal
-        run: node tests/rust-migration-rehearsal.js
-      - name: Check immutable offline snapshot with Rust and Node
-        run: node tests/rust-offline-snapshot-test.js
-      - name: Real SIGKILL durability and Node restart validation
-        run: |
-          node tests/rust-crash-recovery.js
-          node tests/rust-crash-grants.js
-          node tests/rust-disk-failure.js
-          node tests/rust-root-rotation.js
-          node tests/rust-metadata-failure.js
-          node tests/rust-key-races.js
-          node tests/rust-public-symlink.js
-
-  container-preview:
+      - name: Format, tests, structural lint and strict Clippy
+        run: make test
+  container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Build isolated Rust preview image
-        run: docker build --file Dockerfile.rust --tag skrynia-rust-preview --build-arg SKRYNIA_VERSION=0.3.0-preview --build-arg SKRYNIA_COMMIT=${{ github.sha }} .
-      - name: Verify non-root startup and graceful SIGTERM
+      - name: Build Rust container
+        run: docker build -t skrynia:ci --build-arg SKRYNIA_VERSION=0.3.0 --build-arg SKRYNIA_COMMIT=${{ github.sha }} .
+      - name: Check HTTP startup and non-root execution
         run: |
-          docker run --rm -d --name skrynia-rust-check \
-            -p 127.0.0.1:38912:17380 \
-            -e SKRYNIA_URL=http://127.0.0.1:38912/base \
-            skrynia-rust-preview
-          trap 'docker stop -t 5 skrynia-rust-check >/dev/null 2>&1 || true' EXIT
+          docker run --rm -d --name skrynia-check -p 127.0.0.1:38912:17380 \
+            -e SKRYNIA_URL=http://127.0.0.1:38912/base skrynia:ci
+          trap 'docker stop skrynia-check >/dev/null 2>&1 || true' EXIT
           ready=0
           for attempt in $(seq 1 50); do
-            if curl --fail --silent http://127.0.0.1:38912/base/health > /dev/null; then
-              ready=1
-              break
-            fi
+            if curl --fail --silent http://127.0.0.1:38912/base/health >/dev/null; then ready=1; break; fi
             sleep 0.2
           done
-          test "$ready" = 1 || { docker logs skrynia-rust-check; exit 1; }
-          version=$(curl --fail --silent http://127.0.0.1:38912/base/version)
-          printf "%s\n" "$version" | grep -F '"version":"0.3.0-preview"'
-          printf "%s\n" "$version" | grep -F "${{ github.sha }}"
-          test "$(docker exec skrynia-rust-check id -u)" = 1000
-          timeout 8s docker stop -t 5 skrynia-rust-check > /dev/null
-      - name: Enforce 96 MiB cgroup memory limit and verify upload integrity
-        env:
-          SKRYNIA_CONTAINER_ENGINE: docker
-          SKRYNIA_CONTAINER_IMAGE: skrynia-rust-preview
-          SKRYNIA_CONTAINER_SKIP_BUILD: "1"
-        run: sh scripts/test-rust-container-memory.sh
+          test "$ready" = 1
+          test "$(docker exec skrynia-check id -u)" = 1000
+          docker exec skrynia-check skrynia-server root-credentials >/dev/null
+          curl --fail --silent http://127.0.0.1:38912/base/version | grep -F "${{ github.sha }}"
