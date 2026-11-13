@@ -3,8 +3,9 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use openssl::bn::BigNumContext;
 use openssl::ec::{EcGroup, EcKey, PointConversionForm};
 use openssl::nid::Nid;
+use openssl::pkey::Private;
 use std::collections::HashSet;
-pub fn sample() -> (Subscription, PushConfig) {
+pub fn sample() -> (Subscription, PushConfig, EcKey<Private>) {
     let curve = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
     let key = EcKey::generate(&curve).unwrap();
     let mut ctx = BigNumContext::new().unwrap();
@@ -34,5 +35,5 @@ pub fn sample() -> (Subscription, PushConfig) {
         max_outbox: 5,
         manual: true,
     };
-    (subscriber, config)
+    (subscriber, config, key)
 }

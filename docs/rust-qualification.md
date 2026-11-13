@@ -16,7 +16,7 @@ ledger separates tested properties from assumptions and remaining gaps.
 | Durable journal, atomic replacement and staged files | `tests/rust-crash-recovery.js`, `tests/rust-crash-grants.js`, `tests/rust-disk-failure.js` | More I/O fault schedules and real machine power failures |
 | Node on-disk upgrade and rollback | Node→Rust→Node smoke, crash tests reopen Rust data with Node, recover Node-style abandoned atomic JSON files | Production copy rehearsal with full realistic historical data |
 | Web Push subscription API, VAPID keys and persistent wake-ups | Rust unit tests, paired Push lifecycle/capability/error checks, Node-compatible subscription and VAPID state, `SIGKILL`-recovered notifications | Real external Web Push service integration and browser receipt |
-| Web Push delivery and SSRF protection | Signed AES128GCM test, local verified HTTPS transport, untrusted cert rejection, 201/410/302 handling, public-address filtering and pinning | Real DNS-rebinding and network fault-injection environment, independent security review |
+| Web Push delivery and SSRF protection | Signed AES128GCM test, independent OpenSSL receiver decryption with tamper and wrong-key checks, local verified HTTPS transport, untrusted cert rejection, 201/410/302 handling, public-address filtering and pinning | Real DNS-rebinding and network fault-injection environment, independent security review |
 | Resource limits and shutdown | Upload semaphore tests, idle socket/connection limits, memory soak, non-root container startup and graceful `SIGTERM` | Heavy-write tail latency (>3s p99 in one 32-worker run), sustained load on target hardware and externally constrained memory/cgroups |
 | Structural quality and CI | Default rustfmt, strict Clippy, 50-line/10-entry/sibling-import lint, Rust preview workflow, Node CI, Docker preview | Reviewer sign-off and complete acceptance-matrix reconciliation |
 
@@ -200,3 +200,15 @@ This protects only Rust's built-in file reader: **nginx or another external
 static server must independently forbid symlink traversal and untrusted
 filesystem writes**. Never give untrusted publishers direct write access to
 `SKRYNIA_DATA_DIR/store/`.
+
+### Independently decryptable Web Push receipts
+
+A separate Rust test `signature::tests::receipt` decrypts the encrypted
+AES128GCM Push body using OpenSSL's P-256 ECDH, HMAC-SHA256 HKDF and AES-GCM,
+not the message builder's encryption/decryption implementation. It verifies
+the exact `changed` plaintext, authentic final-record delimiter, and rejection
+when either the ciphertext authentication tag or the recipient private key
+is wrong. It runs in `cargo test` and Rust preview CI, alongside the local
+verified-TLS HTTP sender test. This tests protocol-crypto interoperability
+without a live third-party Push service or browser receipt; those remain
+separate acceptance gates.
