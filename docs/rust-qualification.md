@@ -10,7 +10,7 @@ ledger separates tested properties from assumptions and remaining gaps.
 
 | Contract surface | Current evidence | Remaining qualification |
 |---|---|---|
-| Public objects (GET/HEAD, SHA-256 ETag, ranges, cache validators, CORS, mounted URL) | `tests/rust-server-smoke.js`; `tests/rust-protocol-parity.js` with 81 handpicked and 200 seeded protocol requests | Further malformed HTTP, large-file and proxy/nginx integration tests |
+| Public objects (GET/HEAD, SHA-256 ETag, ranges, cache validators, CORS, mounted URL) | `tests/rust-server-smoke.js`; `tests/rust-protocol-parity.js` with 81 handpicked and 200 seeded protocol requests | More malformed HTTP and external proxy/nginx integration; 4MiB pinned read/overlapping CAS tested |
 | Create/replace/delete and SHA-256 CAS | 300 paired Node/Rust checks; true concurrent `SIGKILL` recovery; mixed-read/write soak | Real power-loss/fsync semantics on deployment filesystems |
 | Grants, scopes, operations, quotas, user/issuer tokens, revocation | Rust unit tests, paired HTTP checks, concurrent subtree-revocation `SIGKILL` test | Independent adversarial auth review and larger grant-tree loads |
 | Durable journal, atomic replacement and staged files | `tests/rust-crash-recovery.js`, `tests/rust-crash-grants.js`, `tests/rust-disk-failure.js` | More I/O fault schedules and real machine power failures |
@@ -50,3 +50,12 @@ A successful CI run is not production approval. A reviewed evidence trail is
 still required for large realistic state migration, power-loss behavior on
 real deployment storage, sustained service limits, external Web Push delivery
 and security boundaries. Keep the PR draft until those are demonstrated.
+
+## Pinned read invariant
+
+`tests/rust-large-read.js` streams a 4 MiB public object over GET while a
+SHA-256-CAS PUT replaces that key. The GET must return the original complete
+bytes and ETag from its pinned descriptor; a subsequent GET must return the
+replacement bytes/ETag. A ranged read verifies offsets, and Node must read
+the replacement from the Rust directory after restart. It runs under `make
+test` and in Rust preview CI.

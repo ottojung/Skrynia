@@ -23,7 +23,7 @@ function request(port,method,route,token,data,headers={}) {
         const chunks=[];
         res.on('data',chunk=>chunks.push(chunk));
         res.on('error',reject);
-        res.on('end',()=>resolve({status:res.statusCode,body:Buffer.concat(chunks)}));
+        res.on('end',()=>resolve({status:res.statusCode,headers:res.headers,body:Buffer.concat(chunks)}));
       });
     req.on('error',reject);
     req.setTimeout(2500,()=>req.destroy(Error('request timed out')));

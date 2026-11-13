@@ -12,6 +12,7 @@ rust-test:
 	cargo build --locked --package skrynia-server
 	node tests/rust-server-smoke.js
 	node tests/rust-protocol-parity.js
+	node tests/rust-large-read.js
 
 .PHONY: test test-node rust-test
 
