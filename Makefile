@@ -22,3 +22,10 @@ rust-crash-test:
 	node tests/rust-crash-grants.js
 
 .PHONY: rust-crash-test
+
+# Mixed-workload safety/latency/RSS probe; defaults to a 12-second release run.
+rust-soak:
+	cargo build --locked --release --package skrynia-server
+	node benchmarks/soak-rust.js target/release/skrynia-server
+
+.PHONY: rust-soak

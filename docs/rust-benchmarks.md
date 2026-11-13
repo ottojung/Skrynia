@@ -89,3 +89,18 @@ outbox cleanup, object preservation, and the ability of the original Node
 server to read the same directory. This test is part of `make rust-crash-test`
 and the Rust preview CI job. Configure
 `SKRYNIA_REVOKE_CRASH_ROUNDS` / `SKRYNIA_REVOKE_CRASH_WIDTH` for longer runs.
+
+## Sustained mixed-load consistency test
+
+`make rust-soak` builds the optimized Rust binary, then runs a 12-second
+`benchmarks/soak-rust.js` probe with 16 persistent HTTP clients against a
+private temporary server instance. Ten percent of each worker's requests
+are independent content-hash CAS updates; the remainder are public GETs.
+GETs verify the full known payload and matching SHA-256 ETag, and the test
+checks that the journal is empty after the workload and that Node reads each
+final value after Rust exits. Collects p95/p99 read/write request latency,
+throughput, and peak resident memory (`/proc/<pid>/status` when available).
+Set `SKRYNIA_SOAK_SECONDS` and `SKRYNIA_SOAK_WORKERS` to control duration and
+load; set `SKRYNIA_SOAK_SERVER=node` to run the same fixture against the
+reference server. This workload is a probe, not a production-size stress test
+or statistically controlled latency benchmark.
