@@ -93,7 +93,7 @@ make docker-build
 ## Documentation
 
 The [HTTP API](docs/api-spec.md), [grant semantics](docs/intent-location-authority.md),
-[client protocols](docs/client-protocols.md),
+[Skrynia Cookbook](docs/cookbook.md),
 [application feasibility examples](docs/application-feasibility.md),
 [operations](docs/operations.md), and [verification](docs/verification.md)
 describe the current system and its boundaries.

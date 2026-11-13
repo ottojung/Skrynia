@@ -5,7 +5,7 @@ Skrynia is public, durable, flat-key object storage with independent scoped
 authority, per-key atomic mutations, and content-hash compare-and-swap (CAS).
 Applications define their own data formats, verification rules, indexes, and
 computation in clients. This page gives examples, **not** new server promises.
-For constructions and failure conditions, see [client protocols](client-protocols.md).
+For constructions and failure conditions, see the [Skrynia Cookbook](cookbook.md).
 
 ## Reading the classifications
 
@@ -84,12 +84,16 @@ do not replace/delete it. A trusted voter-credential issuer can use this for
 one ballot *slot* per issued voter; Skrynia does not establish real-world
 eligibility, identity, secrecy, or one-human-one-vote.
 
-One entry per `log.<number>` key is not automatically a canonical
-append-only history. A later `POST log.1` can appear between existing
-`log.0` and `log.2`. Sorted listing order is not creation order; listing
-also has pagination without a cross-page snapshot. Requiring a contiguous
-prefix makes gaps or maliciously filled slots potential availability
-blockers. Deterministic replay can ignore invalid entries, but cannot turn
+One entry per `log.<number>` key is not **automatically** a canonical
+append-only history. Arbitrary create-only writers can publish `log.2`
+before `log.1`, and sorted listing order is not creation order. However,
+**cooperating writers** can implement a linearizable append log by
+initializing a genesis slot and always `POST`ing the *first missing*
+consecutive successor; atomic create-if-absent resolves their races.
+Without deletion, the prefix stays contiguous. The
+[Skrynia Cookbook](cookbook.md#recipe-an-append-only-log-using-only-create-authority)
+gives the construction and its proof. Maliciously filled or missing slots
+and eventual garbage collection need additional rules. Deterministic replay can ignore invalid entries, but cannot turn
 arbitrary arrival order into a stable committed prefix.
 
 For a canonical log, use an explicitly trusted sequencer that publishes
