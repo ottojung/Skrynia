@@ -208,6 +208,20 @@ static server must independently forbid symlink traversal and untrusted
 filesystem writes**. Never give untrusted publishers direct write access to
 `SKRYNIA_DATA_DIR/store/`.
 
+### Startup directory and writer-lock symlink safety
+
+Rust startup refuses symbolic links and non-directory objects in each
+required storage/state directory before changing that directory's mode or
+loading authority. The kernel writer-lock file is opened with
+`O_NOFOLLOW | O_NONBLOCK` and checked as a regular file before locking it.
+This prevents an offline directory replacement or an injected lock-file
+symlink from silently redirecting storage access or locking an unrelated inode.
+`tests/rust-startup-links.js` checks all nine required directory paths,
+the writer-lock path, unchanged external file contents and permissions,
+and successful startup on an ordinary fresh directory. It runs from `rust-public-symlink.js` in
+`make rust-crash-test` and Rust preview CI. This is defense in depth,
+not permission for untrusted processes to modify the data directory.
+
 ### Independently decryptable Web Push receipts
 
 A separate Rust test `signature::tests::receipt` decrypts the encrypted

@@ -15,6 +15,11 @@ pub fn dirs(dir: &Path) -> std::io::Result<()> {
     ] {
         let folder = dir.join(path);
         fs::create_dir_all(&folder)?;
+        if !fs::symlink_metadata(&folder)?.file_type().is_dir() {
+            return Err(std::io::Error::other(
+                "storage directory must be a real directory",
+            ));
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

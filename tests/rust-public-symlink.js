@@ -3,6 +3,7 @@
 // A new public-store symlink must never expose private server state.
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
+const {execFileSync}=require('node:child_process');
 const {join,resolve}=require('node:path');
 const {tmpdir}=require('node:os');
 const {port,request,start,stop,credentials,sha}=require('./crash/fixture');
@@ -41,6 +42,8 @@ async function main() {
       {'X-Skrynia-If-SHA256':sha('safe')})).status,200);
     assert.equal((await request(p,'GET','/store/exfiltration')).body.toString(),
       'replacement');
+    execFileSync(process.execPath,[resolve('tests/rust-startup-links.js'),binary],
+      {stdio:'inherit',timeout:15000});
     console.log('Public-store GET/HEAD and CAS reject injected symlink; private state protected: OK');
   } finally {
     if(child)await stop(child,'SIGKILL');
