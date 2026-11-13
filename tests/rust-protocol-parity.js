@@ -109,6 +109,25 @@ async function main() {
     await compare('duplicate','POST','/store/x',{body:'abc'});
     await compare('read','GET','/store/x',{compareBody:true});
     await compare('head','HEAD','/store/x',{compareBody:true});
+    const readEdges=[
+      ['head-range','HEAD','/store/x',{Range:'bytes=1-1'}],
+      ['head-not-modified','HEAD','/store/x',{'If-None-Match':'"'+sha('abc')+'"'}],
+      ['range first','GET','/store/x',{Range:'bytes=0-0'}],
+      ['range last','GET','/store/x',{Range:'bytes=2-2'}],
+      ['range reversed','GET','/store/x',{Range:'bytes=2-1'}],
+      ['range empty','GET','/store/x',{Range:'bytes='}],
+      ['range invalid alphabet','GET','/store/x',{Range:'bytes=abc'}],
+      ['range unusual unit','GET','/store/x',{Range:'pixels=1-2'}],
+      ['range uppercase','GET','/store/x',{Range:'Bytes=0-1'}],
+      ['range overlapping','GET','/store/x',{Range:'bytes=0-1,1-2'}],
+      ['if-range weak','GET','/store/x',{Range:'bytes=0-1','If-Range':'W/"'+sha('abc')+'"'}],
+      ['conditional weak','GET','/store/x',{'If-None-Match':'W/"'+sha('abc')+'"'}],
+      ['conditional wildcard','GET','/store/x',{'If-None-Match':'*'}],
+      ['conditional mismatch','GET','/store/x',{'If-None-Match':'"no"'}],
+    ];
+    for(const [label,method,route,headers] of readEdges) {
+      await compare(label,method,route,{headers,compareBody:true});
+    }
     await compare('cache','GET','/store/x',{headers:{'If-None-Match':'"'+sha('abc')+'"'},compareBody:true});
     await compare('range','GET','/store/x',{headers:{Range:'bytes=1-2'},compareBody:true});
     await compare('suffix range','GET','/store/x',{headers:{Range:'bytes=-1'},compareBody:true});
@@ -129,6 +148,32 @@ async function main() {
     await compare('delete valid','DELETE','/store/x',{
       headers:{'X-Skrynia-If-SHA256':sha('def')}});
     await compare('deleted read','GET','/store/x',{compareBody:true});
+    const negativePaths=[
+      '/store/.dot','/store/%2Ehidden','/store/abc%2Fdef','/store/a%5Cb',
+      '/store/%C3%A9','/store/hello%252Eworld','/store/%00','/store/abc%20def',
+      '/store/%2F','/store/a%3Fb','/store/a%23b',
+    ];
+    for(const route of negativePaths) {
+      await compare('invalid-key '+route,'GET',route);
+    }
+    const writeEdges=[
+      ['head missing','HEAD','/store/not_there',{}],
+      ['delete missing','DELETE','/store/not_there',{}],
+      ['delete malformed precondition','DELETE','/store/not_there',{'X-Skrynia-If-SHA256':'BAD'}],
+      ['put missing','PUT','/store/not_there',{}],
+      ['get unsupported','PATCH','/store/x',{}],
+      ['unknown endpoint','GET','/not_an_endpoint',{}],
+      ['push unsupported GET','GET','/push/subscriptions',{}],
+    ];
+    for(const [label,method,route,headers] of writeEdges) {
+      await compare(label,method,route,{headers,body:method==='PUT'?'data':undefined});
+    }
+    await compare('anonymous list','GET','/store?locations=*',{token:'none'});
+    await compare('bad-token list','GET','/store?locations=*',{token:'bad'});
+    await compare('anonymous grant inspect','GET',state=>'/grants/'+state.root.id,{token:'none'});
+    await compare('invalid issuer grant inspect','GET',state=>'/grants/'+state.root.id,{token:'bad'});
+    await compare('bad issuer user issuance','POST',state=>'/grants/'+state.root.id+'/users',{token:'bad'});
+    await compare('anonymous user issuance','POST',state=>'/grants/'+state.root.id+'/users',{token:'none'});
     await compare('list all','GET','/store?locations=*');
     await compare('list missing matcher','GET','/store');
     await compare('list duplicate matcher','GET','/store?locations=*&locations=*');

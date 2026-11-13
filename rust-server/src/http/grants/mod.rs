@@ -8,7 +8,14 @@ use axum::response::Response;
 use std::sync::Arc;
 
 pub async fn route(state: Arc<State>, path: &str, req: Request) -> Result<Response> {
-    let token = replies::token(req.headers())?.to_string();
+    // Issuer-only routes return an invalid-issuer error even without a token.
+    let issuer_route = (req.method() == Method::POST && path.ends_with("/users"))
+        || (req.method() == Method::DELETE && path.starts_with("/grants/"));
+    let token = match replies::token(req.headers()) {
+        Ok(value) => value.to_string(),
+        Err(_) if issuer_route => String::new(),
+        Err(error) => return Err(error),
+    };
     let method = req.method().clone();
     let spec = if method == Method::POST && path == "/grants" {
         let bytes = to_bytes(req.into_body(), 8192)
