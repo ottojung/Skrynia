@@ -22,3 +22,26 @@ environment.
 
 Do not claim a release passed unless the exact pushed commit's checks
 are green. Tests and build procedures must not require other runtime languages.
+
+
+## Reproducible HTTP throughput probe
+
+Run `SKRYNIA_BENCH_SAMPLES=100 make benchmark`. The Rust workload driver
+builds the release binary, starts it with a fresh private temporary data
+directory on a loopback port, issues a root user credential, and measures
+sequential 4 KiB GET and SHA-256-conditioned PUT requests. It verifies HTTP
+statuses, response bytes and content hashes; every PUT changes the stored
+content. All files and the process are cleaned up afterward.
+
+Illustrative single run on shared `marceline-dev` (2026-11-13, release
+binary, 100 operations per workload, local filesystem):
+
+| Workload | Operations/s | p50 (ms) | p95 (ms) | p99 (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| GET 4 KiB | 6146.8 | 0.15 | 0.23 | 0.39 |
+| CAS PUT 4 KiB | 67.7 | 12.48 | 21.64 | 47.43 |
+
+This is **not** a controlled measurement or a cross-version comparison.
+Synchronous fsync and shared-host contention dominate write latency.
+Repeat on the intended deployment filesystem under sustained concurrency
+and notification load before asserting performance or resource capacity.
