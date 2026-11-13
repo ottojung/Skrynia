@@ -7,10 +7,7 @@ fn generated(name: &str) -> bool {
     let Some(id) = name.strip_prefix(".skrynia-") else {
         return false;
     };
-    id.len() == 32
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    crate::valid_identifier(id)
 }
 pub fn abandoned(root: &Path) -> io::Result<()> {
     for name in [

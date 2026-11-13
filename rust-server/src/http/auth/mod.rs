@@ -17,12 +17,7 @@ pub fn precondition(headers: &HeaderMap, method: &Method) -> Result<Option<Strin
         return Ok(None);
     };
     let value = value.to_str().map_err(|_| bad("invalid_precondition"))?;
-    if method == Method::POST
-        || value.len() != 64
-        || !value
-            .bytes()
-            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-    {
+    if method == Method::POST || !crate::valid_sha256(value) {
         return Err(bad("invalid_precondition"));
     }
     Ok(Some(value.into()))

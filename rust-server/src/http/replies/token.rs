@@ -10,11 +10,7 @@ pub fn token(headers: &HeaderMap) -> crate::error::Result<&str> {
             "grant_user_token_required",
         ));
     };
-    if value.len() != 64
-        || !value
-            .bytes()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-    {
+    if !crate::valid_sha256(value) {
         return Err(crate::error::Fail(
             StatusCode::UNAUTHORIZED,
             "grant_user_token_required",

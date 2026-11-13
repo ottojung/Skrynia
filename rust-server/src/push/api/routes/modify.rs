@@ -26,7 +26,6 @@ pub async fn run(
         if !value.is_object() {
             return Err(crate::bad("invalid_json_object"));
         }
-        super::patch::validate(&value)?;
         tokio::task::spawn_blocking(move || state.update_subscription(&id, &cap, &value))
             .await
             .map_err(|_| crate::internal())??;

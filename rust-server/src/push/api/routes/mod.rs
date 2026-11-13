@@ -1,6 +1,5 @@
 mod create;
 mod modify;
-mod patch;
 use crate::{Fail, Result, State};
 use axum::extract::Request;
 use axum::http::{Method, StatusCode};

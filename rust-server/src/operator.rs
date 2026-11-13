@@ -16,7 +16,9 @@ pub fn root_credentials(dir: &Path) -> io::Result<Value> {
             let id = value.get("id").and_then(Value::as_str);
             let token = value.get("rootIssuerToken").and_then(Value::as_str);
             match (id, token) {
-                (Some(id), Some(token)) if crate::valid_identifier(id) && token.len() == 64 => {
+                (Some(id), Some(token))
+                    if crate::valid_identifier(id) && crate::valid_sha256(token) =>
+                {
                     found = Some(serde_json::json!({"id": id, "issuerToken": token}));
                 }
                 _ => return Err(io::Error::other("invalid root credentials")),

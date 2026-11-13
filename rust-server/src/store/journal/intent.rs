@@ -17,11 +17,7 @@ impl Intent {
             && if self.kind == "delete" {
                 self.sha256.is_none()
             } else {
-                self.sha256.as_ref().is_some_and(|x| {
-                    x.len() == 64
-                        && x.bytes()
-                            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-                })
+                self.sha256.as_ref().is_some_and(|x| crate::valid_sha256(x))
             }
     }
     pub fn applied(&self, root: &Path) -> io::Result<bool> {

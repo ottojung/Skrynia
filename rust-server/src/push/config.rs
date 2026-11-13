@@ -1,3 +1,4 @@
+use crate::config_number as number;
 use std::collections::HashSet;
 use std::io;
 
@@ -9,16 +10,6 @@ pub struct PushConfig {
     pub max_attempts: u32,
     pub max_subscriptions: usize,
     pub max_outbox: usize,
-}
-fn number(name: &str, fallback: u64, maximum: u64) -> io::Result<u64> {
-    let value = std::env::var(name)
-        .ok()
-        .map_or(Ok(fallback), |s| s.parse::<u64>())
-        .map_err(|_| io::Error::other(format!("invalid {name}")))?;
-    if value == 0 || value > maximum {
-        return Err(io::Error::other(format!("invalid {name}")));
-    }
-    Ok(value)
 }
 impl PushConfig {
     pub fn load(public: &str) -> io::Result<Self> {

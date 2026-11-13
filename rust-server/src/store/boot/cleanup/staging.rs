@@ -8,12 +8,7 @@ fn generated(name: &str) -> bool {
     let Some((pid, id)) = rest.split_once('.') else {
         return false;
     };
-    !pid.is_empty()
-        && pid.bytes().all(|b| b.is_ascii_digit())
-        && id.len() == 32
-        && id
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()) && crate::valid_identifier(id)
 }
 pub fn abandoned(root: &Path) -> io::Result<()> {
     let folder = root.join("store-tmp");

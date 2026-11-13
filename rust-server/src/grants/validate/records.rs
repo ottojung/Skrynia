@@ -1,5 +1,5 @@
-use super::identifiers::{valid_hash, valid_id};
 use crate::{Grant, OPERATIONS, valid_scope};
+use crate::{valid_identifier as valid_id, valid_sha256 as valid_hash};
 use std::collections::HashSet;
 use std::io;
 

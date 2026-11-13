@@ -4,7 +4,7 @@ pub struct NetworkOptions {
     pub max_connections: usize,
     pub idle_timeout: Duration,
 }
-fn number(name: &str, default: u64, maximum: u64) -> io::Result<u64> {
+pub fn number(name: &str, default: u64, maximum: u64) -> io::Result<u64> {
     let value = std::env::var(name)
         .ok()
         .map_or(Ok(default), |s| s.parse())
