@@ -19,9 +19,14 @@ pub fn validate_push(state: &PushState, grants: &HashMap<String, Grant>) -> io::
                 .any(|event| crate::Kind::parse(event).is_none() || !seen.insert(event))
             || !crate::valid_sha256(&sub.cap_hash)
             || crate::parse_push_endpoint(&sub.endpoint).is_none()
-            || !valid_keys(&sub.keys)
+            || !super::keys::legacy(&sub.keys)
         {
             return Err(io::Error::other("invalid push subscription"));
+        }
+        if !valid_keys(&sub.keys) {
+            eprintln!(
+                "Skrynia subscription {id} has legacy invalid push keys; re-register to restore delivery"
+            );
         }
     }
     for pending in state.outbox.values() {

@@ -20,3 +20,23 @@ fn push_keys_require_a_valid_curve_point_and_auth_secret() {
     keys.auth = URL_SAFE_NO_PAD.encode([7u8; 15]);
     assert!(!valid(&keys));
 }
+
+#[test]
+fn padded_base64_is_not_accepted_for_new_subscriptions() {
+    let mut keys = PushKeys {
+        p256dh: URL_SAFE_NO_PAD.encode(
+            hex::decode(concat!(
+                "046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296",
+                "4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"
+            ))
+            .unwrap(),
+        ),
+        auth: URL_SAFE_NO_PAD.encode([7u8; 16]),
+    };
+    assert!(valid(&keys));
+    keys.p256dh.push('=');
+    assert!(!valid(&keys));
+    keys.p256dh.pop();
+    keys.auth.push('=');
+    assert!(!valid(&keys));
+}
