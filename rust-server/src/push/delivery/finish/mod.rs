@@ -28,10 +28,12 @@ pub fn batch(state: &State, results: Vec<DeliveryOutcome>) -> io::Result<()> {
     for result in results {
         changed |= apply::change(state, &mut data, result, &mut retired);
     }
+    let mut clean_persist_failure = false;
     let result = (|| {
         if changed {
             if let Err(error) = crate::persist_outbox(&state.dir, &data.push.outbox) {
                 data.push.outbox = before;
+                clean_persist_failure = crate::store::disk::clean_write_error(&error);
                 return Err(error);
             }
         }
@@ -40,7 +42,7 @@ pub fn batch(state: &State, results: Vec<DeliveryOutcome>) -> io::Result<()> {
         }
         Ok(())
     })();
-    if result.is_err() {
+    if result.is_err() && !clean_persist_failure {
         state.failed.store(true, Ordering::Release);
     }
     result

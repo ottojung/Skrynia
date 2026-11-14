@@ -13,7 +13,12 @@ impl State {
         Ok(())
     }
     pub fn persist_json(&self, path: &Path, value: &impl serde::Serialize) -> crate::Result<()> {
-        self.fail_on_io(crate::write_json(path, value))
+        match crate::write_json(path, value) {
+            Err(error) if super::disk::clean_write_error(&error) => {
+                Err(crate::error::transient_io(&error))
+            }
+            result => self.fail_on_io(result),
+        }
     }
     pub fn persist_remove(&self, path: &Path) -> crate::Result<()> {
         self.fail_on_io(

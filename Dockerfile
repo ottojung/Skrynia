@@ -20,4 +20,5 @@ COPY --from=build /work/target/release/skrynia-server /usr/local/bin/skrynia-ser
 USER 1000:1000
 ENV SKRYNIA_HOST=0.0.0.0
 EXPOSE 17380
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD skrynia-server healthcheck
 ENTRYPOINT ["/usr/local/bin/skrynia-server"]
