@@ -59,3 +59,47 @@ the operations execute in a fixed order on a shared host, and resource
 contention may explain the tail-latency outliers. Re-run with interleaved
 orders, intended deployment storage, sustained concurrency, and notification
 load before claiming a CAS overhead or production capacity.
+
+## Idealized complexity implementation audit
+
+The algorithmic target is specified in
+[idealized-complexity.md](idealized-complexity.md). That model assumes
+permanent execution and stronger single-key atomic filesystem primitives.
+The *actual* server retains crash recovery and durable private metadata;
+this section distinguishes their costs rather than treating them as free.
+
+| Component | Idealized time | Indexed RAM | Implementation |
+| --- | --- | --- | --- |
+| Direct object GET | `O(k+b)` | `O(1)` buffer | Filesystem lookup, streamed SHA-256 and response |
+| New grant scope initialization | `O(Nk)` | `O(Gk)` | Enumerate existing object names and lengths once |
+| Mutation quota accounting | `O(k+h)` | `O(Gk)` | Prefix trie totals, shared per-grant counters and ancestor aggregates |
+| Subscription matching | `O(k+s)` | `O(Sk)` separately | Exact/prefix/event trie |
+| POST/PUT excluding durability | `O(k+b+h+s)` | `O(Gk)` quota/object index | Filesystem key check, byte processing, scope updates and subscription match |
+
+Here `b` includes old bytes read for SHA-256 conditional PUT.
+Authentication uses expected-constant-time hashed token lookup.
+Grant lookup assumes expected-constant-time hash table access; the bounds
+exclude scheduling waits on the server's shared mutation lock.
+The object index no longer scales in RAM with the object count `N`.
+Credential, subscription, and notification state have separate memory
+costs; neither `O(Gk)` nor this table means total server RSS is `O(Gk)`.
+
+The production server does **not** attain strict end-to-end
+`O(k+b+h+s)` for every mutation: when `s>0`, its current durable
+single-file notification outbox copies pending state and sorts and writes
+all `P` pending records, adding `O(P log P)` CPU and `O(P)` I/O and
+transient memory. Crash-safe journal/staging files and whole-upload buffers
+also require auxiliary persistent space and `O(b)` upload RAM, respectively.
+These production costs are **not permitted** by the idealized model.
+Removing durability for the sake of an asymptotic claim is not acceptable
+for the production server.
+
+Scoped paginated listing is deliberately excluded from the point-GET
+bound: without an all-key index it enumerates `N` directory entries and
+retains only `L+1` sorted candidates, costing
+`O(Nk + N log(L+1))` time and `O(Lk)` result memory. This is the
+intended time/space trade-off.
+
+The tests include direct oracle comparisons of the indexed grant totals
+and subscription matcher against full scans, plus restart, nested-grant,
+revoke, conditional mutation, listing and durability tests.

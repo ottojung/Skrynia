@@ -1,3 +1,4 @@
+mod oracle;
 use super::SubIndex;
 use crate::{PushKeys, Subscription};
 fn sub(id: &str, scope: &str, events: &[&str]) -> Subscription {
