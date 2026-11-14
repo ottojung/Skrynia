@@ -17,6 +17,11 @@ fn clean_push_io_failure_is_retryable_without_restart() {
     };
     assert!(crate::push_finish_batch(&fixture.state, report()).is_err());
     assert!(!fixture.state.failed.load(Ordering::Acquire));
+    assert!(!fixture.state.data.lock().unwrap().push.ready(
+        &fixture.sub.id,
+        &pending,
+        crate::push_now()
+    ));
     assert!(
         fixture
             .state

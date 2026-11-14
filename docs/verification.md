@@ -194,3 +194,27 @@ independence from `N` is the principal established benefit.
   indicates an internal accounting invariant violation, not a benign
   request failure; no reachable user-input panic was established in this
   review. Static review is not a proof of panic freedom.
+
+## Transient push acknowledgement backoff
+
+A pre-rename failure while persisting push acknowledgments must not become
+a one-second resend loop. The durable outbox remains unchanged while
+a separate **volatile** subscriber/generation cooldown tracks retries.
+The worker skips deliveries until exponential deadlines. Delivery failures
+also accrue transient retry counts so endpoint retirement remains possible
+after persistence recovers; successfully delivered wake-ups are not counted
+as failed endpoints. Only affected subscriptions receive cooldowns, and
+successful persistence or subscription changes clear stale cooldowns.
+
+Restart discards volatile cooldowns and may resend a wake-up, consistent
+with the existing at-least-once semantics. New notification generations
+retain transient delivery-failure backoff if their enqueue commits before
+the previous acknowledgment. Tests cover disk errors, increasing delays,
+lack of immediate reselection, retirement after recovery, and unchanged
+durable state on a clean failure.
+
+The periodic journal replay retains its protective latch for mixed sets
+of committed and applied-but-uncommitted intents. A narrower optimization
+for verified committed-only replay is possible, but blanket retry would
+allow a later overwrite to defeat a still-unmarked intent's recovery.
+Journal handling is not changed in this fix.

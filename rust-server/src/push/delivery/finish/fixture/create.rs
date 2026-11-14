@@ -13,6 +13,7 @@ pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
         subscriptions: HashMap::from([(sub.id.clone(), sub.clone())]),
         outbox: HashMap::from([(sub.id.clone(), notice)]),
         index: Default::default(),
+        cooldowns: Default::default(),
     };
     push.reindex();
     let config = PushConfig {

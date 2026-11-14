@@ -8,12 +8,14 @@ impl PushState {
         }
     }
     pub fn put_sub(&mut self, sub: Subscription) {
+        self.clear_cooldown(&sub.id);
         if let Some(old) = self.subscriptions.insert(sub.id.clone(), sub.clone()) {
             self.index.remove(&old);
         }
         self.index.insert(&sub);
     }
     pub fn remove_sub(&mut self, id: &str) -> Option<Subscription> {
+        self.clear_cooldown(id);
         let old = self.subscriptions.remove(id)?;
         self.index.remove(&old);
         Some(old)

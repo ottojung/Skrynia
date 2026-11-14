@@ -106,8 +106,11 @@ backoff/retirement policy. Delivery rejects local, private, special-use
 and unresolved destinations. Configure an outbound firewall as defense in
 depth. Pending generations are durable and can coalesce; receipt can be
 duplicated. A removed or exhausted endpoint is retired. A clean outbox
-write failure during acknowledgment leaves the notification pending and
-the delivery worker retries later without disabling the server.
+write failure during acknowledgment leaves the notification pending, but
+uses in-memory exponential retry cooldowns rather than resending every
+second. Successful delivery is not counted as an endpoint failure.
+The cooldown resets after restart, so duplicate wake-ups remain possible
+under the documented at-least-once delivery semantics.
 
 ## Backup and restore
 
