@@ -1,6 +1,7 @@
 mod aggregate;
 mod attach;
 mod boot;
+mod live;
 mod lookup;
 mod meta;
 mod node;

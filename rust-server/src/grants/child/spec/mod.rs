@@ -1,3 +1,4 @@
+mod fields;
 mod limits;
 use crate::{Grant, Result, bad, forbidden, subset, valid_scope};
 
@@ -11,20 +12,14 @@ pub fn parse(parent: &Grant, v: &serde_json::Value) -> Result<Spec> {
     if !parent.operations.iter().any(|op| op == "delegate") {
         return Err(forbidden("grant_operation_forbidden"));
     }
-    let locations = v
-        .get("locations")
-        .and_then(|v| v.as_str())
-        .unwrap_or(&parent.locations);
+    let locations = fields::locations(v)?;
     if !valid_scope(locations) {
         return Err(bad("invalid_locations"));
     }
     if !subset(locations, &parent.locations) {
         return Err(forbidden("locations_outside_parent"));
     }
-    let operations: Vec<String> = match v.get("operations") {
-        Some(v) => serde_json::from_value(v.clone()).map_err(|_| bad("invalid_operations"))?,
-        None => parent.operations.clone(),
-    };
+    let operations = fields::operations(v)?;
     let mut seen = std::collections::HashSet::new();
     if operations
         .iter()

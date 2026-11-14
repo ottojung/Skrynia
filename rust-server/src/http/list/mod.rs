@@ -15,7 +15,15 @@ pub async fn listing(state: Arc<State>, req: Request) -> Result<Response> {
     let response = tokio::task::spawn_blocking(move || {
         let snapshot = state.data.lock().map_err(|_| crate::internal())?;
         state.require_healthy()?;
-        page::list(&snapshot, &token, params, &state.dir)
+        let grant = snapshot.user(&token)?;
+        if !grant.operations.iter().any(|op| op == "list") {
+            return Err(crate::forbidden("grant_operation_forbidden"));
+        }
+        if !crate::subset(&params.locations, &grant.locations) {
+            return Err(crate::forbidden("locations_outside_grant"));
+        }
+        drop(snapshot);
+        page::list(params, &state.dir)
     })
     .await
     .map_err(|_| crate::internal())??;

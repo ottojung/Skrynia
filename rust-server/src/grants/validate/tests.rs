@@ -20,6 +20,7 @@ fn rejects_invalid_root_and_orphans() {
     let mut grants = HashMap::new();
     grants.insert(g.id.clone(), g.clone());
     let mut state = Snapshot {
+        object_version: 0,
         quota: crate::QuotaIndex::default(),
         grants,
         tokens: HashMap::new(),

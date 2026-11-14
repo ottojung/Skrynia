@@ -31,8 +31,18 @@ pub struct State {
     pub failed: std::sync::atomic::AtomicBool,
 }
 pub struct Snapshot {
+    pub object_version: u64,
     pub quota: crate::QuotaIndex,
     pub grants: HashMap<String, Grant>,
     pub tokens: HashMap<String, String>,
     pub push: PushState,
+}
+
+impl Snapshot {
+    pub fn bump_revision(&mut self) {
+        self.object_version = self
+            .object_version
+            .checked_add(1)
+            .expect("object revision overflow");
+    }
 }
