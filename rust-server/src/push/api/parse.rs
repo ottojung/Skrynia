@@ -1,11 +1,11 @@
-use crate::{PushConfig, PushKeys, Result, bad};
+use crate::{PushKeys, Result, bad};
 pub struct Input {
     pub locations: String,
     pub events: Vec<String>,
     pub endpoint: String,
     pub keys: PushKeys,
 }
-pub fn parse(value: &serde_json::Value, config: &PushConfig) -> Result<Input> {
+pub fn parse(value: &serde_json::Value) -> Result<Input> {
     let locations = value
         .get("locations")
         .and_then(|v| v.as_str())
@@ -22,7 +22,7 @@ pub fn parse(value: &serde_json::Value, config: &PushConfig) -> Result<Input> {
         .map_err(|_| bad("invalid_subscription"))?;
     let mut seen = std::collections::HashSet::new();
     if !crate::valid_scope(locations)
-        || !crate::endpoint_allowed(endpoint, config)
+        || crate::parse_push_endpoint(endpoint).is_none()
         || !crate::valid_push_keys(&keys)
         || events.is_empty()
         || events

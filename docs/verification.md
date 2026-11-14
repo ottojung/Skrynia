@@ -151,8 +151,8 @@ independence from `N` is the principal established benefit.
   when an intervening object mutation changes the revision. Grant revocation
   rebuilds remaining scope counters in RAM without another full disk scan.
 - Subscription public keys are validated as uncompressed P-256 curve points
-  with 16-byte authentication secrets. Push destinations default to deny,
-  with explicit exact-host, wildcard subdomain, and opt-in global allowlists.
+  with 16-byte authentication secrets. Push destinations have no host allowlist;
+  URL validity and public-address resolution remain enforced.
 - Rust MSRV, CI verification toolchain and Docker Rust toolchain are 1.93.
 - Per-request SHA-256 computation for GET and HTTP cache validators remains
   intentional: a per-object digest cache would consume additional O(N)

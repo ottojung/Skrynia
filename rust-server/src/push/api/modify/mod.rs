@@ -17,7 +17,7 @@ impl State {
             .cloned()
             .ok_or_else(|| missing("not_found"))?;
         require_capability(&sub.cap_hash, cap)?;
-        patch::apply(&mut sub, value, &data.push.subscriptions, &self.push_config)?;
+        patch::apply(&mut sub, value, &data.push.subscriptions)?;
         crate::persist_push_subscription(self, &sub)?;
         data.push.put_sub(sub);
         Ok(())

@@ -8,7 +8,7 @@ mod vapid;
 
 pub use config::PushConfig;
 pub use model::{Pending, PushKeys, Subscription, Vapid};
-pub use security::{endpoint_allowed, parse_endpoint, public_address};
+pub use security::{parse_endpoint, public_address};
 pub use state::{PushState, load_push, persist_outbox, read_outbox, validate_push};
 pub use vapid::load_vapid;
 

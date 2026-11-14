@@ -1,11 +1,10 @@
-use crate::{Fail, PushConfig, PushKeys, Result, Subscription, bad};
+use crate::{Fail, PushKeys, Result, Subscription, bad};
 use axum::http::StatusCode;
 use std::collections::HashMap;
 pub fn apply(
     sub: &mut Subscription,
     value: &serde_json::Value,
     existing: &HashMap<String, Subscription>,
-    config: &PushConfig,
 ) -> Result<()> {
     let fields = value
         .as_object()
@@ -20,7 +19,7 @@ pub fn apply(
         let endpoint = endpoint
             .as_str()
             .ok_or_else(|| bad("invalid_subscription"))?;
-        if !crate::endpoint_allowed(endpoint, config) {
+        if crate::parse_push_endpoint(endpoint).is_none() {
             return Err(bad("invalid_subscription"));
         }
         if existing.values().any(|item| {
