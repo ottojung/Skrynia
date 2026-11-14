@@ -1,4 +1,6 @@
+mod cooldown;
 use crate::{Pending, open_regular};
+pub(crate) use cooldown::Cooldown;
 use std::{collections::HashMap, io, path::Path};
 pub fn read(root: &Path) -> io::Result<HashMap<String, Pending>> {
     let file = open_regular(&root.join("state/push/outbox.json"))?;

@@ -14,6 +14,7 @@ pub struct PushState {
     pub subscriptions: HashMap<String, Subscription>,
     pub outbox: HashMap<String, Pending>,
     pub index: SubIndex,
+    pub(crate) cooldowns: HashMap<String, outbox::Cooldown>,
 }
 pub fn load_push(root: &Path) -> io::Result<PushState> {
     let subscriptions = load::read(&root.join("state/push-subs"))?;
@@ -25,6 +26,7 @@ pub fn load_push(root: &Path) -> io::Result<PushState> {
         subscriptions,
         outbox,
         index: SubIndex::default(),
+        cooldowns: HashMap::new(),
     };
     state.reindex();
     Ok(state)

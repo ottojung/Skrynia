@@ -7,7 +7,11 @@ pub fn retry(
     sub: &Subscription,
     failure: PushFailure,
 ) -> bool {
-    let attempts = current.attempts.max(original.attempts).saturating_add(1);
+    let attempts = current
+        .attempts
+        .max(original.attempts)
+        .max(data.push.retry_attempts(&sub.id, current))
+        .saturating_add(1);
     let retired = failure != PushFailure::Retry || attempts >= state.push_config.max_attempts;
     if retired
         && data

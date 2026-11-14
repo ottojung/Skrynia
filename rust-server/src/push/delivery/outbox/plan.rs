@@ -21,12 +21,14 @@ pub fn notifications(
                     .checked_add(1)
                     .ok_or_else(|| io::Error::other("generation overflow"))
             })?;
+            let (attempts, next_at) =
+                old.map_or((0, 0), |entry| data.push.effective_retry(&id, entry));
             Ok((
                 id,
                 Pending {
                     generation,
-                    attempts: old.map_or(0, |entry| entry.attempts),
-                    next_at: old.map_or(0, |entry| entry.next_at),
+                    attempts,
+                    next_at,
                 },
             ))
         })
