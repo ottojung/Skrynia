@@ -23,6 +23,8 @@ pub use delivery::{
 
 pub use delivery::{PushFailure, push_send};
 
+#[cfg(test)]
+pub(crate) use delivery::Fixture;
 pub use delivery::{DeliveryOutcome, push_finish_batch, push_run};
 
 #[cfg(test)]

@@ -2,18 +2,16 @@ mod ack;
 mod apply;
 mod fail;
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
+#[cfg(test)]
+pub(crate) use fixture::Fixture;
+mod report;
 mod retire;
+pub use report::DeliveryOutcome;
 #[cfg(test)]
 mod tests;
-use crate::{Pending, PushFailure, State, Subscription};
+use crate::State;
 use std::{io, sync::atomic::Ordering};
-pub type DeliveryOutcome = (
-    String,
-    Pending,
-    Option<Subscription>,
-    Result<(), PushFailure>,
-);
 pub fn batch(state: &State, results: Vec<DeliveryOutcome>) -> io::Result<()> {
     let mut data = state
         .data

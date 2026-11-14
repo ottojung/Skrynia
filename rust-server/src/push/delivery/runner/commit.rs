@@ -10,9 +10,16 @@ pub async fn completed(state: &Arc<State>, outcomes: Vec<DeliveryOutcome>) -> bo
         .unwrap_or_else(|error| Err(io::Error::other(error)));
     if let Err(error) = result {
         eprintln!("Skrynia push persistence failure: {error}");
+        if crate::store::disk::clean_write_error(&error) {
+            // The pending generation was rolled back and remains retryable.
+            return true;
+        }
         state.failed.store(true, Ordering::Release);
         false
     } else {
         true
     }
 }
+
+#[cfg(test)]
+mod tests;
