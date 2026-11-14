@@ -16,9 +16,18 @@ impl PushConfig {
         let mut allowed_hosts = HashSet::new();
         let raw = std::env::var("SKRYNIA_PUSH_ALLOWED_HOSTS").unwrap_or_default();
         for name in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-            let url = crate::parse_push_endpoint(&format!("https://{name}/"))
+            if name == "*" {
+                allowed_hosts.insert("*".into());
+                continue;
+            }
+            let (host, wildcard) = name.strip_prefix("*.").map_or((name, false), |s| (s, true));
+            let url = crate::parse_push_endpoint(&format!("https://{host}/"))
                 .ok_or_else(|| io::Error::other("invalid allowed push host"))?;
-            allowed_hosts.insert(url.host_str().unwrap().to_ascii_lowercase());
+            allowed_hosts.insert(if wildcard {
+                format!("*.{}", url.host_str().unwrap().to_ascii_lowercase())
+            } else {
+                url.host_str().unwrap().to_ascii_lowercase()
+            });
         }
         Ok(Self {
             subject: std::env::var("SKRYNIA_PUSH_SUBJECT").unwrap_or_else(|_| public.into()),

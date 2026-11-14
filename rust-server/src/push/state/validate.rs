@@ -1,12 +1,7 @@
+pub use super::keys::valid as valid_keys;
 use crate::{Grant, PushConfig, PushState, endpoint_allowed, subset, valid_scope};
 use std::collections::{HashMap, HashSet};
 use std::io;
-pub fn valid_keys(keys: &crate::PushKeys) -> bool {
-    !keys.p256dh.is_empty()
-        && keys.p256dh.len() <= 256
-        && !keys.auth.is_empty()
-        && keys.auth.len() <= 256
-}
 pub fn validate_push(
     state: &PushState,
     grants: &HashMap<String, Grant>,

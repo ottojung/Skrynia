@@ -21,7 +21,7 @@ It never interprets object contents as executable application instructions.
 | `SKRYNIA_PUSH_MAX_ATTEMPTS` | `12` | Retry attempts before retirement |
 | `SKRYNIA_MAX_SUBSCRIPTIONS` | `2000` | Maximum active Web Push registrations (1–1,000,000) |
 | `SKRYNIA_MAX_OUTBOX_ITEMS` | `10000` | Maximum pending notification records (1–1,000,000) |
-| `SKRYNIA_PUSH_ALLOWED_HOSTS` | empty | Optional exact HTTPS endpoint host allowlist |
+| `SKRYNIA_PUSH_ALLOWED_HOSTS` | empty (deny push destinations) | Comma-separated exact hosts and `*.domain.example` suffixes; `*` explicitly allows all eligible public hosts |
 | `SKRYNIA_PUSH_SUBJECT` | public URL | VAPID contact |
 
 Use the root-credential CLI on the authorized host only:
@@ -60,14 +60,14 @@ Object creation and replacement are journaled. A process interruption can
 leave an incomplete intent, which must be replayed on the next startup.
 Never manually discard transaction records.
 
-A synchronous storage failure **before** object application returns HTTP 503
+A failure before the atomic metadata rename is retryable and does not poison the server. If the rename may already have occurred, the server enters recovery-required state. A synchronous storage failure **before** object application returns HTTP 503
 `storage_unavailable` (or HTTP 507 `insufficient_storage` for a full
 filesystem or exhausted disk quota). The server remains healthy so clients
 may retry once the environment recovers. An ambiguous applied mutation or
 failed durable recovery sets a protective latch: subsequent requests,
 including `/health`, return HTTP 503 `recovery_required` until the
 writer is restarted and the journal is recovered. Do not bypass this latch
-or manually clear its records.
+or manually clear its records. The container healthcheck runs `skrynia-server healthcheck` and becomes unhealthy when `/health` returns 503; arrange for a supervisor to replace unhealthy containers. Docker alone does not automatically restart an unhealthy container. Release builds abort on Rust panics rather than leaving poisoned locks running.
 
 ## Container and reverse proxy
 
@@ -88,7 +88,7 @@ writes therefore use a digest of the observed bytes.
 
 ## Notifications
 
-Web Push uses authenticated VAPID and HTTPS. Delivery rejects local, private,
+Web Push uses authenticated VAPID and HTTPS. Configure `SKRYNIA_PUSH_ALLOWED_HOSTS` before accepting subscriptions: an empty list denies all destinations, `*.push.example.org` matches subdomains only, and `*` explicitly opts into any otherwise eligible public HTTPS endpoint. Existing deployments relying on the previous open default must supply an allowlist before upgrading. Delivery rejects local, private,
 special-use and unresolved destinations. Configure an outbound firewall as
 defense in depth. Pending generations are durable and can coalesce; receipt
 can be duplicated. A removed or exhausted endpoint is retired.

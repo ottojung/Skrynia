@@ -1,4 +1,8 @@
-use super::{address::public_address, endpoint::parse};
+mod allowlist;
+use super::{
+    address::public_address,
+    endpoint::{endpoint_allowed, parse},
+};
 use std::net::IpAddr;
 #[test]
 fn public_ips_only() {

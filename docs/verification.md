@@ -136,3 +136,31 @@ existing 4 KiB Rust benchmark, produced:
 The paired samples are too small and the host too variable to
 attribute a throughput improvement to the refactor. Memory
 independence from `N` is the principal established benefit.
+
+## Robustness review qualification
+
+- Child grant creation rejects missing, wrongly typed and unknown authority
+  fields, avoiding accidental inheritance from the parent.
+- Atomic JSON writes distinguish clean pre-rename failure from ambiguous
+  post-rename failure. Clean failures are retryable without poisoning the
+  service; ambiguous failures preserve the recovery latch. `/health` already
+  returns 503 when latched; the container healthcheck makes this visible to
+  a configured orchestrator. Production Rust uses `panic = "abort"`.
+- Scoped listing authorizes under the lock, then releases it before directory
+  enumeration. Initial grant scope scans happen outside the lock and retry
+  when an intervening object mutation changes the revision. Grant revocation
+  rebuilds remaining scope counters in RAM without another full disk scan.
+- Subscription public keys are validated as uncompressed P-256 curve points
+  with 16-byte authentication secrets. Push destinations default to deny,
+  with explicit exact-host, wildcard subdomain, and opt-in global allowlists.
+- Rust MSRV, CI verification toolchain and Docker Rust toolchain are 1.93.
+- Per-request SHA-256 computation for GET and HTTP cache validators remains
+  intentional: a per-object digest cache would consume additional O(N)
+  resident memory, conflicting with the established low-memory object
+  indexing design. External static servers and reverse-proxy rate limiting
+  remain the appropriate defenses against abusive public-read traffic.
+- The mandated structural limits necessarily partition Rust files into small
+  modules; this review does not silently repeal them or restructure the crate
+  facade. Native cryptography for Web Push key operations and rustls for
+  outbound TLS are retained rather than replacing verified security code
+  merely to reduce the lockfile's dependency count.

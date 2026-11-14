@@ -9,8 +9,8 @@ fn sub(id: &str, grant: &str) -> Subscription {
         events: vec!["create".into()],
         endpoint: "https://push.example.org/example".into(),
         keys: crate::PushKeys {
-            p256dh: "key".into(),
-            auth: "auth".into(),
+            p256dh: "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU".into(),
+            auth: "BwcHBwcHBwcHBwcHBwcHBw".into(),
         },
         cap_hash: "f".repeat(64),
     }

@@ -9,8 +9,8 @@ fn sub(id: &str, scope: &str, events: &[&str]) -> Subscription {
         events: events.iter().map(|s| s.to_string()).collect(),
         endpoint: "https://push.example.org/test".into(),
         keys: PushKeys {
-            p256dh: "k".into(),
-            auth: "a".into(),
+            p256dh: "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU".into(),
+            auth: "BwcHBwcHBwcHBwcHBwcHBw".into(),
         },
         cap_hash: "f".repeat(64),
     }

@@ -1,4 +1,5 @@
 mod index;
+mod keys;
 mod load;
 mod outbox;
 mod persist;

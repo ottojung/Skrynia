@@ -32,5 +32,15 @@ pub fn endpoint_allowed(value: &str, config: &PushConfig) -> bool {
     let Some(url) = parse(value) else {
         return false;
     };
-    config.allowed_hosts.is_empty() || config.allowed_hosts.contains(url.host_str().unwrap())
+    let host = url.host_str().unwrap();
+    config.allowed_hosts.contains("*")
+        || config.allowed_hosts.contains(host)
+        || config
+            .allowed_hosts
+            .iter()
+            .filter_map(|name| name.strip_prefix("*."))
+            .any(|suffix| {
+                host.strip_suffix(suffix)
+                    .is_some_and(|prefix| prefix.ends_with('.'))
+            })
 }
