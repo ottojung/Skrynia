@@ -2,6 +2,7 @@ mod boot;
 mod change;
 pub use change::Kind;
 pub(crate) mod disk;
+pub use disk::{sync_dir, write_json};
 mod journal;
 mod locking;
 mod paths;
@@ -11,7 +12,7 @@ pub use read::open_regular;
 mod staging;
 
 use crate::{Grant, PushConfig, PushState, Vapid};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -30,7 +31,7 @@ pub struct State {
     pub failed: std::sync::atomic::AtomicBool,
 }
 pub struct Snapshot {
-    pub objects: BTreeMap<String, u64>,
+    pub quota: crate::QuotaIndex,
     pub grants: HashMap<String, Grant>,
     pub tokens: HashMap<String, String>,
     pub push: PushState,

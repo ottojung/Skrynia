@@ -1,37 +1,42 @@
 use super::params::Params;
-use crate::Snapshot;
-pub fn entries(state: &Snapshot, request: &Params) -> Vec<String> {
-    let Some(prefix) = request.locations.strip_suffix('*') else {
-        return if state.objects.contains_key(&request.locations)
-            && request
-                .after
-                .as_ref()
-                .is_none_or(|after| after < &request.locations)
-        {
-            vec![request.locations.clone()]
-        } else {
-            Vec::new()
+use std::{collections::BinaryHeap, fs, io, path::Path};
+pub fn entries(dir: &Path, request: &Params) -> io::Result<Vec<String>> {
+    let scope = &request.locations;
+    if scope.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Some(prefix) = scope.strip_suffix('*') else {
+        if request.after.as_ref().is_some_and(|after| after >= scope) {
+            return Ok(Vec::new());
+        }
+        let path = dir.join("store").join(scope);
+        return match crate::open_regular(&path) {
+            Ok(_) => Ok(vec![scope.clone()]),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+            Err(e) => Err(e),
         };
     };
-    let start = request
-        .after
-        .as_deref()
-        .filter(|after| *after > prefix)
-        .unwrap_or(prefix);
-    let mut output = Vec::new();
-    for (key, _) in state.objects.range(start.to_string()..) {
-        if !key.starts_with(prefix) {
-            break;
+    let mut heap = BinaryHeap::new();
+    for entry in fs::read_dir(dir.join("store"))? {
+        let entry = entry?;
+        let key = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| io::Error::other("invalid key"))?;
+        if !crate::valid_key(&key) || !entry.file_type()?.is_file() {
+            return Err(io::Error::other("nonregular store entry"));
         }
-        if request.after.as_ref().is_some_and(|after| key <= after) {
+        if !key.starts_with(prefix) || request.after.as_ref().is_some_and(|x| key <= *x) {
             continue;
         }
-        output.push(key.clone());
-        if output.len() > request.limit {
-            break;
+        if heap.len() < request.limit + 1 {
+            heap.push(key);
+        } else if heap.peek().is_some_and(|last| key < *last) {
+            heap.pop();
+            heap.push(key);
         }
     }
-    output
+    Ok(heap.into_sorted_vec())
 }
 #[cfg(test)]
 mod tests;

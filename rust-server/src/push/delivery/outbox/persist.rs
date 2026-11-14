@@ -4,11 +4,22 @@ pub fn apply(data: &mut Snapshot, root: &Path, updates: Vec<(String, Pending)>) 
     if updates.is_empty() {
         return Ok(());
     }
-    let mut next = data.push.outbox.clone();
+    let previous = updates
+        .iter()
+        .map(|(id, _)| (id.clone(), data.push.outbox.get(id).cloned()))
+        .collect::<Vec<_>>();
     for (id, notice) in updates {
-        next.insert(id, notice);
+        data.push.outbox.insert(id, notice);
     }
-    persist_outbox(root, &next)?;
-    data.push.outbox = next;
+    if let Err(error) = persist_outbox(root, &data.push.outbox) {
+        for (id, old) in previous {
+            if let Some(notice) = old {
+                data.push.outbox.insert(id, notice);
+            } else {
+                data.push.outbox.remove(&id);
+            }
+        }
+        return Err(error);
+    }
     Ok(())
 }

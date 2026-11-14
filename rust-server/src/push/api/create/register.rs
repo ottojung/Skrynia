@@ -32,6 +32,14 @@ pub fn create(
         cap_hash: crate::sha(capability.as_bytes()),
     };
     super::persist(state, &sub)?;
-    data.push.subscriptions.insert(sub.id.clone(), sub.clone());
+    data.push.put_sub(sub.clone());
+    data.change_meta(
+        &sub.grant_id,
+        crate::Usage {
+            bytes: 4096,
+            objects: 1,
+        },
+        true,
+    );
     Ok(serde_json::json!({"id":sub.id,"capability":capability,"deduped":false}))
 }

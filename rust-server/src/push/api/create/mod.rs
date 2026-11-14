@@ -26,7 +26,7 @@ impl State {
             .cloned();
         if let Some(mut sub) = existing {
             let capability = dedup::rotate(self, &mut sub, &input, cap)?;
-            data.push.subscriptions.insert(sub.id.clone(), sub.clone());
+            data.push.put_sub(sub.clone());
             return Ok(serde_json::json!({"id":sub.id,"capability":capability,"deduped":true}));
         }
         register::create(self, &mut data, input, token)

@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::Path;
-
 pub fn dirs(dir: &Path) -> std::io::Result<()> {
     for (path, mode) in [
         ("store", 0o755),
@@ -27,8 +26,7 @@ pub fn dirs(dir: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
-pub fn scan(dir: &Path) -> std::io::Result<std::collections::BTreeMap<String, u64>> {
-    let mut objects = std::collections::BTreeMap::new();
+pub fn scan(dir: &Path) -> std::io::Result<()> {
     for item in fs::read_dir(dir.join("store"))? {
         let item = item?;
         let name = item
@@ -38,7 +36,6 @@ pub fn scan(dir: &Path) -> std::io::Result<std::collections::BTreeMap<String, u6
         if !crate::valid_key(&name) || !item.file_type()?.is_file() {
             return Err(std::io::Error::other("invalid stored key"));
         }
-        objects.insert(name, item.metadata()?.len());
     }
-    Ok(objects)
+    Ok(())
 }

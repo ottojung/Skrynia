@@ -19,7 +19,7 @@ impl State {
         require_capability(&sub.cap_hash, cap)?;
         patch::apply(&mut sub, value, &data.push.subscriptions, &self.push_config)?;
         crate::persist_push_subscription(self, &sub)?;
-        data.push.subscriptions.insert(id.into(), sub);
+        data.push.put_sub(sub);
         Ok(())
     }
     pub fn remove_subscription(&self, id: &str, cap: &str) -> Result<()> {

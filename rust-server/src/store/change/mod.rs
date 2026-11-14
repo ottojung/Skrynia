@@ -19,7 +19,8 @@ impl State {
     ) -> Result<bool> {
         // Preflight before I/O, then revalidate after parallel staging.
         let staged = prepare::staged(self, key, kind, body, token)?;
-        let mut data = lock::checked(self, key, kind, body, token, check::Mode::Final(expected))?;
+        let (mut data, old) =
+            lock::checked(self, key, kind, body, token, check::Mode::Final(expected))?;
         let path = self.dir.join("store").join(key);
         let digest = (kind != Kind::Delete).then(|| crate::sha(body));
         let pending = journal::commit(
@@ -39,11 +40,11 @@ impl State {
             },
         )
         .map_err(|failure| failure::map(self, failure))?;
-        if kind == Kind::Delete {
-            data.objects.remove(key);
-        } else {
-            data.objects.insert(key.into(), body.len() as u64);
-        }
+        data.quota.scopes.change(
+            key,
+            old,
+            (kind != Kind::Delete).then_some(body.len() as u64),
+        );
         Ok(pending)
     }
 }

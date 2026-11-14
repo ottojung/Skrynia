@@ -1,6 +1,31 @@
-use super::grant;
-use crate::Snapshot;
-use std::collections::{BTreeMap, HashMap};
+use super::fixture::{grant, snapshot};
+use crate::{Snapshot, Subscription, Usage};
+use std::collections::HashMap;
+fn sub(id: &str, grant: &str) -> Subscription {
+    Subscription {
+        id: id.into(),
+        grant_id: grant.into(),
+        locations: "*".into(),
+        events: vec!["create".into()],
+        endpoint: "https://push.example.org/example".into(),
+        keys: crate::PushKeys {
+            p256dh: "key".into(),
+            auth: "auth".into(),
+        },
+        cap_hash: "f".repeat(64),
+    }
+}
+fn add(data: &mut Snapshot, id: &str, grant: &str) {
+    data.push.put_sub(sub(id, grant));
+    data.change_meta(
+        grant,
+        Usage {
+            bytes: 4096,
+            objects: 1,
+        },
+        true,
+    );
+}
 #[test]
 fn subscription_charges_follow_grant_descendants_only() {
     let root = "a".repeat(32);
@@ -14,28 +39,9 @@ fn subscription_charges_follow_grant_descendants_only() {
             grant(&unrelated, Some(&root), "unrelated.*"),
         ),
     ]);
-    let mut data = Snapshot {
-        grants,
-        objects: BTreeMap::new(),
-        tokens: HashMap::new(),
-        push: crate::PushState::default(),
-    };
-    let create = |id: &str, grant_id: &str| crate::Subscription {
-        id: id.into(),
-        grant_id: grant_id.into(),
-        locations: "*".into(),
-        events: vec!["create".into()],
-        endpoint: "https://push.example.org/example".into(),
-        keys: crate::PushKeys {
-            p256dh: "key".into(),
-            auth: "auth".into(),
-        },
-        cap_hash: "f".repeat(64),
-    };
-    let sub = create(&"d".repeat(32), &child);
-    let other = create(&"e".repeat(32), &unrelated);
-    data.push.subscriptions.insert(sub.id.clone(), sub);
-    data.push.subscriptions.insert(other.id.clone(), other);
+    let mut data = snapshot(grants);
+    add(&mut data, &"d".repeat(32), &child);
+    add(&mut data, &"e".repeat(32), &unrelated);
     assert_eq!(data.usage(&child, None), (2048 + 4096, 1));
     assert_eq!(data.usage(&unrelated, None), (2048 + 4096, 1));
     assert_eq!(data.usage(&root, None), (3 * 2048 + 2 * 4096, 2));

@@ -1,3 +1,4 @@
+mod cache;
 mod disk;
 mod record;
 mod recover;
@@ -34,7 +35,7 @@ impl State {
             .map(|sub| sub.id.clone())
             .collect::<Vec<_>>();
         for id in obsolete {
-            data.push.subscriptions.remove(&id);
+            data.push.remove_sub(&id);
             data.push.outbox.remove(&id);
         }
         for id in record.ids {
@@ -44,6 +45,7 @@ impl State {
                 }
             }
         }
+        cache::reload(self, &mut data)?;
         Ok(())
     }
 }

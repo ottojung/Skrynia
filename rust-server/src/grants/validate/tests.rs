@@ -1,5 +1,5 @@
 use crate::{Grant, OPERATIONS, Snapshot, sha};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 fn root() -> Grant {
     let token = "a".repeat(64);
     Grant {
@@ -20,7 +20,7 @@ fn rejects_invalid_root_and_orphans() {
     let mut grants = HashMap::new();
     grants.insert(g.id.clone(), g.clone());
     let mut state = Snapshot {
-        objects: BTreeMap::new(),
+        quota: crate::QuotaIndex::default(),
         grants,
         tokens: HashMap::new(),
         push: crate::PushState::default(),

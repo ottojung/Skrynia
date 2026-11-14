@@ -10,7 +10,7 @@ fn fifty_acknowledgments_in_one_tick_have_one_durable_outbox_write() {
             let id = format!("{index:032x}");
             let mut sub = fixture.sub.clone();
             sub.id = id.clone();
-            data.push.subscriptions.insert(id.clone(), sub);
+            data.push.put_sub(sub);
             data.push.outbox.insert(
                 id.clone(),
                 Pending {
