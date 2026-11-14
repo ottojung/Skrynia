@@ -11,6 +11,11 @@ pub struct PushConfig {
 }
 impl PushConfig {
     pub fn load(public: &str) -> io::Result<Self> {
+        if std::env::var_os("SKRYNIA_PUSH_ALLOWED_HOSTS").is_some() {
+            return Err(io::Error::other(
+                "obsolete SKRYNIA_PUSH_ALLOWED_HOSTS: remove it; no host allowlist is supported",
+            ));
+        }
         Ok(Self {
             subject: std::env::var("SKRYNIA_PUSH_SUBJECT").unwrap_or_else(|_| public.into()),
             timeout_ms: number("SKRYNIA_PUSH_SEND_TIMEOUT_MS", 10000, u64::MAX)?,

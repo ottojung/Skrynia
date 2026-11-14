@@ -11,6 +11,9 @@ pub enum Failure {
     Retry,
 }
 pub async fn send(sub: &Subscription, config: &PushConfig, vapid: &Vapid) -> Result<(), Failure> {
+    if !crate::valid_push_keys(&sub.keys) {
+        return Err(Failure::Retry);
+    }
     let message = signature::create(sub, config, vapid)?;
     transport::deliver(sub, config, message).await
 }

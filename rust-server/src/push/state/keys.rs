@@ -1,18 +1,18 @@
 use crate::PushKeys;
-use base64::{
-    Engine,
-    engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
-};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use openssl::{
     bn::BigNumContext,
     ec::{EcGroup, EcPoint},
     nid::Nid,
 };
+pub fn legacy(keys: &PushKeys) -> bool {
+    !keys.p256dh.is_empty()
+        && keys.p256dh.len() <= 256
+        && !keys.auth.is_empty()
+        && keys.auth.len() <= 256
+}
 fn decode(value: &str) -> Option<Vec<u8>> {
-    URL_SAFE_NO_PAD
-        .decode(value)
-        .or_else(|_| URL_SAFE.decode(value))
-        .ok()
+    URL_SAFE_NO_PAD.decode(value).ok()
 }
 pub fn valid(keys: &PushKeys) -> bool {
     let Some(public) = decode(&keys.p256dh) else {

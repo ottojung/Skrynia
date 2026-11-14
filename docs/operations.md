@@ -65,7 +65,10 @@ filesystem or exhausted disk quota). The server remains healthy so clients
 may retry once the environment recovers. An ambiguous applied mutation or
 failed durable recovery sets a protective latch: subsequent requests,
 including `/health`, return HTTP 503 `recovery_required` until the
-writer is restarted and the journal is recovered. Do not bypass this latch
+writer is restarted and the journal is recovered. Even an out-of-space
+error during background journal replay may need this latch: an already
+applied object change must not be overwritten before its pending
+notification becomes durably replayable. Do not bypass this latch
 or manually clear its records. The container healthcheck runs `skrynia-server healthcheck` and becomes unhealthy when `/health` returns 503; arrange for a supervisor to replace unhealthy containers. Docker alone does not automatically restart an unhealthy container. Release builds abort on Rust panics rather than leaving poisoned locks running.
 
 ## Container and reverse proxy
@@ -89,11 +92,22 @@ writes therefore use a digest of the observed bytes.
 
 Web Push uses authenticated VAPID and HTTPS. No host allowlist is
 configured or enforced; subscriptions may target any eligible public HTTPS
-endpoint. Invalid P-256 public keys and authentication secrets are rejected
-at registration and during startup validation. Delivery rejects local,
-private, special-use and unresolved destinations. Configure an outbound firewall as
-defense in depth. Pending generations are durable and can coalesce; receipt
-can be duplicated. A removed or exhausted endpoint is retired.
+endpoint. Remove the obsolete `SKRYNIA_PUSH_ALLOWED_HOSTS` environment
+variable before upgrading: startup deliberately rejects it instead of
+silently ignoring a previously configured restriction.
+
+New subscriptions and key updates require unpadded base64url-encoded,
+on-curve P-256 public keys and 16-byte authentication secrets.
+Older subscription records satisfying the former length checks are still
+loaded, so one bad key cannot block startup. A warning identifies each
+incompatible subscription; repair it using its capability or re-register.
+Pending delivery with unusable keys retries under the existing bounded
+backoff/retirement policy. Delivery rejects local, private, special-use
+and unresolved destinations. Configure an outbound firewall as defense in
+depth. Pending generations are durable and can coalesce; receipt can be
+duplicated. A removed or exhausted endpoint is retired. A clean outbox
+write failure during acknowledgment leaves the notification pending and
+the delivery worker retries later without disabling the server.
 
 ## Backup and restore
 

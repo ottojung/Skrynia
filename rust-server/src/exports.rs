@@ -28,4 +28,6 @@ pub use super::http::{ListParams, validate_build_info};
 pub use super::net::config_number;
 
 #[cfg(test)]
+pub(crate) use super::push::Fixture;
+#[cfg(test)]
 pub use super::push::outbox_write_count;

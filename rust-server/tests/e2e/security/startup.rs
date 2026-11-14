@@ -1,3 +1,5 @@
+mod legacy;
+mod obsolete;
 use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::process::Command;
