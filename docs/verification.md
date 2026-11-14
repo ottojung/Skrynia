@@ -86,9 +86,9 @@ costs; neither `O(Gk)` nor this table means total server RSS is `O(Gk)`.
 
 The production server does **not** attain strict end-to-end
 `O(k+b+h+s)` for every mutation: when `s>0`, its current durable
-single-file notification outbox copies pending state and sorts and writes
-all `P` pending records, adding `O(P log P)` CPU and `O(P)` I/O and
-transient memory. Crash-safe journal/staging files and whole-upload buffers
+single-file notification outbox sorts and writes all `P` pending
+records, adding `O(P log P)` CPU and `O(P)` I/O and serialization memory.
+Enqueue rollback now retains only the `s` affected prior records. Crash-safe journal/staging files and whole-upload buffers
 also require auxiliary persistent space and `O(b)` upload RAM, respectively.
 These production costs are **not permitted** by the idealized model.
 Removing durability for the sake of an asymptotic claim is not acceptable
@@ -103,3 +103,36 @@ intended time/space trade-off.
 The tests include direct oracle comparisons of the indexed grant totals
 and subscription matcher against full scans, plus restart, nested-grant,
 revoke, conditional mutation, listing and durability tests.
+
+## Object-count memory probe
+
+One exploratory release-build comparison on shared `marceline-dev`
+(2026-11-13 UTC), with an isolated store containing `N` one-byte
+objects and only the root grant. Each process was started fresh and
+sampled shortly after its health endpoint became ready. The values
+are `RssAnon` from Linux `/proc/<pid>/status`, in KiB.
+
+| Stored objects | Before the scope-index refactor | Scope-index refactor |
+| ---: | ---: | ---: |
+| 0 | 1,024 | 1,280 |
+| 5,000 | 1,536 | 1,024 |
+| 25,000 | 3,328 | 1,024 |
+
+The original server's resident anonymous memory grows as objects are
+added; the new server's does not show that growth. This is consistent
+with removing the all-object `BTreeMap`, and does not replace the
+asymptotic source-code analysis. These are single samples, not
+controlled measurements of a production workload, and do not
+include filesystem page-cache memory.
+
+A same-host sequential 100-sample throughput comparison, using the
+existing 4 KiB Rust benchmark, produced:
+
+| Build | GET/s | CAS PUT/s | Unconditional PUT/s |
+| --- | ---: | ---: | ---: |
+| Before scope-index refactor | 6,779.8 | 61.6 | 58.4 |
+| Scope-index refactor | 7,378.4 | 77.7 | 58.9 |
+
+The paired samples are too small and the host too variable to
+attribute a throughput improvement to the refactor. Memory
+independence from `N` is the principal established benefit.
