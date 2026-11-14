@@ -164,3 +164,33 @@ independence from `N` is the principal established benefit.
   facade. Native cryptography for Web Push key operations and rustls for
   outbound TLS are retained rather than replacing verified security code
   merely to reduce the lockfile's dependency count.
+
+## Follow-up durability and progress review
+
+- Push acknowledgment recovery is checked at the **runner** as well as in
+  the batch writer. A failed atomic outbox write before rename leaves the
+  in-memory generation unchanged, keeps the worker running, and retries on
+  a later delivery tick. A post-rename/uncertain failure still latches.
+- A new grant scope makes at most two lock-free enumeration attempts.
+  Under sustained mutations it falls back to one scan under the writer
+  lock; this trades latency for guaranteed completion and a consistent
+  scope snapshot.
+- The removed push-host allowlist is **not** restored. An obsolete
+  `SKRYNIA_PUSH_ALLOWED_HOSTS` environment variable fails startup rather
+  than silently relaxing the former deployment configuration.
+- Current push registrations and key patches require unpadded base64url
+  because the `web-push` encryption implementation rejects padding.
+  Legacy persisted records satisfying the old bounded-length validation
+  do not block startup. Invalid keys are logged, can be repaired using
+  a subscription capability, and cannot generate outbound push sends.
+- Journal replay and committed-marker failures remain recovery-latching,
+  even when the immediate storage error occurred before an atomic rename.
+  An object may already be committed: allowing further writes to that
+  key could supersede the bytes checked by the initial journal intent,
+  making its outstanding notification unrecoverable. Avoiding this latch
+  requires a different durable mutation/notification protocol, not simply
+  treating all ENOSPC errors as safe to ignore.
+- Release panic-abort remains in place. Arithmetic overflow/underflow
+  indicates an internal accounting invariant violation, not a benign
+  request failure; no reachable user-input panic was established in this
+  review. Static review is not a proof of panic freedom.
