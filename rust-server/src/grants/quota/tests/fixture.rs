@@ -29,6 +29,7 @@ pub fn snapshot(grants: HashMap<String, Grant>) -> Snapshot {
         );
     }
     Snapshot {
+        object_version: 0,
         grants,
         quota,
         tokens: HashMap::new(),

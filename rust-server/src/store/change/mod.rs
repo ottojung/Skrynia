@@ -40,6 +40,7 @@ impl State {
             },
         )
         .map_err(|failure| failure::map(self, failure))?;
+        data.bump_revision();
         data.quota.scopes.change(
             key,
             old,

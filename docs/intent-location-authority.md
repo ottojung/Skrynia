@@ -12,7 +12,10 @@ and are not hierarchical filesystem paths.
 
 A grant's location matcher is an exact key, a prefix ending in `*`,
 all keys (`*`) or no keys (empty string). Every grant holds an immutable
-location matcher and an immutable subset of operations.
+location matcher and an immutable subset of operations. Creating a child
+requires explicit `locations`, `operations`, `maxBytes`, and `maxObjects`
+fields, with unknown fields rejected; omitted authority fields never
+inherit the parent's authority.
 
 On startup, after recovering pending transactions and grant revocations,
 the server creates an unrestricted root grant if none exists. Its

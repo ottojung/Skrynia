@@ -23,7 +23,10 @@ pub fn internal() -> Fail {
 }
 
 pub fn transient_io(error: &std::io::Error) -> Fail {
-    let full = matches!(error.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT));
+    let full = matches!(
+        crate::store::disk::write_errno(error),
+        Some(libc::ENOSPC | libc::EDQUOT)
+    );
     if full {
         Fail(StatusCode::INSUFFICIENT_STORAGE, "insufficient_storage")
     } else {

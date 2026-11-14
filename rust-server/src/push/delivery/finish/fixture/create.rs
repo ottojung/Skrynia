@@ -17,7 +17,7 @@ pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
     push.reindex();
     let config = PushConfig {
         subject: "mailto:test@example.org".into(),
-        allowed_hosts: HashSet::new(),
+        allowed_hosts: HashSet::from(["push.example.org".into()]),
         timeout_ms: 1000,
         concurrency: 1,
         max_attempts: 3,
@@ -32,6 +32,7 @@ pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
         max_buffered: 100,
         upload: std::sync::Arc::new(tokio::sync::Semaphore::new(100)),
         data: Mutex::new(Snapshot {
+            object_version: 0,
             quota: crate::QuotaIndex::default(),
             grants: HashMap::new(),
             tokens: HashMap::new(),

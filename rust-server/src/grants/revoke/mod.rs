@@ -45,7 +45,7 @@ impl State {
                 }
             }
         }
-        cache::reload(self, &mut data)?;
+        cache::rebuild(&mut data);
         Ok(())
     }
 }

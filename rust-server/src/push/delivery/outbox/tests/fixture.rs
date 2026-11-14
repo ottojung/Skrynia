@@ -19,6 +19,7 @@ pub fn pending(n: usize) -> (PathBuf, Snapshot, Vec<String>) {
     crate::persist_outbox(&root, &push.outbox).unwrap();
     let ids = push.outbox.keys().cloned().collect();
     let snapshot = Snapshot {
+        object_version: 0,
         quota: crate::QuotaIndex::default(),
         grants: HashMap::new(),
         tokens: HashMap::new(),

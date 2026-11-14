@@ -6,12 +6,8 @@ use crate::{Result, State};
 
 impl State {
     pub fn child(&self, token: &str, value: &serde_json::Value) -> Result<serde_json::Value> {
-        let mut data = self.data.lock().map_err(|_| crate::internal())?;
-        self.require_healthy()?;
+        let (mut data, spec, totals) = scope::checked(self, token, value)?;
         let parent = data.user(token)?.clone();
-        let spec = spec::parse(&parent, value)?;
-        data.check_metadata(&parent.id, 2048)?;
-        let totals = scope::initial(self, &data, &spec.locations)?;
         let issuer_token = secret();
         let child = Grant {
             id: random_id(),

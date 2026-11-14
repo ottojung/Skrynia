@@ -12,7 +12,6 @@ impl State {
         crate::validate_build_info()?;
         let config = options::read()?;
         let dir = config.dir;
-        let base = config.base;
         let max_object = config.max_object;
         let max_key_length = config.max_key_length;
         let max_buffered = config.max_buffered;
@@ -29,7 +28,7 @@ impl State {
         let vapid = crate::load_vapid(&dir)?;
         let state = Self {
             dir,
-            base,
+            base: config.base,
             max_object,
             max_key_length,
             max_buffered,
@@ -37,6 +36,7 @@ impl State {
             push_config,
             vapid,
             data: Mutex::new(Snapshot {
+                object_version: 0,
                 quota: crate::QuotaIndex::default(),
                 grants,
                 tokens,

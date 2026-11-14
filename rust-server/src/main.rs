@@ -12,10 +12,14 @@ mod store;
 async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     if let Some(action) = args.next() {
-        if action != "root-credentials" || args.next().is_some() {
-            return Err("usage: skrynia-server [root-credentials]".into());
+        if args.next().is_some() {
+            return Err("usage: skrynia-server [root-credentials|healthcheck]".into());
         }
-        operator::run()?;
+        match action.as_str() {
+            "root-credentials" => operator::run()?,
+            "healthcheck" => net::healthcheck()?,
+            _ => return Err("unknown command".into()),
+        }
         return Ok(());
     }
     let server = store::State::open()?;

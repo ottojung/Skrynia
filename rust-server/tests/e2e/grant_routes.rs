@@ -1,3 +1,6 @@
+mod clean_disk;
+mod health;
+mod strict;
 use super::fixture::Server;
 use reqwest::{Method, StatusCode};
 #[tokio::test]

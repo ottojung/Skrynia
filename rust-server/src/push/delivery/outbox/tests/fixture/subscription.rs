@@ -8,8 +8,8 @@ pub fn create(root: &Path, id: &str) -> Subscription {
         events: vec!["replace".into()],
         endpoint: "https://push.example.org".into(),
         keys: PushKeys {
-            p256dh: "x".into(),
-            auth: "y".into(),
+            p256dh: "BGsX0fLhLEJH-Lzm5WOkQPJ3A32BLeszoPShOUXYmMKWT-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU".into(),
+            auth: "BwcHBwcHBwcHBwcHBwcHBw".into(),
         },
         cap_hash: "b".repeat(64),
     };

@@ -27,7 +27,7 @@ pub fn sample() -> (Subscription, PushConfig, EcKey<Private>) {
     };
     let config = PushConfig {
         subject: "mailto:test@example.org".into(),
-        allowed_hosts: HashSet::new(),
+        allowed_hosts: HashSet::from(["push.example.org".into()]),
         timeout_ms: 1000,
         concurrency: 1,
         max_attempts: 2,

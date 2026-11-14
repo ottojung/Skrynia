@@ -166,7 +166,10 @@ Content-Type: application/json
 The response contains the new grant's ID and one-time issuer token; it
 does **not** generate a user token. `delegate` must be present in the
 parent's operations. A child may narrow locations and operations, never widen
-them. Child limits do not reserve capacity in ancestors.
+them. Child grant creation requires explicit string `locations` and array
+`operations`, along with `maxBytes` and `maxObjects`. Missing, wrongly
+typed, duplicate-operation, or unknown JSON fields are rejected; there is no
+implicit inheritance when either authority field is omitted. Child limits do not reserve capacity in ancestors.
 
 Issuing a user token returns `grantId`, `userId`, and `userToken`.
 Credentials are independent: user tokens cannot issue more user tokens,
