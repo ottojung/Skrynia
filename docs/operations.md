@@ -21,7 +21,6 @@ It never interprets object contents as executable application instructions.
 | `SKRYNIA_PUSH_MAX_ATTEMPTS` | `12` | Retry attempts before retirement |
 | `SKRYNIA_MAX_SUBSCRIPTIONS` | `2000` | Maximum active Web Push registrations (1–1,000,000) |
 | `SKRYNIA_MAX_OUTBOX_ITEMS` | `10000` | Maximum pending notification records (1–1,000,000) |
-| `SKRYNIA_PUSH_ALLOWED_HOSTS` | empty (deny push destinations) | Comma-separated exact hosts and `*.push.example.org` suffixes; `*` explicitly allows all eligible public hosts |
 | `SKRYNIA_PUSH_SUBJECT` | public URL | VAPID contact |
 
 Use the root-credential CLI on the authorized host only:
@@ -88,16 +87,11 @@ writes therefore use a digest of the observed bytes.
 
 ## Notifications
 
-Web Push uses authenticated VAPID and HTTPS. Configure
-`SKRYNIA_PUSH_ALLOWED_HOSTS` before accepting subscriptions: an empty list
-denies all destinations, `*.push.example.org` matches subdomains only,
-and `*` explicitly opts into any otherwise eligible public HTTPS endpoint.
-Existing deployments relying on the previous open default **must** supply
-an allowlist before upgrading. Subscriptions registered previously with
-invalid P-256 public keys or authentication secrets must be deleted or
-re-registered with valid keys before upgrading, or startup validation will
-reject them. Delivery rejects local, private, special-use and unresolved
-destinations. Configure an outbound firewall as
+Web Push uses authenticated VAPID and HTTPS. No host allowlist is
+configured or enforced; subscriptions may target any eligible public HTTPS
+endpoint. Invalid P-256 public keys and authentication secrets are rejected
+at registration and during startup validation. Delivery rejects local,
+private, special-use and unresolved destinations. Configure an outbound firewall as
 defense in depth. Pending generations are durable and can coalesce; receipt
 can be duplicated. A removed or exhausted endpoint is retired.
 

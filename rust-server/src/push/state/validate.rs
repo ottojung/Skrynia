@@ -1,12 +1,8 @@
 pub use super::keys::valid as valid_keys;
-use crate::{Grant, PushConfig, PushState, endpoint_allowed, subset, valid_scope};
+use crate::{Grant, PushState, subset, valid_scope};
 use std::collections::{HashMap, HashSet};
 use std::io;
-pub fn validate_push(
-    state: &PushState,
-    grants: &HashMap<String, Grant>,
-    config: &PushConfig,
-) -> io::Result<()> {
+pub fn validate_push(state: &PushState, grants: &HashMap<String, Grant>) -> io::Result<()> {
     for (id, sub) in &state.subscriptions {
         let grant = grants
             .get(&sub.grant_id)
@@ -22,7 +18,7 @@ pub fn validate_push(
                 .iter()
                 .any(|event| crate::Kind::parse(event).is_none() || !seen.insert(event))
             || !crate::valid_sha256(&sub.cap_hash)
-            || !endpoint_allowed(&sub.endpoint, config)
+            || crate::parse_push_endpoint(&sub.endpoint).is_none()
             || !valid_keys(&sub.keys)
         {
             return Err(io::Error::other("invalid push subscription"));

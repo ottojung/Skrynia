@@ -238,8 +238,8 @@ its newer notification remains pending. Push messages carry the constant
 `changed` and no object data. Delivery is retryable and duplicate wake-ups
 are possible. Non-permanent failures back off exponentially, and after
 12 failures by default the subscription is removed rather than retrying
-forever. An optional exact-host allowlist further restricts push
-destinations. A full notification outbox rejects a mutation needing new
+forever. Skrynia does not maintain a configurable push host allowlist.
+A full notification outbox rejects a mutation needing new
 entries before committing it, with HTTP 507. Deliveries have configurable
 timeouts and bounded concurrency (default eight simultaneous sends).
 Endpoints must use HTTPS; outbound DNS answers are validated and pinned

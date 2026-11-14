@@ -18,7 +18,7 @@ pub async fn run(
     if !value.is_object() {
         return Err(crate::bad("invalid_json_object"));
     }
-    let input = crate::parse_push_input(&value, &state.push_config)?;
+    let input = crate::parse_push_input(&value)?;
     let result = tokio::task::spawn_blocking(move || {
         state.subscribe(input, cap.as_deref(), token.as_deref())
     })

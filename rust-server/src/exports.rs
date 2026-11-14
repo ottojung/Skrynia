@@ -9,8 +9,8 @@ pub use super::store::{sync_dir, write_json};
 
 pub use super::grants::{random_secret, secure_match, valid_identifier, valid_sha256};
 pub use super::push::{
-    Pending, PushConfig, PushKeys, PushState, Subscription, Vapid, endpoint_allowed, load_push,
-    load_vapid, parse_endpoint as parse_push_endpoint, public_address, validate_push,
+    Pending, PushConfig, PushKeys, PushState, Subscription, Vapid, load_push, load_vapid,
+    parse_endpoint as parse_push_endpoint, public_address, validate_push,
 };
 
 pub use super::push::{

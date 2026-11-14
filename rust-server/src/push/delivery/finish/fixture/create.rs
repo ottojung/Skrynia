@@ -1,5 +1,5 @@
 use crate::{Pending, PushConfig, PushState, Snapshot, State, Subscription, Vapid};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Mutex;
@@ -17,7 +17,6 @@ pub fn state(path: &Path, sub: &Subscription, generation: u64) -> State {
     push.reindex();
     let config = PushConfig {
         subject: "mailto:test@example.org".into(),
-        allowed_hosts: HashSet::from(["push.example.org".into()]),
         timeout_ms: 1000,
         concurrency: 1,
         max_attempts: 3,

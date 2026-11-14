@@ -4,7 +4,6 @@ use openssl::bn::BigNumContext;
 use openssl::ec::{EcGroup, EcKey, PointConversionForm};
 use openssl::nid::Nid;
 use openssl::pkey::Private;
-use std::collections::HashSet;
 pub fn sample() -> (Subscription, PushConfig, EcKey<Private>) {
     let curve = EcGroup::from_curve_name(Nid::X9_62_PRIME256V1).unwrap();
     let key = EcKey::generate(&curve).unwrap();
@@ -27,7 +26,6 @@ pub fn sample() -> (Subscription, PushConfig, EcKey<Private>) {
     };
     let config = PushConfig {
         subject: "mailto:test@example.org".into(),
-        allowed_hosts: HashSet::from(["push.example.org".into()]),
         timeout_ms: 1000,
         concurrency: 1,
         max_attempts: 2,

@@ -17,7 +17,6 @@ impl Server {
             .env("SKRYNIA_PORT", port.to_string())
             .env("SKRYNIA_URL", &self.address)
             .env("SKRYNIA_TEST_DISABLE_PUSH", "1")
-            .env("SKRYNIA_PUSH_ALLOWED_HOSTS", "push.example.org")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
