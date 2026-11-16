@@ -96,7 +96,7 @@ constant-time filesystem assumption.
 
 Scoped paginated listing is deliberately excluded from the point-GET
 bound: without an all-key index it enumerates `N` directory entries and
-retains only `L+1` sorted candidates, costing `O(Nk + N log(L+1))` CPU work and `O(Lk)` result memory,
+retains only `L+1` sorted candidates, costing `O(Nk(1 + log(L+1)))` CPU work and `O(Lk)` result memory,
 **plus** full directory-enumeration filesystem cost `FSE(N,k)`.
 This is the current implementation's time/space trade-off, not a
 required property of the API.
