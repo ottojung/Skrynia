@@ -35,7 +35,11 @@ credentials must never be logged or placed in public objects.
 ## Filesystem and authority
 
 `store/` contains public, byte-preserving regular files. Everything under
-`state/` and `store-tmp/` is private. Root and grant records, subscription
+`state/` and `store-tmp/` is private. The directory
+`state/scope-delta-index/` contains a derived sorted-run quota index. It is
+deleted and rebuilt from the authoritative public files on every startup
+after journal recovery; interrupted indexing cannot be treated as proof
+of quota totals. Root and grant records, subscription
 state, transaction intents, and notification state must be backed up together.
 The only durable pending-notification representation is
 `state/push/outbox.json`. It is a JSON object mapping subscription IDs

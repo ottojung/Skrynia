@@ -214,12 +214,13 @@ contention are excluded from the CPU column.
 | --- | --- | --- |
 | GET / HEAD object | O(k + v) for validation, streaming SHA-256 / ETag | Lookup and read v bytes; response transfers r bytes |
 | Absent-object GET | O(k) | Lookup |
-| POST object | O(k + b + h + s) plus outbox work below | Two existence/metadata checks, stage b, journal, create/link, sync |
-| PUT object | O(k + b + h + s + b_old if conditional) plus outbox work | Checks, stage b, journal, atomic rename, sync; read b_old if conditional |
-| DELETE object | O(k + h + s + b_old if conditional) plus outbox work | Checks, journal, unlink, sync; read b_old if conditional |
+| POST object | O(k + b + h + s + k log(m)) before compaction and outbox work | Checks, stage b, journal, link/sync, possible run flush/merge |
+| PUT object | O(k + b + h + s + k log(m) + b_old if conditional) before compaction/outbox | Checks, stage b, journal, rename/sync, possible index merge; read b_old if conditional |
+| DELETE object | O(k + h + s + k log(m) + b_old if conditional) before compaction/outbox | Checks, journal, unlink/sync, possible index merge; read b_old if conditional |
 | LIST keys | O(Nk(1 + log(L+1))) current heap selection | Enumerate N names; inspect entry metadata |
 | Create grant, existing indexed scope | O(k + h) plus record serialization | Write and sync one grant record |
-| Create grant, new scope | O(Nk + k + h) per scan attempt | Enumerate N names and sizes, plus grant record |
+| Create grant, new exact scope | O(k+h) | Point stat/open and private grant record write |
+| Create grant, new prefix scope | O(k+h+k*ell*log(max(2,W))) | Read sorted signed-delta runs with binary seeks; write grant record |
 | Inspect grant / issue or revoke user token | Hash/lookup plus per-record serialization; token mutation can depend on users in that grant | Read/write private grant record as required |
 | Revoke subtree | Depends on C, G, S and affected outbox records; cannot claim O(1) | Revocation intent, remove grant/subscription records, rebuild indexes |
 | Register/update/delete push subscription | Scope/auth work plus affected record/outbox work | Subscription record mutation; possible durable outbox rewrite |
@@ -240,11 +241,11 @@ batch acknowledgment can likewise rewrite the outbox. The total is
 not generally O(k+b+h+s). This is an implementation cost, not a
 required property of Skrynia's API.
 
-**New-scope concurrency:** initialization attempts at most two
-lock-free full scans; when revisions change it falls back to a scan
-under the writer lock. Worst-case total scan work is O(Nk) per
-attempt, with a constant number of attempts, plus lock waiting.
-Grant creation does not assume a preexisting per-object index.
+**New-scope consistency:** first-prefix queries now run under the writer
+lock against a derived signed-delta index: the bounded RAM trie plus
+immutable sorted runs. Each run is binary-searched for the prefix range.
+The previous optimistic directory-scan retry path has been removed.
+Index flushes and compactions are charged on mutations, not grants.
 
 **Revocation and recovery:** the current server preserves object
 contents on grant revocation and rebuilds grant-scope counters from
@@ -265,7 +266,7 @@ metadata bytes. Let I_disk be bytes of any optional persistent index.
 | Object PUT | POST-style writes + conditional FSR(b_old,e), if requested | Old and staged new versions may coexist before rename |
 | Object DELETE | FSL + FSM + journal/durability; optional FSR(b_old,e) | No replacement payload, but private journal still consumes space |
 | LIST | FSE(N,k), plus metadata reads as needed | O(Lk) candidate memory |
-| New grant scope | FSE(N,k), then private record write and durability | Existing grant-scope trie RAM O(Gk); enumeration not a full object index |
+| New prefix grant | Run index lookup/seeks and private grant write + durability | RAM for active grant scopes O(Gk) plus bounded delta buffer and run metadata |
 | Push outbox rewrite | FSW(p,e) + FSM + FSD | O(p) transient serialization/storage possible; may temporarily hold old and new files |
 | Startup | FSE(N,k) + private-state enumeration/read + recovery traces | All live grants, credentials, subscriptions, outbox in memory as implemented |
 
@@ -274,10 +275,11 @@ not once per HTTP request. This table lists components, not complete
 counts of every rename/sync in a particular code revision. A detailed
 claim must extract the exact trace, including retries and failed writes.
 
-Current steady-state grant/quota object-index RAM is O(Gk), independently
-of N, **not total server RAM**. Credential state, push state, connection
+Current steady-state grant/active-scope RAM is O(Gk), plus a bounded
+signed-delta buffer of O(mk) and O(ell) run metadata; m <= 4096
+by default. This is **not total server RAM**. Credential state, push state, connection
 buffers, upload bodies, listing results, and pending outbox serialization
-add their own costs. Current disk occupancy is at least X + D_meta;
+add their own costs. Current disk occupancy is at least X + D_meta + I_disk;
 peak occupancy includes staged data, journal, in-flight outbox replacement,
 filesystem metadata, and any indexes. A disk-backed index is allowed,
 but its I_disk, RAM cache, and reconstruction costs must be reported.
@@ -292,21 +294,29 @@ mutation, and chi_push = 1 only when durable push state changes.
 ~~~text
 GET:       O(k + v) + FS(tau_get)       [tau_get includes FSL + FSR(v,e)]
 LIST:      O(Nk(1 + log(L+1))) + FS(tau_list)
-NEW GRANT: O(k + h + a*Nk) + FS(tau_grant)
-POST:      O(k + b + h + s + chi_push*(Q log Q + p)) + FS(tau_mut)
-PUT:       O(k + b + h + s + chi_cond*b_old
+NEW GRANT: O(k + h + k*ell*log(max(2,W))) + FS(tau_grant) [new prefix]
+POST:      O(k + b + h + s + k*log(m) + index_compaction
              + chi_push*(Q log Q + p)) + FS(tau_mut)
-DELETE:    O(k + h + s + chi_cond*b_old
+PUT:       O(k + b + h + s + k*log(m) + index_compaction + chi_cond*b_old
+             + chi_push*(Q log Q + p)) + FS(tau_mut)
+DELETE:    O(k + h + s + k*log(m) + index_compaction + chi_cond*b_old
              + chi_push*(Q log Q + p)) + FS(tau_mut)
 ~~~
 
-Here a is zero for an already indexed scope, and at most three for a
-previously unseen scope under the current retry/fallback implementation.
-For a new scope, tau_grant contains a corresponding FSE(N,k) for **each**
-scan attempt plus the private grant-record write. For a mutation,
+For an already indexed scope the additional quota lookup is O(k).
+For a new exact-key scope it is one object lookup. For a new prefix
+there are ell <= O(log(1+W)) immutable disk runs, each supporting
+O(log(max(2,W))) fixed-width binary seeks, plus O(k) RAM-trie lookup.
+Here W counts index changes since the most recent rebuild.
+The variable `index_compaction` represents actual CPU cost of any
+flush/merge triggered by the mutation, which can be linear in the
+number of indexed deltas in the worst case; it is only amortized
+O(k log(1+W)) across a completed merge schedule. This does not imply
+bounded per-mutation latency.
+The grant trace includes index page reads and the private record write. For a mutation,
 tau_mut includes any old-object hash read, staged payload write, intent
-persistence, public namespace change, synchronization, and optional
-durable outbox rewrite. These are conditional upper-cost expressions
+persistence, public namespace change, synchronization, optional
+durable outbox rewrite, and derived-run flush/compaction I/O. These are conditional upper-cost expressions
 for the present algorithm, not universally valid wall-clock bounds.
 
 Token issuance/revocation additionally serializes the users belonging
@@ -330,7 +340,7 @@ the current API and quota semantics still apply unless separately changed.
 | --- | --- |
 | Direct reads | O(k+v) server CPU and a bounded, explicitly counted filesystem trace; memory independent of v while streaming |
 | Object mutation | Work proportional to key, payload, ancestor depth, and affected subscribers, with every durable/index operation charged |
-| New-scope grant | Investigate sublinear-in-N lookup using disk indexes while preserving exact counts and sums |
+| New-scope grant | Preserve the implemented sublinear indexed-prefix query and account for cold rebuilds |
 | Scoped listing | Investigate output-sensitive traversal rather than a full scan; state cursor consistency semantics |
 | Notifications | Avoid rewriting all Q pending entries for O(s) changed subscribers |
 | Startup/recovery | Account for rebuilding every derived index and replaying all durable intents |
@@ -344,13 +354,10 @@ making those updates recoverable. This recovers the proposed
 O(k log N) CPU query bound without claiming that disk access takes
 O(k) time.
 A fully aggregated key trie can give O(k) logical traversal but not
-necessarily O(k) disk page cost. The existing grant-scope-only trie
-avoids object-proportional RAM/index storage at the price of
-O(Nk) initialization of a previously unindexed prefix.
-
-Exact-key new scopes are a special case: they need only one keyed
-object lookup/stat, not a full prefix scan. This is an optimization
-opportunity, **not a claim that the current scan implementation does it**.
+necessarily O(k) disk page cost. The earlier grant-scope-only design avoided disk indexes but incurred
+O(Nk) initialization of a previously unseen prefix. The current
+log-structured index retains bounded RAM and enables new prefix queries
+through immutable runs. Exact-key scopes use a direct filesystem lookup.
 
 The concrete [disk-backed aggregate-index design](indexed-store-design.md)
 applies this model to new-scope grant initialization and scoped listing;

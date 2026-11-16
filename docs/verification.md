@@ -71,17 +71,18 @@ bound is claimed. Every row additionally incurs the actual filesystem trace.
 | Component | Current CPU work, excluding filesystem | Indexed RAM | Filesystem work |
 | --- | --- | --- | --- |
 | Direct object GET | `O(k+b)` | `O(1)` streaming buffer | `FSL(N,k) + FSR(b,e)`; reads whole value for SHA-256 |
-| New grant scope initialization | `O(Nk)` per scan | `O(Gk)` | `FSE(N,k)`; at most three attempts under contention |
-| Mutation quota accounting | `O(k+h)` | `O(Gk)` | In-memory prefix totals and ancestor metadata |
+| New prefix grant | `O(k*ell*log(max(2,W)))` plus ancestry | `O(Gk+mk)` | Binary seeks into ell <= O(log W) immutable delta runs |
+| Mutation quota accounting | `O(k+h+k*log(m))` before compaction | `O(Gk+mk)` | In-memory updates; occasional sequential run flush/merge |
 | Subscription matching | `O(k+s)` | `O(Sk)` separately | In-memory exact/prefix/event trie |
-| POST/PUT excluding durable staging/journal/outbox | `O(k+b+h+s)`, plus old bytes if conditional | `O(Gk)` quota index | Key lookup, staged value writes, mutation, and durability remain separately charged |
+| POST/PUT excluding durable staging/journal/outbox | `O(k+b+h+s+k log(m))` plus old bytes and occasional compaction | `O(Gk+mk)` | Staging, journal, public mutation and derived-index flushing/merging each charged |
 
 Here `b` includes old bytes read for SHA-256 conditional PUT.
 Authentication uses expected-constant-time hashed token lookup.
 Grant lookup assumes expected-constant-time hash table access; the bounds
 exclude scheduling waits on the server's shared mutation lock.
-The current grant-scope index no longer scales in RAM with the object
-count `N`; disk-backed indexes are allowed by the new model.
+The active grant-scope index and capped delta buffer do not scale in
+RAM with live object count `N`; the signed-delta runs are private disk files.
+Here `m <= 4096` is the current adaptive buffer cap, and `ell` counts runs.
 Credential, subscription, and notification state have separate memory
 costs; neither `O(Gk)` nor this table means total server RSS is `O(Gk)`.
 
@@ -148,9 +149,9 @@ independence from `N` is the principal established benefit.
   returns 503 when latched; the container healthcheck makes this visible to
   a configured orchestrator. Production Rust uses `panic = "abort"`.
 - Scoped listing authorizes under the lock, then releases it before directory
-  enumeration. Initial grant scope scans happen outside the lock and retry
-  when an intervening object mutation changes the revision. Grant revocation
-  rebuilds remaining scope counters in RAM without another full disk scan.
+  enumeration. New prefix grant totals are obtained from the derived
+  signed-delta index under the writer lock, not by directory scans.
+  Revocation rebuilds active grant counters without rescanning public objects.
 - Subscription public keys are validated as uncompressed P-256 curve points
   with 16-byte authentication secrets. Push destinations have no host allowlist;
   URL validity and public-address resolution remain enforced.
@@ -172,10 +173,11 @@ independence from `N` is the principal established benefit.
   the batch writer. A failed atomic outbox write before rename leaves the
   in-memory generation unchanged, keeps the worker running, and retries on
   a later delivery tick. A post-rename/uncertain failure still latches.
-- A new grant scope makes at most two lock-free enumeration attempts.
-  Under sustained mutations it falls back to one scan under the writer
-  lock; this trades latency for guaranteed completion and a consistent
-  scope snapshot.
+- Initializing an unseen prefix scope now sums the bounded in-memory
+  delta trie and immutable sorted runs; no mutation-retry scan is needed.
+  Object mutations maintain the index under the same writer lock.
+  Startup discards all derived runs and rebuilds from authoritative bytes
+  after journal recovery. Index read/write corruption requires recovery.
 - The removed push-host allowlist is **not** restored. An obsolete
   `SKRYNIA_PUSH_ALLOWED_HOSTS` environment variable fails startup rather
   than silently relaxing the former deployment configuration.

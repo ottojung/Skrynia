@@ -1,6 +1,6 @@
 # Storage-index research for sparse grant creation and abundant reads
 
-Status: **target design for implementation; mathematical analysis, not performance measurements**.
+Status: **target design implemented on feat/sparse-grant-index; complexity analysis is conditional, not measured performance**.
 This study refines [the complexity model](complexity.md) and compares
 [the augmented B+tree candidate](indexed-store-design.md) with
 write-optimized alternatives. It does not change Skrynia's current
@@ -154,7 +154,7 @@ relationship; use an explicit RAM cap instead of assuming it.
 
 | Design | Mutations: additional index work | First prefix | Additional persistent space |
 | --- | --- | --- | --- |
-| Current scope-only trie | O(k) RAM changes, no per-object disk index | O(Nk) scan | No object-wide index |
+| Historical scope-only trie | O(k) RAM changes, no per-object disk index | O(Nk) scan | No object-wide index |
 | Augmented disk B+tree | O(log_f N) random index-page changes, page-local CPU | O(log_f N) page reads | O(Nk) |
 | Log-structured prefix deltas | O(k) RAM plus amortized sequential compaction | O(log W * log_f W) page reads | O(Wk) worst-case history |
 | Disk aggregate prefix trie | O(k) logical path updates; random I/O depends on packing | O(k) logical traversal | O(Nk) logical trie space |
@@ -252,11 +252,11 @@ object-size distribution, not R alone. A digest-assisted design
 wins only where its saved hashing and data-read costs exceed
 the per-write metadata and per-request lookup costs.
 
-## 7. Research decision
+## 7. Implemented index and remaining research
 
 1. **First:** exact-key grant creation should stat one file, eliminating
    its O(Nk) scan without any index or additional disk state.
-2. **Target indexed design for G_new = Theta(sqrt W):**
+2. **Implemented indexed design for G_new = Theta(sqrt W):**
    log-structured, signed prefix-delta runs with a bounded RAM
    aggregate buffer; its random-index-update cost is lower in the
    analytical model, at the price of more complex merges and queries.
@@ -277,3 +277,22 @@ this mathematical comparison.
 - O'Neil et al. (1996), [The log-structured merge-tree](https://doi.org/10.1007/s002360050048): deferred and batched index maintenance.
 - Bender et al. (2007), [Cache-oblivious streaming B-trees](https://dash.harvard.edu/entities/publication/73120378-dc8c-6bd4-e053-0100007fdf3b): streaming/merge indexes with distinct search and insertion I/O costs.
 - Brodal, Rysgaard, Svenning (2025), [Buffered partially-persistent external-memory search trees](https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.ESA.2025.82): stronger buffered search-tree trade-offs; their exact bounds do not automatically apply to our signed aggregate runs.
+
+## 8. Implementation notes (feature branch)
+
+The Rust implementation uses a signed i128 count/byte delta, an in-memory
+prefix trie and BTreeMap of pending keys, and sorted immutable fixed-width
+run records with cumulative aggregates and SHA-256 record checksums.
+Binary seeks implement prefix-range sums. Run levels merge in a binary
+carry schedule, dropping canceled keys. The adaptive buffer threshold is
+clamped between 64 and 4096 distinct keys, using the square root of
+mutations **since this process started**, not the globally cumulative W.
+
+Only the live grant-scope trie is rebuilt in memory. The derived disk
+index is always discarded and reconstructed from public object names and
+sizes after transaction-journal recovery. Failed runtime index changes
+or index reads latch the server into recovery-required state. The direct
+GET/HEAD path and scoped LIST directory scan are unchanged. Current
+run compactions are synchronous and may create long mutation-tail latency;
+incremental compaction is not yet implemented. The implementation does
+not claim strict dominance or measured speedup.
