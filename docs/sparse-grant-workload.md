@@ -1,6 +1,6 @@
 # Storage-index research for sparse grant creation and abundant reads
 
-Status: **analytical design study; no implementation or measurements**.
+Status: **target design for implementation; mathematical analysis, not performance measurements**.
 This study refines [the complexity model](complexity.md) and compares
 [the augmented B+tree candidate](indexed-store-design.md) with
 write-optimized alternatives. It does not change Skrynia's current
@@ -256,7 +256,7 @@ the per-write metadata and per-request lookup costs.
 
 1. **First:** exact-key grant creation should stat one file, eliminating
    its O(Nk) scan without any index or additional disk state.
-2. **Primary indexed candidate for G_new = Theta(sqrt W):**
+2. **Target indexed design for G_new = Theta(sqrt W):**
    log-structured, signed prefix-delta runs with a bounded RAM
    aggregate buffer; its random-index-update cost is lower in the
    analytical model, at the price of more complex merges and queries.
