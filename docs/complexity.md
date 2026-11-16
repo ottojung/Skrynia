@@ -118,7 +118,11 @@ may one replace f with Theta(B/k). Writing O(log_f N) index
 nodes is not equivalent to O(1) durable writes.
 
 An augmented ordered B-tree can compute prefix object counts and byte
-sums using two rank/sum queries with O(log_f N) index-page visits.
+sums using two rank/sum queries with O(log_f N) index-page visits,
+assuming page nodes include cumulative child summaries. With binary
+search among f separator keys, worst-case comparison CPU is
+O(k log(f) log_f N) = O(k log N); maintaining the cumulative summaries
+adds page-local work on updates.
 A disk-backed aggregate trie can follow O(k) logical edges, but its page
 visits and seeks depend on layout; O(k) logical steps does **not**
 imply O(k) physical time. Both need index maintenance on writes.
@@ -334,10 +338,11 @@ the current API and quota semantics still apply unless separately changed.
 
 For a **candidate** augmented ordered tree, exact prefix-count and
 prefix-byte-sum queries can use O(log_f N) index-page visits and
-O(k log_f N) key-comparison work; mutations must pay for updating
-affected aggregate pages and making those updates recoverable. This
-recovers the proposed O(k log N) CPU bound (when f is bounded below by
-a constant) without claiming that disk access takes O(k) time.
+O(k log N) comparison work when routing within pages is logarithmic
+in f; mutations must pay for updating affected aggregate pages and
+making those updates recoverable. This recovers the proposed
+O(k log N) CPU query bound without claiming that disk access takes
+O(k) time.
 A fully aggregated key trie can give O(k) logical traversal but not
 necessarily O(k) disk page cost. The existing grant-scope-only trie
 avoids object-proportional RAM/index storage at the price of
@@ -347,25 +352,36 @@ Exact-key new scopes are a special case: they need only one keyed
 object lookup/stat, not a full prefix scan. This is an optimization
 opportunity, **not a claim that the current scan implementation does it**.
 
-## 7. Evidence and acceptance checklist
+The concrete [disk-backed aggregate-index design](indexed-store-design.md)
+applies this model to new-scope grant initialization and scoped listing;
+its comparisons are symbolic, with no measurements.
 
-Every proposed optimization or benchmark must report:
+## 7. Analytical acceptance checklist
 
-1. Exact commit, hardware, filesystem, mount/storage type, data size,
-   object-size and key distributions, grant depth, N/G/S/Q, cache
-   conditions, and concurrency level.
-2. Correctness of location-scoped quota totals under overlapping grants,
-   concurrent mutation, recovery, and crash/failure injection.
-3. CPU work, peak RAM, steady/peak disk bytes, logical I/O, physical
-   block I/O when measured, fsync/rename counts, and write amplification.
-4. Wall time and throughput distributions (not only averages), including
-   p50/p95/p99, contention, slow or failed storage, and outbox pressure.
-5. Index creation, update, deletion, and restart/rebuild cost. Any
-   persistent index must be either durably consistent with objects or
-   safely reconstructible from authoritative state.
-6. A clear separation between **measured implementation behavior**,
-   **proved asymptotic bounds under assumptions**, and **unimplemented
-   candidate designs**.
+**An unimplemented design can be evaluated without any measurements.**
+A complete analytical proposal must provide:
+
+1. Correctness and recovery invariants, including overlapping grants,
+   concurrent mutations, interrupted writes and fail-closed recovery.
+2. Complexity vectors for **every affected operation**, including
+   the operation(s) made slower to accelerate another one.
+3. CPU work, peak RAM, steady/peak persistent bytes, random/sequential
+   I/O, byte transfers, sync/barrier counts, and rebuild costs.
+4. Explicit worst-case, expected or amortized qualifiers and assumptions;
+   for an indexed structure, include maintenance and page splits.
+5. An exact dominance claim, or a **symbolic break-even region** for
+   hardware parameters and workload frequencies. Check all-reads,
+   all-writes, rare-grant, grant-heavy, listing-heavy, and restart-heavy
+   counterexamples before declaring a design better.
+6. A strict separation between implemented behavior, proved
+   conditional bounds, and proposed (unimplemented) designs.
+
+**When empirical evaluation is requested**, additionally record the
+commit, hardware/filesystem/storage, key and object-size distributions,
+N/G/S/Q, caching and concurrency; measure CPU, memory, disk I/O,
+fsync/rename counts, p50/p95/p99 latency, throughput and failure
+behavior. Measurements are **not a prerequisite for the present
+mathematical design comparison**.
 
 See [verification](verification.md) for the current test and performance
 evidence. This model does not weaken the production durability, exclusive
