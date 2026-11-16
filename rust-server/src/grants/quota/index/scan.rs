@@ -11,8 +11,11 @@ impl QuotaIndex {
             if !crate::valid_key(&key) || !entry.file_type()?.is_file() {
                 return Err(io::Error::other("invalid stored object"));
             }
-            self.scopes
-                .change(&key, None, Some(entry.metadata()?.len()));
+            let size = entry.metadata()?.len();
+            self.scopes.change(&key, None, Some(size));
+            if let Some(index) = &self.delta {
+                index.lock().unwrap().change(&key, None, Some(size))?;
+            }
         }
         Ok(())
     }
