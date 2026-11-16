@@ -203,6 +203,43 @@ peak occupancy includes staged data, journal, in-flight outbox replacement,
 filesystem metadata, and any indexes. A disk-backed index is allowed,
 but its I_disk, RAM cache, and reconstruction costs must be reported.
 
+### Representative parametric bounds
+
+The filesystem terms below refer to the **complete actual trace**, not a
+single filesystem call. Let tau_get, tau_list, tau_grant, and tau_mut
+denote the corresponding traces. Write chi_cond = 1 only for a conditional
+mutation, and chi_push = 1 only when durable push state changes.
+
+~~~text
+GET:       O(k + v) + FS(tau_get)       [tau_get includes FSL + FSR(v,e)]
+LIST:      O(Nk + N log(L+1)) + FS(tau_list)
+NEW GRANT: O(k + h + a*Nk) + FS(tau_grant)
+POST:      O(k + b + h + s + chi_push*(Q log Q + p)) + FS(tau_mut)
+PUT:       O(k + b + h + s + chi_cond*b_old
+             + chi_push*(Q log Q + p)) + FS(tau_mut)
+DELETE:    O(k + h + s + chi_cond*b_old
+             + chi_push*(Q log Q + p)) + FS(tau_mut)
+~~~
+
+Here a is zero for an already indexed scope, and at most three for a
+previously unseen scope under the current retry/fallback implementation.
+For a new scope, tau_grant contains a corresponding FSE(N,k) for **each**
+scan attempt plus the private grant-record write. For a mutation,
+tau_mut includes any old-object hash read, staged payload write, intent
+persistence, public namespace change, synchronization, and optional
+durable outbox rewrite. These are conditional upper-cost expressions
+for the present algorithm, not universally valid wall-clock bounds.
+
+Token issuance/revocation additionally serializes the users belonging
+to the affected grant: for u_g such users, budget O(u_g + h) CPU plus
+the trace of rewriting its O(u_g)-sized private record. Revoking a
+subtree currently walks candidates' ancestry (up to O(Gh)),
+searches affected subscriptions against the revoked-ID list
+(up to O(SC)), and rebuilds live grant counters (up to O(Gk + (G+S)h)),
+besides private-record and outbox I/O. These intentionally conservative
+bounds are not an API requirement. A faster revocation index must charge
+for maintaining that index on other operations.
+
 ## 6. Performance goals and permitted design space
 
 The following are **evaluation goals for future designs**, not achieved
