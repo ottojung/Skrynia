@@ -97,8 +97,11 @@ The [HTTP API](docs/api-spec.md), [grant semantics](docs/intent-location-authori
 [application feasibility examples](docs/application-feasibility.md),
 [operations](docs/operations.md), and [verification](docs/verification.md)
 describe the current system and its boundaries.
-The [idealized complexity model](docs/idealized-complexity.md) defines
-asymptotic targets under explicitly stronger environmental assumptions.
+The [complexity model](docs/complexity.md) separates CPU, RAM, disk
+space, filesystem I/O, durability, and implementation-specific bounds.
+The [indexed-store design](docs/indexed-store-design.md) and
+[sparse-grant workload study](docs/sparse-grant-workload.md) explore
+unimplemented alternatives without empirical measurements.
 Intent Records in `docs/intent-records/` capture the live requirements.
 
 Skrynia is Free Software under **AGPL-3.0-or-later**.
