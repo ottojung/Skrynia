@@ -226,6 +226,12 @@ does not establish universal Pareto dominance, either.
 
 ### Design verdict
 
+For the explicit workload G_new = Theta(sqrt W) = Theta(log R), see
+[the sparse-grant study](sparse-grant-workload.md). Its write-optimized
+signed-delta runs are a competing architecture: fewer random index
+updates, but potentially greater compaction, cold-start, and prefix-query
+costs. The B+tree remains a valid candidate, not a default winner.
+
 This index is a **candidate frontier improvement**, not an unconditional
 resource-Pareto dominator. It preserves Skrynia's simplicity at the
 public protocol and authority layers, offers logarithmic prefix
