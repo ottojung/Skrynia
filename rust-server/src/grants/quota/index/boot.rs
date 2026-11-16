@@ -1,6 +1,11 @@
 use super::{QuotaIndex, Usage};
 use crate::{Grant, PushState};
-use std::{collections::HashMap, io, path::Path};
+use std::{
+    collections::HashMap,
+    io,
+    path::Path,
+    sync::{Arc, Mutex},
+};
 impl QuotaIndex {
     pub fn from_disk(
         dir: &Path,
@@ -8,6 +13,7 @@ impl QuotaIndex {
         push: &PushState,
     ) -> io::Result<Self> {
         let mut result = Self::default();
+        result.delta = Some(Arc::new(Mutex::new(super::super::DeltaIndex::new(dir)?)));
         for grant in grants.values() {
             if !result.scopes.has(&grant.locations) {
                 result.scopes.insert(&grant.locations, Usage::default());
@@ -30,15 +36,11 @@ impl QuotaIndex {
             );
         }
         for sub in push.subscriptions.values() {
-            result.change_metadata(
-                grants,
-                &sub.grant_id,
-                Usage {
-                    bytes: 4096,
-                    objects: 1,
-                },
-                true,
-            );
+            let usage = Usage {
+                bytes: 4096,
+                objects: 1,
+            };
+            result.change_metadata(grants, &sub.grant_id, usage, true);
         }
         Ok(result)
     }

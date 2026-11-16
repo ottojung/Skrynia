@@ -19,4 +19,5 @@ pub struct QuotaIndex {
     pub scopes: Node,
     pub metadata: HashMap<String, Usage>,
     pub by_grant: HashMap<String, Shared>,
+    pub delta: Option<Arc<Mutex<super::DeltaIndex>>>,
 }

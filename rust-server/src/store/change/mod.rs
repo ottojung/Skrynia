@@ -1,6 +1,7 @@
 mod apply;
 mod check;
 mod failure;
+mod index;
 mod kind;
 mod lock;
 mod prepare;
@@ -22,12 +23,11 @@ impl State {
         let (mut data, old) =
             lock::checked(self, key, kind, body, token, check::Mode::Final(expected))?;
         let path = self.dir.join("store").join(key);
-        let digest = (kind != Kind::Delete).then(|| crate::sha(body));
         let pending = journal::commit(
             &self.dir,
             key,
             kind.event(),
-            digest,
+            (kind != Kind::Delete).then(|| crate::sha(body)),
             || apply::commit(&self.dir, &path, kind, staged.as_ref()),
             || {
                 crate::push_enqueue(
@@ -40,12 +40,13 @@ impl State {
             },
         )
         .map_err(|failure| failure::map(self, failure))?;
-        data.bump_revision();
-        data.quota.scopes.change(
+        index::record(
+            self,
+            &mut data,
             key,
             old,
             (kind != Kind::Delete).then_some(body.len() as u64),
-        );
+        )?;
         Ok(pending)
     }
 }

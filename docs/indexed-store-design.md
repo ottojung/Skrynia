@@ -1,8 +1,8 @@
 # Indexed object statistics: design study
 
-Status: **proposed design, not implemented**. The current server still uses
-a scope-only in-memory quota trie and scans objects for new prefix scopes
-and scoped listing. This study preserves [current API](api-spec.md),
+Status: **alternative B+tree proposal, not implemented**. The current
+implementation uses a log-structured signed-delta index for first-time
+prefix grants; scoped listing still scans the object directory. This study preserves [current API](api-spec.md),
 [location-based grant quotas](intent-location-authority.md), flat public
 object files, and the single authoritative writer. It does **not** adopt
 object ownership or change client-visible listing/cursor semantics.
@@ -13,9 +13,10 @@ assumptions are used in this design study.
 
 ## 1. Goal and limits of domination
 
-The existing implementation excels at low-RAM reads/writes, but initializing
-a previously unseen prefix scope scans N object entries. Listing also
-scans N entries even for a small result.
+The pre-index implementation used a full scan for new prefix scopes.
+The implemented signed-delta runs avoid that scan, but listing still
+visits N entries even for a small result. This alternative considers
+a single ordered index capable of accelerating both operations.
 
 Our candidate should:
 
@@ -131,8 +132,8 @@ asymptotically unbounded compaction on an ordinary mutation.
 
 | Operation | Current CPU (ignoring FS) | Indexed candidate CPU (ignoring FS) | Candidate extra disk I/O |
 | --- | --- | --- | --- |
-| Exact-key new scope | O(Nk) current scan | O(k), using filesystem stat | One point lookup instead of N-entry scan |
-| New prefix scope | O(Nk) per scan | O(kq log f) | O(q) random page reads |
+| Exact-key new scope | O(k) implemented | O(k), using filesystem stat | No additional benefit |
+| New prefix scope | O(k*ell*log W) via delta runs | O(kq log f) | O(q) random page reads |
 | Wildcard `*` scope | Already indexed via root grant | Already indexed via root grant | No new query needed |
 | LIST page | O(Nk(1+log(L+1))) | O(kq log f+K_out+L) | Seek O(q) pages and sequential leaf pages |
 | GET/HEAD | O(k+v) | Same | None; remains filesystem-direct |

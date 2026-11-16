@@ -4,6 +4,7 @@ use std::collections::HashMap;
 impl QuotaIndex {
     pub fn rebuild_live(&self, grants: &HashMap<String, Grant>, push: &PushState) -> Self {
         let mut rebuilt = Self::default();
+        rebuilt.delta = self.delta.clone();
         for grant in grants.values() {
             if !rebuilt.scopes.has(&grant.locations) {
                 let total = self.scopes.get(&grant.locations);

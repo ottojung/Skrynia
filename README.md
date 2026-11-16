@@ -70,7 +70,9 @@ Child grants can narrow scope and operations but never extend them. Creating
 a child returns its issuer credential, which separately issues user tokens.
 Revoking a grant invalidates descendants and subscriptions, but preserves
 public object bytes. Each grant's quotas include its scoped storage and
-delegated metadata.
+delegated metadata. Prefix quotas are derived from a bounded in-memory
+delta trie and rebuildable private sorted disk runs; new grant scopes do not
+require a full object-directory scan.
 
 ## Hosting and notifications
 

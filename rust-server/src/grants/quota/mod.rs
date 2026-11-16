@@ -1,9 +1,11 @@
+mod delta;
 mod index;
 mod metadata;
 mod objects;
 mod usage;
 use crate::{Fail, Result, Snapshot};
 use axum::http::StatusCode;
+pub use delta::DeltaIndex;
 pub use index::{QuotaIndex, Usage};
 impl Snapshot {
     pub fn check_quota(&self, id: &str, _key: &str, old: Option<u64>, size: u64) -> Result<()> {
