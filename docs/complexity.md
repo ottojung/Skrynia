@@ -138,7 +138,7 @@ contention are excluded from the CPU column.
 | POST object | O(k + b + h + s) plus outbox work below | Two existence/metadata checks, stage b, journal, create/link, sync |
 | PUT object | O(k + b + h + s + b_old if conditional) plus outbox work | Checks, stage b, journal, atomic rename, sync; read b_old if conditional |
 | DELETE object | O(k + h + s + b_old if conditional) plus outbox work | Checks, journal, unlink, sync; read b_old if conditional |
-| LIST keys | O(Nk + N log(L+1)) current heap selection | Enumerate N names; inspect entry metadata |
+| LIST keys | O(Nk(1 + log(L+1))) current heap selection | Enumerate N names; inspect entry metadata |
 | Create grant, existing indexed scope | O(k + h) plus record serialization | Write and sync one grant record |
 | Create grant, new scope | O(Nk + k + h) per scan attempt | Enumerate N names and sizes, plus grant record |
 | Inspect grant / issue or revoke user token | Hash/lookup plus per-record serialization; token mutation can depend on users in that grant | Read/write private grant record as required |
@@ -212,7 +212,7 @@ mutation, and chi_push = 1 only when durable push state changes.
 
 ~~~text
 GET:       O(k + v) + FS(tau_get)       [tau_get includes FSL + FSR(v,e)]
-LIST:      O(Nk + N log(L+1)) + FS(tau_list)
+LIST:      O(Nk(1 + log(L+1))) + FS(tau_list)
 NEW GRANT: O(k + h + a*Nk) + FS(tau_grant)
 POST:      O(k + b + h + s + chi_push*(Q log Q + p)) + FS(tau_mut)
 PUT:       O(k + b + h + s + chi_cond*b_old
