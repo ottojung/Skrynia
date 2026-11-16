@@ -19,8 +19,8 @@ scans N entries even for a small result.
 
 Our candidate should:
 
-- Replace O(Nk) *CPU* new-prefix initialization with O(k log_f N)
-  comparison work and O(log_f N) index-page visits.
+- Replace O(Nk) *CPU* new-prefix initialization with O(k log N)
+  key-comparison work and O(log_f N) index-page visits.
 - Replace O(Nk(1+log(L+1))) CPU per listing page with an ordered seek
   plus work for returned keys.
 - Preserve O(Gk) quota-scope RAM plus a **bounded** index cache.
@@ -40,7 +40,9 @@ it must not claim all-resource dominance for all workloads.
 Keep the in-memory trie of **active grant scopes**. Add a derived,
 bounded-cache, **disk-backed augmented B+tree** over *every live object
 key*, with each leaf storing (key, payload byte length). Internal edges
-store a subtree object count and a subtree payload-byte sum.
+store a subtree object count and a subtree payload-byte sum, together
+with per-node cumulative summaries to support rank/sum queries without
+linearly scanning all child edges. This shifts some work to index updates.
 
 ~~~text
                root: (count, sum of lengths)
@@ -129,20 +131,23 @@ asymptotically unbounded compaction on an ordinary mutation.
 | Operation | Current CPU (ignoring FS) | Indexed candidate CPU (ignoring FS) | Candidate extra disk I/O |
 | --- | --- | --- | --- |
 | Exact-key new scope | O(Nk) current scan | O(k), using filesystem stat | One point lookup instead of N-entry scan |
-| New prefix scope | O(Nk) per scan | O(kq) | O(q) random page reads |
+| New prefix scope | O(Nk) per scan | O(kq log f) | O(q) random page reads |
 | Wildcard scope | O(Nk) if new | O(1) aggregate retrieval | Root page read |
-| LIST page | O(Nk(1+log(L+1))) | O(kq+K_out+L) | Seek O(q) pages and sequential leaf pages |
+| LIST page | O(Nk(1+log(L+1))) | O(kq log f+K_out+L) | Seek O(q) pages and sequential leaf pages |
 | GET/HEAD | O(k+v) | Same | None; remains filesystem-direct |
-| POST/PUT/DELETE | O(k+b+h+s), excluding conditional hash/outbox | O(k+b+h+s+kq), same exclusions | O(q) index-page reads/writes, plus any split/merge |
+| POST/PUT/DELETE | O(k+b+h+s), excluding conditional hash/outbox | O(k+b+h+s+(k log f+f)q), same exclusions | O(q) index-page reads/writes, plus any split/merge |
 | Existing grant scope | O(k+h) | Same | None needed for quota total |
-| Rootless restart/recovery | O(Nk) object scan plus private replay | Object scan plus index rebuild | Additional O(Nk) derived-index bytes written |
+| Restart/recovery | O(Nk) object scan plus private replay | Object scan plus index rebuild | Additional O(Nk) derived-index bytes written |
 | Subtree revocation | Cost depends on grants/subscriptions | Same baseline algorithm | No index-object transfer |
 
-For B+tree insertion/deletion, moving keys within pages, splitting,
-merging and maintaining subtree aggregates carry additional O(f)
-per modified page, or O(k f q) CPU with uncompressed full-length
-keys in a conservative worst-case model; the simple O(kq) update bound
-requires bounded page-level work or suitable compression/layout.
+For B+tree insertion/deletion, routing at a node takes O(k log f)
+worst-case CPU with full-key comparisons. Maintaining cumulative
+summaries and shifting entries takes O(f) arithmetic operations per
+modified node, with additional O(kf) CPU if uncompressed full-length
+keys are moved. Consequently, the table's update estimate assumes
+fixed-size node metadata and page-local key movement costs are charged
+separately; O((k log f+fk)q) is a conservative alternative. The page
+cache still must account for all touched or dirtied pages.
 The I/O trace must count dirty-page flushes, internal splits,
 write amplification, and page-cache misses. The candidate improves
 **new-prefix initialization** unambiguously in algorithmic search
