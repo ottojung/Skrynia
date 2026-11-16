@@ -355,6 +355,10 @@ opportunity, **not a claim that the current scan implementation does it**.
 The concrete [disk-backed aggregate-index design](indexed-store-design.md)
 applies this model to new-scope grant initialization and scoped listing;
 its comparisons are symbolic, with no measurements.
+The [sparse-grant workload research](sparse-grant-workload.md) examines
+G_new = Theta(sqrt W) = Theta(log R) and an amortized, write-optimized
+signed-delta index. It explicitly distinguishes conditional CPU improvement
+from universal resource dominance.
 
 ## 7. Analytical acceptance checklist
 
