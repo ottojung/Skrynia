@@ -89,10 +89,16 @@ transaction by content-hash CAS on a small root object. Clients must
 keep referenced objects intact and reevaluate failed CAS operations;
 see [Skrynia Cookbook](cookbook.md).
 
-Object reads are public. Applications wishing to authenticate contents,
-enforce higher-level acceptance policies or encrypt data implement these
-properties in client protocols and authority distribution. Authentication
-of data is distinct from guaranteed storage availability.
+Known-key reads need no read token; listing requires scoped authority.
+Cryptographically random, undisclosed names can provide bearer-capability
+read confidentiality under a threat model that keeps names secret and
+unlisted. They do not allow reader-specific revocation, prevent name leaks,
+or hide plaintext from the operator. Applications can authenticate data,
+verify arbitrarily complex computable acceptance rules, and encrypt
+payloads in client protocols. Skrynia does not directly evaluate arbitrary
+predicates on proposed new bytes. Accepted-state safety is distinct from
+raw-object validity, progress and availability. See
+[security model](security-model.md).
 
 Skrynia sends grant-authorized, location-scoped Web Push wake-ups with
 durable retry attempts; permanently failing endpoints are eventually

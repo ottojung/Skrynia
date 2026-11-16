@@ -3,10 +3,13 @@
 Skrynia is a durable public object store with delegable, resource-bounded
 authority, implemented entirely in Rust.
 
-Objects are opaque byte strings addressed by flat keys. Reads are public;
-authenticated, scoped grants independently authorize creation, modification,
-deletion, listing, delegation, and Web Push subscriptions. Skrynia implements no
-application-specific schemas, business logic, or privileged deployment API.
+Objects are opaque byte strings addressed by flat keys. Known-key reads need
+no token, while scoped listing does; undisclosed high-entropy keys can act
+as bearer read capabilities. Authenticated, scoped grants independently
+authorize creation, modification, deletion, listing, delegation and Web Push
+subscriptions. Skrynia implements no application-specific schemas, business
+logic or privileged deployment API. Clients can verify richer application
+rules without the storage server executing them.
 
 ## Build and run
 
@@ -95,7 +98,8 @@ make docker-build
 The [HTTP API](docs/api-spec.md), [grant semantics](docs/intent-location-authority.md),
 [Skrynia Cookbook](docs/cookbook.md),
 [application feasibility examples](docs/application-feasibility.md),
-[operations](docs/operations.md), and [verification](docs/verification.md)
+[security model](docs/security-model.md), [operations](docs/operations.md),
+and [verification](docs/verification.md)
 describe the current system and its boundaries.
 The [idealized complexity model](docs/idealized-complexity.md) defines
 asymptotic targets under explicitly stronger environmental assumptions.

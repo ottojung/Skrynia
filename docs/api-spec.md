@@ -105,6 +105,10 @@ and deletion immediately affect the result. A missing, duplicated, or
 invalid matcher yields HTTP 400; a matcher outside the caller's authority
 yields HTTP 403. Listing is not available to anonymous callers. There is
 no separate privileged enumeration API or creator-tracking metadata.
+An undisclosed, high-entropy name can serve as a bearer read capability:
+point GET and HEAD require the name but no read token. The server does not
+generate secret names or prevent their disclosure through applications
+and access logs. See [security model](security-model.md).
 
 A listing is a snapshot of the keys at request time, not a lock on a range;
 clients should account for concurrent creations and deletions. To clean up a
