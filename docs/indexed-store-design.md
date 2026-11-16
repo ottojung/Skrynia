@@ -57,7 +57,8 @@ Private derived index is outside store/ and never publicly served.
 ~~~
 
 The index does **not** store object payloads, grant ownership, or
-application data. Use a configurable memory-bounded page cache; do not
+application data. The root grant already indexes the `*` matcher, so
+the important new-scope problem concerns previously unseen prefixes. Use a configurable memory-bounded page cache; do not
 silently pin the entire tree in RAM. It must work with a cold cache.
 
 Operations:
@@ -132,7 +133,7 @@ asymptotically unbounded compaction on an ordinary mutation.
 | --- | --- | --- | --- |
 | Exact-key new scope | O(Nk) current scan | O(k), using filesystem stat | One point lookup instead of N-entry scan |
 | New prefix scope | O(Nk) per scan | O(kq log f) | O(q) random page reads |
-| Wildcard scope | O(Nk) if new | O(1) aggregate retrieval | Root page read |
+| Wildcard `*` scope | Already indexed via root grant | Already indexed via root grant | No new query needed |
 | LIST page | O(Nk(1+log(L+1))) | O(kq log f+K_out+L) | Seek O(q) pages and sequential leaf pages |
 | GET/HEAD | O(k+v) | Same | None; remains filesystem-direct |
 | POST/PUT/DELETE | O(k+b+h+s), excluding conditional hash/outbox | O(k+b+h+s+(k log f+f)q), same exclusions | O(q) index-page reads/writes, plus any split/merge |
