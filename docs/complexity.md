@@ -123,6 +123,81 @@ A disk-backed aggregate trie can follow O(k) logical edges, but its page
 visits and seeks depend on layout; O(k) logical steps does **not**
 imply O(k) physical time. Both need index maintenance on writes.
 
+## 3A. Optimization without a privileged resource
+
+Filesystem operations are neither free nor infinitely expensive. Treat an
+implementation as a **resource vector**, not as one Big-O expression:
+
+~~~text
+V = (CPU operations, random read requests, random write requests,
+     sequential transfer starts, bytes read, bytes written,
+     durability barriers, peak RAM, steady disk, peak disk,
+     startup/recovery work)
+~~~
+
+Counts refer to a **specified workload**. Include index maintenance on
+ordinary writes, not only acceleration of the query that motivated the index.
+Report cache hits separately from physical I/O; an assumed always-hot index
+must disclose its RAM/page-cache footprint.
+
+### Pareto order and its limits
+
+For the same workload and semantics, design A Pareto-dominates B only when
+every component of V(A) is <= the corresponding component of V(B), and
+at least one is strictly smaller. This is a strong claim: an auxiliary disk
+index **cannot** strictly Pareto-dominate a design with no such index
+when persistent disk bytes and index-update writes are counted, unless the
+index replaces more costly existing state. Never call an improvement to
+one operation or one weighted objective universal dominance.
+
+A design can nevertheless (i) dominate on a **projected subset** of costs,
+(ii) dominate for a **specified workload and hardware region** after
+evaluating all resource costs, or (iii) improve the Pareto frontier by
+making a previously expensive operation asymptotically cheaper. State
+which kind of result has actually been proved.
+
+### Parametric hardware scenarios
+
+For a trace, let nr/nw count random read/write transfer starts; ns count
+sequential transfer starts; dr/dw count transferred bytes; nf count
+durability barriers; and c count application CPU work. Consider the
+illustrative, **not calibrated**, family:
+
+~~~text
+T(theta) = rho*c + ar*nr + aw*nw + as*ns
+           + br*dr + bw*dw + delta*nf
+theta = (rho, ar, aw, as, br, bw, delta, B, M)
+~~~
+
+All weights are positive and finite. State any ordering assumptions
+between weights instead of silently assigning them. This formula is a
+decision model, not a filesystem worst-case latency guarantee, and may
+overcount when work overlaps. Disk occupancy and peak RAM remain
+**constraints or separate objectives**, not omitted because this
+particular scalarization does not price them.
+
+Analyze at least three symbolic regimes: (1) expensive random I/O,
+(2) inexpensive indexed random I/O with bounded cache, and
+(3) limited RAM with cold-cache restarts. Do not invent numeric
+hardware coefficients to make a preferred design win.
+
+A workload is a vector of operation **counts and distributions**:
+reads, creations, replacements, deletions, new/existing grant scopes,
+lists, revocations, subscription changes, push deliveries, and restarts,
+together with N/G/S/Q, key lengths, object sizes and grant depth.
+An optimization is justified by an explicit break-even inequality or
+a dominance proof over a declared workload region. The adversarial
+all-writes and all-new-scopes workloads must both be considered.
+
+When no measurements are requested, evaluate symbolically: prove
+correctness, derive operation traces and resource bounds, identify
+break-even regions, and leave empirical coefficients unknown.
+An agent **must not discard an indexed design merely because a disk
+cost function has an unbounded worst case**, nor pretend an index wins
+if its persistent space and update costs exceed the chosen budgets.
+Do not select arbitrary weights, and do not declare a universal winner
+from an incomplete cost vector.
+
 ## 4. Logical algorithmic costs in the current Rust server
 
 The following are code-path **work estimates**, not measured latencies.
