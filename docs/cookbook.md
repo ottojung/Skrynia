@@ -9,9 +9,11 @@ coordinate, why the construction works, and where it stops working. These are
 Skrynia enforces for arbitrary callers from what cooperating clients promise
 and from what readers can independently verify.
 
-Skrynia provides public durable objects, atomic create-if-absent, byte-hash
+Skrynia provides durable known-key reads, atomic create-if-absent, byte-hash
 compare-and-swap (CAS), scoped grants, listing, and Web Push wake-ups.
-Applications implement their own schemas, indexes, checks, and computation.
+Undisclosed random names can serve as bearer read capabilities. Applications
+implement their own schemas, indexes, checks and computation. See the
+[security model](security-model.md) for the applicable threat assumptions.
 
 ## Recipes at a glance
 
@@ -74,14 +76,24 @@ A returned digest is not a guarantee that a write happened only once.
    abstractions using those primitives. Their assumptions are part of the
    protocol.
 3. **Validation-level:** untrusted clients can publish arbitrary bytes where
-   authorized; readers can accept only structures whose signatures, hashes,
-   provenance and transition rules they verify. Detecting invalid data is not
-   the same as preventing its publication, overwriting, deletion or starvation.
+   authorized; correct readers can accept only structures whose signatures,
+   hashes, provenance and transition rules they independently verify.
+   Arbitrarily sophisticated computable acceptance predicates are possible
+   given the evidence they require. Detecting invalid data does not prevent
+   its publication, overwriting, deletion or starvation.
 
-Do not call a client protocol secure merely because a cooperating client performs
-validation: untrusted clients can modify or bypass their own checks. Security must
+Skrynia cannot directly enforce a general content predicate on proposed new
+bytes: two equal-length replacements can have the same key, grant, quota cost
+and old-value CAS precondition, while only one satisfies a rule such as
+"first byte is zero." This does not rule out enforcing some application
+invariants through key/capability layout, or guaranteeing **accepted-state**
+safety through verification. A verifier alone cannot guarantee progress,
+availability, freshness, or a unique canonical history.
+
+Do not call a protocol secure merely because a cooperating client validates
+data: untrusted clients can modify or bypass their own checks. Security must
 come from **Skrynia-enforced authority boundaries** or **independent
-verification of accepted data**.
+verification of accepted data**. See [security model](security-model.md).
 
 ## Recipe: Atomic multi-object *logical* transactions
 
@@ -499,17 +511,19 @@ accepted history. A malicious client with head-modification authority can still
 replace/delete it or repeatedly win races, so cryptographic validity and
 service availability are distinct claims.
 
-**Private payloads over public reads.** Reading an existing object requires
-knowing its key but no read token; key enumeration through the Skrynia API
-requires `list`. High-entropy unlisted keys can discourage casual discovery,
-but are not enforced private reads: keys can leak through URLs, referrers,
-logs, or other clients. Applications can encrypt values client-side and
-distribute decryption keys independently. This provides payload
-confidentiality under appropriate cryptographic assumptions, but Skrynia
-still exposes ciphertext, object names, sizes and access patterns to the
-storage operator and to anyone who discovers the relevant keys. Exposed
-ciphertext is available for offline attacks. Revoking a grant does not
-revoke a previously distributed decryption key or erase downloaded copies.
+**Secret-name read capabilities and encryption.** Reading an object requires
+knowing its name but no separate read token; key enumeration through
+Skrynia's API requires a list grant. A uniformly random, high-entropy,
+undisclosed name can be a bearer read capability: guessing a specific
+128-bit random name in q attempts succeeds with probability at most
+q / 2^128 if no other name-discovery channel exists. This is a valid
+confidentiality model, not merely casual obscurity. URLs can nevertheless
+leak through logs, referrers or clients, and a matching list grant reveals
+names. One shared name cannot provide selective per-reader revocation.
+Applications may additionally encrypt payloads, particularly when the
+operator is untrusted or secrecy must not depend on keeping the name hidden.
+Encryption adds key-management burdens; neither method erases previously
+fetched bytes. See [security model](security-model.md).
 
 **Quotas are scope-based, not reservations.** Usage of a grant counts
 matching objects, *including objects another grant created*, plus descendant

@@ -5,7 +5,8 @@ Skrynia is public, durable, flat-key object storage with independent scoped
 authority, per-key atomic mutations, and content-hash compare-and-swap (CAS).
 Applications define their own data formats, verification rules, indexes, and
 computation in clients. This page gives examples, **not** new server promises.
-For constructions and failure conditions, see the [Skrynia Cookbook](cookbook.md).
+For constructions and failure conditions, see the [Skrynia Cookbook](cookbook.md)
+and [security model](security-model.md).
 
 ## Reading the classifications
 
@@ -29,7 +30,7 @@ is much easier than accepting arbitrary anonymous participants.
 | Application | Difficulty | Construction or limiting factor |
 | --- | --- | --- |
 | Static blog, documentation, personal homepage | Easy | Publish HTML/assets and optionally switch a version manifest via CAS. |
-| Personal knowledge base | Easy | Public notes or client-encrypted notes, with client-managed navigation. |
+| Personal knowledge base | Easy | Public, secret-name, or client-encrypted notes, with client-managed navigation. |
 | Public image gallery or file share | Easy (invited) | Publish named byte objects; large files need client-side chunking (default object limit: 10 MiB). |
 | Pastebin or guestbook | Easy (invited); Moderate/Hard (open) | One create-only object per contribution; public submissions need admission, abuse, and quota policy. |
 | Simple two-person messenger | Easy | Distinct sender prefixes, `list`-based discovery, and optional push wake-ups. |
@@ -63,8 +64,8 @@ under different trust or liveness assumptions.
 
 | Requirement | Why Skrynia alone cannot guarantee it |
 | --- | --- |
-| Server-enforced private reads | Anyone knowing an existing key can GET its bytes; `list` requires a token, but reads do not. |
-| Revocable confidentiality of previously delivered bytes | Deleting a key or revoking a grant cannot erase copies already fetched or revoke a disclosed decryption key. |
+| Identity-specific read authorization for one known key | Anyone holding the name can read; high-entropy undisclosed names instead provide bearer-capability confidentiality, not per-reader checks. |
+| Selective revocation of a shared read capability or confidentiality of fetched bytes | Shared names provide the same access to all holders; rotation cannot erase copies already fetched. |
 | Secret application actions performed while clients are absent | The server has no application-specific secret-handling or code-execution facility. Its own private issuer credentials are not a generic application secret API. |
 | Trusted application-specific timestamps | Filesystem timestamps are not an authenticated time-ordering/attestation protocol. |
 | Guaranteed application progress with no active executor | Push wakes clients, but cannot force one to run application logic. |
@@ -73,6 +74,27 @@ under different trust or liveness assumptions.
 | Guaranteed low-latency bidirectional media or changes | Web Push is coalesced, retryable notification, not a real-time stream or peer media transport. |
 
 ## Security and coordination nuances
+
+### Enforcing rules versus accepting valid state
+
+Skrynia directly enforces operation scopes, quotas, create-if-absent and
+byte-hash conditional mutation, even for malicious clients. An application
+can encode useful restrictions into grants and key layouts, such as one
+create-only ballot slot per issued capability. These are real storage-level
+protections, subject to any broader overlapping authority.
+
+The server does not interpret new payloads to evaluate arbitrary application
+predicates. Given an authorized PUT, equal-length new values can satisfy the
+same grant and old-byte CAS checks even when only one is application-valid.
+This is **not** a limit on client-defined *accepted state*: independent
+verifiers can check arbitrarily complex computable rules, signatures and
+histories and reject invalid published records. Acceptance safety requires
+sound evidence and verification; it does not imply availability, progress,
+freshness, or canonical ordering under malicious writers.
+
+Pre-storage enforcement of a general application predicate requires either
+encoding the restriction in Skrynia's existing capabilities or entrusting
+publication to a separate validator. See [security model](security-model.md).
 
 ### Create-only contributions are especially useful
 
@@ -105,17 +127,22 @@ Create-only immutability applies to the *holder's permissions*, not to
 other overlapping grants or the root. No design prevents a powerful
 authorized actor from suppressing publication or exhausting shared quota.
 
-### Public reads do not imply public enumeration
+### Public reads, secret keys, and bearer confidentiality
 
-A caller with an unguessable key can read the object without a token;
-a caller without the key needs `list` authority to enumerate names through
-Skrynia's listing API. This enables *unlisted-link obscurity*, not
-server-enforced access control. Keys leak through links, referrers,
-logs, devices, and other channels; the storage operator can inspect keys,
-contents, and sizes. Use client-side encryption for confidential payloads,
-and assume ciphertext is available for offline attack if the key leaks.
-Even encrypted content exposes some metadata and does not erase copies
-already downloaded.
+A known-key GET requires no separate read token, but listing requires a
+scoped grant. A cryptographically random, undisclosed name is therefore a
+**bearer read capability**. An attacker guessing a specific uniformly random
+128-bit name succeeds in at most q / 2^128 probability after q distinct
+guesses, assuming no other key-discovery channel. This provides strong
+computational confidentiality under that explicit threat model.
+
+Applications must protect names from referrers, logs, links, third-party
+scripts and publicly enumerable directories. Holders of matching list grants
+can enumerate them. Storage operators can inspect plaintext, and sharing a
+name does not allow selective read revocation by identity. Client encryption
+is complementary when the operator is untrusted or content needs protection
+independent of name secrecy, not a prerequisite for all secret-name data.
+See [security model](security-model.md) for assumptions and limits.
 
 ### Public write access and browser origins
 
