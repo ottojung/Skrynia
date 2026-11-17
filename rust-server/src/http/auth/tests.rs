@@ -2,6 +2,8 @@ use super::key;
 #[test]
 fn key_path_does_not_use_form_semantics() {
     assert_eq!(key("valid.name", 256).unwrap(), "valid.name");
+    assert_eq!(key("a/b/index-A.js", 256).unwrap(), "a/b/index-A.js");
+    assert_eq!(key("a%2Fb/index.js", 256).unwrap(), "a/b/index.js");
     assert_eq!(key("valid%2Ename", 256).unwrap(), "valid.name");
     for raw in [
         "valid&x=another",
@@ -9,6 +11,9 @@ fn key_path_does_not_use_form_semantics() {
         "%ZZ",
         "%C0%AF",
         "../evil",
+        "a/../evil",
+        "a/%2e%2e/evil",
+        "a//b",
         "%2F",
     ] {
         assert!(key(raw, 256).is_err(), "{raw}");

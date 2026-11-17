@@ -22,6 +22,11 @@ impl Intent {
     }
     pub fn applied(&self, root: &Path) -> io::Result<bool> {
         let file = root.join("store").join(&self.key);
+        match crate::store::paths::safe_parent(root, &self.key) {
+            Ok(_) => {}
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(self.kind == "delete"),
+            Err(e) => return Err(e),
+        };
         if self.kind == "delete" {
             return Ok(!file.exists());
         }

@@ -1,5 +1,5 @@
 use super::params::Params;
-use std::{collections::BinaryHeap, fs, io, path::Path};
+use std::{collections::BinaryHeap, io, path::Path};
 pub fn entries(dir: &Path, request: &Params) -> io::Result<Vec<String>> {
     let scope = &request.locations;
     if scope.is_empty() {
@@ -16,26 +16,19 @@ pub fn entries(dir: &Path, request: &Params) -> io::Result<Vec<String>> {
             Err(e) => Err(e),
         };
     };
-    let mut heap = BinaryHeap::new();
-    for entry in fs::read_dir(dir.join("store"))? {
-        let entry = entry?;
-        let key = entry
-            .file_name()
-            .into_string()
-            .map_err(|_| io::Error::other("invalid key"))?;
-        if !crate::valid_key(&key) || !entry.file_type()?.is_file() {
-            return Err(io::Error::other("nonregular store entry"));
-        }
-        if !key.starts_with(prefix) || request.after.as_ref().is_some_and(|x| key <= *x) {
-            continue;
+    let mut heap = BinaryHeap::<String>::new();
+    crate::store::paths::visit(dir, |key, _| {
+        if !key.starts_with(prefix) || request.after.as_ref().is_some_and(|x| key <= x.as_str()) {
+            return Ok(());
         }
         if heap.len() < request.limit + 1 {
-            heap.push(key);
-        } else if heap.peek().is_some_and(|last| key < *last) {
+            heap.push(key.into());
+        } else if heap.peek().is_some_and(|last| key < last.as_str()) {
             heap.pop();
-            heap.push(key);
+            heap.push(key.into());
         }
-    }
+        Ok(())
+    })?;
     Ok(heap.into_sorted_vec())
 }
 #[cfg(test)]

@@ -4,5 +4,6 @@ mod concurrent;
 mod grant_api;
 mod indexed;
 mod lifecycle;
+mod nested;
 mod requests;
 mod scopes;
