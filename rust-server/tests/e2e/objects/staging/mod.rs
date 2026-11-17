@@ -40,3 +40,5 @@ async fn failed_staging_is_retryable_without_disabling_public_reads() {
         StatusCode::CREATED
     );
 }
+
+mod streaming;

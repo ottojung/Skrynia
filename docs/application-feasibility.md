@@ -30,7 +30,7 @@ is much easier than accepting arbitrary anonymous participants.
 | --- | --- | --- |
 | Static blog, documentation, personal homepage | Easy | Publish HTML/assets and optionally switch a version manifest via CAS. |
 | Personal knowledge base | Easy | Public notes or client-encrypted notes, with client-managed navigation. |
-| Public image gallery or file share | Easy (invited) | Publish named byte objects; large files need client-side chunking (default object limit: 10 MiB). |
+| Public image gallery or file share | Easy (invited) | Publish named byte objects; files up to 10 GB stream directly; larger objects require chunking. |
 | Pastebin or guestbook | Easy (invited); Moderate/Hard (open) | One create-only object per contribution; public submissions need admission, abuse, and quota policy. |
 | Simple two-person messenger | Easy | Distinct sender prefixes, `list`-based discovery, and optional push wake-ups. |
 | Public chat room | Moderate | Key discovery and rendering are simple; open membership, moderation, and prompt delivery are not. |

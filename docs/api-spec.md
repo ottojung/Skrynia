@@ -77,12 +77,16 @@ and `X-Content-Type-Options: nosniff`.
 
 Object writes commit atomically per key. A failed conditional mutation
 preserves the existing object. The request/body maximum
-(`SKRYNIA_MAX_OBJECT_SIZE`, default 10 MiB) is independent of grant quota.
-The server also bounds aggregate in-progress buffered uploads
-(`SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES`, default 40 MiB) and HTTP connections
-(`SKRYNIA_MAX_CONNECTIONS`, default 512). Uploads exceeding the process
-buffer limit receive HTTP 503. Public reads stream from a pinned file
-descriptor rather than copying the entire object into memory.
+(`SKRYNIA_MAX_OBJECT_SIZE`, default 10 GB (10,000,000,000 bytes)) is independent of grant quota.
+Uploads are streamed into fsynced staging files while computing SHA-256
+incrementally; they are never buffered in full in server memory.
+`SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES` (default 40 MiB) bounds aggregate
+in-flight memory per upload chunk, independently of the object limit.
+When the next chunk cannot fit, the request receives HTTP 503. The
+connection limit remains `SKRYNIA_MAX_CONNECTIONS` (default 512).
+Public GET responses stream from a pinned file descriptor.
+The upload inactivity timeout applies between chunks, not to the
+complete duration of a large upload.
 
 Object files retain their filesystem-provided modification times.
 For each create or replace, the durable journal records the SHA-256 of

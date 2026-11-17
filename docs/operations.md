@@ -12,8 +12,8 @@ It never interprets object contents as executable application instructions.
 | `SKRYNIA_HOST` | `127.0.0.1` | Listener interface |
 | `SKRYNIA_PORT` | `17380` | Listener port |
 | `SKRYNIA_MAX_KEY_LENGTH` | `255` | Maximum total hierarchical key length (1–255 bytes; invalid values reject startup) |
-| `SKRYNIA_MAX_OBJECT_SIZE` | `10485760` | Maximum object bytes |
-| `SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES` | `41943040` | Aggregate upload-buffer budget |
+| `SKRYNIA_MAX_OBJECT_SIZE` | `10000000000` | Maximum object bytes (10 GB) |
+| `SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES` | `41943040` | Aggregate in-flight chunk buffer budget, not an object size limit |
 | `SKRYNIA_MAX_CONNECTIONS` | `512` | Active connection limit |
 | `SKRYNIA_SOCKET_IDLE_TIMEOUT_MS` | `30000` | Idle client timeout |
 | `SKRYNIA_PUSH_CONCURRENCY` | `8` | Parallel notification deliveries |

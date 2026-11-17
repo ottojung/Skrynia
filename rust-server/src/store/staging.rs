@@ -1,35 +1,24 @@
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::fs::{self, File, OpenOptions};
+use std::io;
 use std::path::{Path, PathBuf};
-
-pub fn create(dir: &Path, bytes: &[u8]) -> io::Result<PathBuf> {
-    let folder = dir.join("store-tmp");
-    let path = folder.join(format!("obj.{}.{}", std::process::id(), crate::random_id()));
-    let result = (|| {
-        let mut file = OpenOptions::new()
+pub struct Staged(PathBuf);
+impl Staged {
+    pub fn start(dir: &Path) -> io::Result<(Self, File)> {
+        let folder = dir.join("store-tmp");
+        let path = folder.join(format!("obj.{}.{}", std::process::id(), crate::random_id()));
+        let file = OpenOptions::new()
             .create_new(true)
             .write(true)
             .open(&path)?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            file.set_permissions(fs::Permissions::from_mode(0o644))?;
+            if let Err(error) = file.set_permissions(fs::Permissions::from_mode(0o644)) {
+                let _ = fs::remove_file(&path);
+                return Err(error);
+            }
         }
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        Ok::<_, io::Error>(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&path);
-    }
-    result.map(|_| path)
-}
-
-// Own the temporary name until commit or rejection; never leak staged files.
-pub struct Staged(PathBuf);
-impl Staged {
-    pub fn prepare(dir: &Path, bytes: &[u8]) -> io::Result<Self> {
-        create(dir, bytes).map(Self)
+        Ok((Self(path), file))
     }
     pub fn path(&self) -> &Path {
         &self.0
