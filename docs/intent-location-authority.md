@@ -4,11 +4,16 @@ Status: normative.
 
 ## One root and one keyspace
 
-Every installation has one global object keyspace. Objects are named
-by one ASCII key matching `[A-Za-z0-9_][A-Za-z0-9_.]*`. Keys cannot
-begin with a dot but may contain any number of subsequent dots. They are
-bounded by a configurable maximum length,
-and are not hierarchical filesystem paths.
+Every installation has one global object keyspace. Keys are ASCII paths
+made of nonempty slash-separated segments. Each segment matches
+`[A-Za-z0-9_-][A-Za-z0-9_.-]*`: letters, numbers, underscores and hyphens
+are accepted, with dots permitted except as the first character of a
+segment. Names cannot contain empty segments, `.` or `..` traversal,
+spaces or special URL characters. The maximum **entire key** length
+is configurable. The filesystem preserves these segments under `store/`,
+so a complete application asset directory can be uploaded over HTTP.
+Directory entries are not objects, and a filename cannot simultaneously
+be a directory; conflicting creates fail with 409 `path_conflict`.
 
 A grant's location matcher is an exact key, a prefix ending in `*`,
 all keys (`*`) or no keys (empty string). Every grant holds an immutable

@@ -15,6 +15,9 @@ pub fn preflight(
     token: &str,
     mode: Mode<'_>,
 ) -> Result<Option<u64>> {
+    if kind == Kind::Create && std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir()) {
+        return Err(Fail(StatusCode::CONFLICT, "path_conflict"));
+    }
     let old = match crate::open_regular(path) {
         Ok(file) => Some(file.metadata().map_err(|_| crate::internal())?.len()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,

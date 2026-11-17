@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 pub async fn open(state: Arc<State>, key: &str) -> Result<(File, u64, String)> {
     let path = state.dir.join("store").join(key);
+    let key = key.to_owned();
     tokio::task::spawn_blocking(move || {
+        crate::store::paths::safe_parent(&state.dir, &key)?;
         let mut file = crate::open_regular(&path)?;
         let size = file.metadata()?.len();
         let mut digest = Sha256::new();
@@ -24,7 +26,10 @@ pub async fn open(state: Arc<State>, key: &str) -> Result<(File, u64, String)> {
     .await
     .map_err(|_| internal())?
     .map_err(|error: std::io::Error| {
-        if error.kind() == std::io::ErrorKind::NotFound {
+        if matches!(
+            error.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::AlreadyExists
+        ) {
             missing("not_found")
         } else {
             internal()

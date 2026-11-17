@@ -47,11 +47,17 @@ For a comparative application catalog, see
 | Scoped, delegable grants | Key/prefix matcher, subset of `create` / `modify` / `delete` / `list` / `delegate` / `subscribe`, quotas | Delegated participants, isolation of different storage regions, bounded authority |
 | Notifications | Grant-scoped Web Push subscriptions | Wake interested clients without running application code on Skrynia |
 
-Keys match `[A-Za-z0-9_][A-Za-z0-9_.]*`, permitting consecutive dots but
-not leading dots. A location matcher is one exact key, a prefix ending in
-`*`, all keys (`*`), or the empty set. There is **no**
-atomic operation across multiple physical keys, general query evaluator,
-application-specific server code, or private read operation.
+Keys can preserve directory layouts, e.g.
+`apps/site/releases/v1/assets/app-123.js` maps to the corresponding
+nested regular file under `store/`. Each slash-separated path segment
+must begin with an ASCII letter, digit, underscore or hyphen and contain
+only ASCII letters, digits, underscores, dots or hyphens; no leading
+dot, empty segment or dot/dotdot traversal. A location matcher is one
+exact key, a prefix ending in `*` (including `apps/site/*`), all
+keys (`*`), or the empty set. A file and a directory cannot share the
+same physical pathname. There is **no** atomic operation across multiple
+physical keys, general query evaluator, application-specific server
+code, or private read operation.
 
 **Byte-content preconditions.** PUT and DELETE can require the SHA-256
 of the current object's bytes using `X-Skrynia-If-SHA256`. The digest is

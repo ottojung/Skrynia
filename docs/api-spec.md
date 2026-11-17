@@ -6,30 +6,41 @@ Use HTTPS outside local development. No API request relies on cookies.
 
 ## Object names and authority scopes
 
-An object key must be a nonempty ASCII string, at most
-`SKRYNIA_MAX_KEY_LENGTH` characters (default 255; maximum 255), matching
-`[A-Za-z0-9_][A-Za-z0-9_.]*`. Keys cannot begin with a dot;
-consecutive dots are unrestricted after the first character.
-Case matters; `/`, spaces and `*` are not valid object-key characters.
+An object key is a nonempty ASCII path, at most
+`SKRYNIA_MAX_KEY_LENGTH` **bytes** in total (default and maximum: 255).
+It consists of nonempty `/`-separated components matching
+`[A-Za-z0-9_-][A-Za-z0-9_.-]*`. Consecutive dots inside a component
+are permitted; components cannot begin with a dot. Empty components,
+leading/trailing slashes, `.`, `..`, spaces, percent signs (after URL
+decoding), and `*` are invalid. File extensions are significant for
+response MIME types.
 
-A `locations` matcher is an exact key (`alice.index.html`),
-a prefix followed by `*` (`alice.*`), `*` for all keys, or
-`""` for no keys. Matchers use the same non-dot initial character as keys, with an optional
-trailing `*`; `*` and `""` are also valid matchers.
-A child grant's locations must select a subset of its parent's matched keys.
-Location matcher strings have a fixed maximum length of 257 characters,
-including any final `*`. This prevents oversized grant records and
-unbounded matcher-cache keys.
+For example, `POST /store/apps/long/releases/v1/assets/app-a1.js`
+creates the file
+`SKRYNIA_DATA_DIR/store/apps/long/releases/v1/assets/app-a1.js`
+and any required parent directories. The filename and layout are
+preserved. Parent directories are not separate objects and do not
+count against object quotas. File/directory collisions (attempting
+to create both `a` and `a/b`) return HTTP 409 `path_conflict`.
+No path may escape the public store; symbolic links and nonregular
+entries are rejected.
+
+A `locations` matcher is an exact key (e.g. `apps/long/index.html`),
+a prefix followed by `*` (e.g. `apps/long/*`), `*` for all keys,
+or `""` for none. A trailing slash is allowed in a prefix matcher
+before `*`; it denotes that whole directory subtree. A child grant's
+matcher must be a subset of its parent's. Matchers have a maximum
+length of 257 bytes, including their `*`.
 
 ## Object endpoints
 
 | HTTP method | Path | Semantics |
 | --- | --- | --- |
-| GET / HEAD | /store/{key} | Public raw bytes or metadata, strong ETag, conditional / range reads; 404 if absent |
+| GET / HEAD | /store/{key...} | Public raw bytes or metadata, strong ETag, conditional / range reads; 404 if absent |
 | GET | /store?locations={matcher} | List matching keys, requires a user token with `list` |
-| POST | /store/{key} | Create if absent; requires `create` and authorized user token; 201 or 409 |
-| PUT | /store/{key} | Replace if present; requires `modify` and authorized user token; 200 or 404 |
-| DELETE | /store/{key} | Delete if present; requires `delete` and authorized user token; 200 or 404 |
+| POST | /store/{key...} | Create if absent; requires `create` and authorized user token; 201 or 409 |
+| PUT | /store/{key...} | Replace if present; requires `modify` and authorized user token; 200 or 404 |
+| DELETE | /store/{key...} | Delete if present; requires `delete` and authorized user token; 200 or 404 |
 
 Mutations and listings use `Authorization: Bearer <user-token>`.
 

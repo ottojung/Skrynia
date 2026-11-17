@@ -12,6 +12,20 @@ pub fn checked<'a>(
     let data = state.data.lock().map_err(|_| crate::internal())?;
     state.require_healthy()?;
     let path = state.dir.join("store").join(key);
+    match super::super::paths::safe_parent(&state.dir, key) {
+        Ok(_) => {}
+        Err(e) if kind == Kind::Create && e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(crate::missing("not_found"));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(crate::Fail(
+                axum::http::StatusCode::CONFLICT,
+                "path_conflict",
+            ));
+        }
+        Err(_) => return Err(crate::internal()),
+    }
     let old = check::preflight(&data, key, kind, body, &path, token, mode)?;
     crate::push_preflight(&data, key, kind.event(), state.push_config.max_outbox)?;
     Ok((data, old))

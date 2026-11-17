@@ -5,7 +5,7 @@ pub(crate) mod disk;
 pub use disk::{sync_dir, write_json};
 mod journal;
 mod locking;
-mod paths;
+pub(crate) mod paths;
 mod persist;
 mod read;
 pub use read::open_regular;

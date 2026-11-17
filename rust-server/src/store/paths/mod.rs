@@ -26,16 +26,10 @@ pub fn dirs(dir: &Path) -> std::io::Result<()> {
     }
     Ok(())
 }
-pub fn scan(dir: &Path) -> std::io::Result<()> {
-    for item in fs::read_dir(dir.join("store"))? {
-        let item = item?;
-        let name = item
-            .file_name()
-            .into_string()
-            .map_err(|_| std::io::Error::other("bad key"))?;
-        if !crate::valid_key(&name) || !item.file_type()?.is_file() {
-            return Err(std::io::Error::other("invalid stored key"));
-        }
-    }
-    Ok(())
-}
+mod parents;
+mod walk;
+pub use parents::{ensure_parent, safe_parent};
+pub use walk::{scan, visit};
+
+#[cfg(test)]
+mod tests;

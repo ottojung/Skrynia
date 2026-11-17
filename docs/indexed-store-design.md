@@ -3,7 +3,7 @@
 Status: **alternative B+tree proposal, not implemented**. The current
 implementation uses a log-structured signed-delta index for first-time
 prefix grants; scoped listing still scans the object directory. This study preserves [current API](api-spec.md),
-[location-based grant quotas](intent-location-authority.md), flat public
+[location-based grant quotas](intent-location-authority.md), hierarchically named public
 object files, and the single authoritative writer. It does **not** adopt
 object ownership or change client-visible listing/cursor semantics.
 

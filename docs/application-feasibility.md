@@ -1,6 +1,6 @@
 # Applications and feasibility
 
-Skrynia is public, durable, flat-key object storage with independent scoped
+Skrynia is public, durable, hierarchical-key object storage with independent scoped
 `create`, `modify`, `delete`, `list`, `delegate`, and `subscribe`
 authority, per-key atomic mutations, and content-hash compare-and-swap (CAS).
 Applications define their own data formats, verification rules, indexes, and
