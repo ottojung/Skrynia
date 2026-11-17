@@ -9,6 +9,7 @@ mod read;
 mod replies;
 mod util;
 mod write;
+pub use write::Upload;
 
 pub fn router(state: crate::store::State, delivery_enabled: bool) -> axum::Router {
     let state = std::sync::Arc::new(state);

@@ -1,15 +1,10 @@
 use super::Kind;
-use super::staging;
+use crate::Staged;
 use std::fs;
 use std::io;
 use std::path::Path;
 
-pub fn commit(
-    dir: &Path,
-    path: &Path,
-    kind: Kind,
-    staged: Option<&staging::Staged>,
-) -> io::Result<()> {
+pub fn commit(dir: &Path, path: &Path, kind: Kind, staged: Option<&Staged>) -> io::Result<()> {
     let parent = if kind == Kind::Create {
         super::super::paths::ensure_parent(
             dir,

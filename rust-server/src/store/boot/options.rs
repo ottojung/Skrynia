@@ -6,7 +6,7 @@ pub struct Config {
     pub dir: PathBuf,
     pub base: String,
     pub public: String,
-    pub max_object: usize,
+    pub max_object: u64,
     pub max_key_length: usize,
     pub max_buffered: usize,
 }
@@ -20,7 +20,7 @@ pub fn read() -> io::Result<Config> {
     let max_key_length = length::key()?;
     let max_object = std::env::var("SKRYNIA_MAX_OBJECT_SIZE")
         .ok()
-        .map_or(Ok(10485760usize), |v| v.parse())
+        .map_or(Ok(10_000_000_000u64), |v| v.parse())
         .map_err(|_| io::Error::other("invalid object size"))?;
     let max_buffered = std::env::var("SKRYNIA_MAX_BUFFERED_UPLOAD_BYTES")
         .ok()

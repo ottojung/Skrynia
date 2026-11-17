@@ -4,8 +4,8 @@ pub use super::grants::{
     Grant, QuotaIndex, Usage, matches, random_id, sha, sha_file, subset, valid_key, valid_scope,
 };
 pub use super::grants::{OPERATIONS, recover_pending};
-pub use super::store::{Kind, Snapshot, State, open_regular};
-pub use super::store::{sync_dir, write_json};
+pub use super::store::{Kind, Snapshot, Staged, State, open_regular};
+pub use super::store::{commit_store, sync_dir, write_json};
 
 pub use super::grants::{random_secret, secure_match, valid_identifier, valid_sha256};
 pub use super::push::{
@@ -24,7 +24,7 @@ pub use super::push::{
 
 pub use super::push::{DeliveryOutcome, PushFailure, push_finish_batch, push_run, push_send};
 
-pub use super::http::{ListParams, validate_build_info};
+pub use super::http::{ListParams, Upload, validate_build_info};
 pub use super::net::config_number;
 
 #[cfg(test)]

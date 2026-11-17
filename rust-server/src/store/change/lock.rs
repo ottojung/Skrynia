@@ -5,7 +5,7 @@ pub fn checked<'a>(
     state: &'a State,
     key: &str,
     kind: Kind,
-    body: &[u8],
+    size: u64,
     token: &str,
     mode: check::Mode<'_>,
 ) -> Result<(MutexGuard<'a, Snapshot>, Option<u64>)> {
@@ -26,7 +26,7 @@ pub fn checked<'a>(
         }
         Err(_) => return Err(crate::internal()),
     }
-    let old = check::preflight(&data, key, kind, body, &path, token, mode)?;
+    let old = check::preflight(&data, key, kind, size, &path, token, mode)?;
     crate::push_preflight(&data, key, kind.event(), state.push_config.max_outbox)?;
     Ok((data, old))
 }

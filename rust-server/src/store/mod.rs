@@ -4,12 +4,14 @@ pub use change::Kind;
 pub(crate) mod disk;
 pub use disk::{sync_dir, write_json};
 mod journal;
+pub use journal::commit as commit_store;
 mod locking;
 pub(crate) mod paths;
 mod persist;
 mod read;
 pub use read::open_regular;
 mod staging;
+pub use staging::Staged;
 
 use crate::{Grant, PushConfig, PushState, Vapid};
 use std::collections::HashMap;
@@ -20,7 +22,7 @@ use std::sync::{Arc, Mutex};
 pub struct State {
     pub dir: PathBuf,
     pub base: String,
-    pub max_object: usize,
+    pub max_object: u64,
     pub max_key_length: usize,
     pub max_buffered: usize,
     pub upload: Arc<tokio::sync::Semaphore>,

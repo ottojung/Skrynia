@@ -6,6 +6,7 @@ use axum::extract::Request;
 use axum::http::{Method, StatusCode};
 use axum::response::Response;
 use std::sync::Arc;
+pub use upload::Upload;
 
 pub async fn mutation(state: Arc<State>, raw_name: String, req: Request) -> Result<Response> {
     let key = auth::key(&raw_name, state.max_key_length)?;
@@ -23,12 +24,12 @@ pub async fn mutation(state: Arc<State>, raw_name: String, req: Request) -> Resu
     };
     preflight::authorize_async(Arc::clone(&state), key.clone(), kind, token.clone()).await?;
     let upload = if method == Method::DELETE {
-        upload::Upload::empty(Arc::clone(&state.upload))
+        upload::Upload::empty()
     } else {
         upload::read(&state, req).await?
     };
     let outcome = tokio::task::spawn_blocking(move || {
-        let committed = state.change(&key, kind, &upload.bytes, expected.as_deref(), &token);
+        let committed = state.change_uploaded(&key, kind, &upload, expected.as_deref(), &token);
         drop(upload);
         committed
     })

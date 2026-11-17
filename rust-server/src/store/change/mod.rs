@@ -1,52 +1,10 @@
 mod apply;
 mod check;
+mod execute;
 mod failure;
 mod index;
 mod kind;
 mod lock;
-mod prepare;
-use super::{State, journal, staging};
-use crate::Result;
+#[cfg(test)]
+mod tests_adapter;
 pub use kind::Kind;
-
-impl State {
-    pub fn change(
-        &self,
-        key: &str,
-        kind: Kind,
-        body: &[u8],
-        expected: Option<&str>,
-        token: &str,
-    ) -> Result<bool> {
-        // Preflight before I/O, then revalidate after parallel staging.
-        let staged = prepare::staged(self, key, kind, body, token)?;
-        let (mut data, old) =
-            lock::checked(self, key, kind, body, token, check::Mode::Final(expected))?;
-        let path = self.dir.join("store").join(key);
-        let pending = journal::commit(
-            &self.dir,
-            key,
-            kind.event(),
-            (kind != Kind::Delete).then(|| crate::sha(body)),
-            || apply::commit(&self.dir, &path, kind, staged.as_ref()),
-            || {
-                crate::push_enqueue(
-                    &mut data,
-                    &self.dir,
-                    key,
-                    kind.event(),
-                    self.push_config.max_outbox,
-                )
-            },
-        )
-        .map_err(|failure| failure::map(self, failure))?;
-        index::record(
-            self,
-            &mut data,
-            key,
-            old,
-            (kind != Kind::Delete).then_some(body.len() as u64),
-        )?;
-        Ok(pending)
-    }
-}

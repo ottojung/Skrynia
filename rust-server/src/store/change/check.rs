@@ -3,6 +3,7 @@ use crate::{Fail, Result, Snapshot};
 use axum::http::StatusCode;
 use std::path::Path;
 pub enum Mode<'a> {
+    #[cfg(test)]
     Initial,
     Final(Option<&'a str>),
 }
@@ -10,7 +11,7 @@ pub fn preflight(
     data: &Snapshot,
     key: &str,
     kind: Kind,
-    body: &[u8],
+    size: u64,
     path: &Path,
     token: &str,
     mode: Mode<'_>,
@@ -37,7 +38,7 @@ pub fn preflight(
         }
     }
     if kind != Kind::Delete && matches!(mode, Mode::Final(_)) {
-        data.check_quota(&grant.id, key, old, body.len() as u64)?;
+        data.check_quota(&grant.id, key, old, size)?;
     }
     Ok(old)
 }
