@@ -1,4 +1,5 @@
-use super::{Server, subscription};
+use super::Server;
+use crate::e2e::fixture::subscription;
 use reqwest::{Method, StatusCode};
 use std::{fs, os::unix::fs::MetadataExt};
 #[tokio::test]

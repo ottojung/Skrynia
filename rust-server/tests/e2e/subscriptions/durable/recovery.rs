@@ -14,7 +14,7 @@ async fn failed_group_persistence_keeps_committed_notification_replayable() {
     fs::rename(&path, &moved).unwrap();
     fs::create_dir(&path).unwrap();
     let response = server
-        .call(Method::POST, "/store/notice.retry")
+        .call(Method::POST, "/store/notice.event")
         .bearer_auth(&token)
         .body("value")
         .send()

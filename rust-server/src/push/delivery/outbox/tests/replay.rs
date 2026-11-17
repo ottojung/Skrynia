@@ -3,7 +3,7 @@ use std::fs;
 #[test]
 fn group_generations_survive_restart_without_recreating_acknowledged_subscribers() {
     let (root, mut data, ids) = pending(50);
-    super::super::enqueue(&mut data, &root, "notice.test", "replace", 100).unwrap();
+    super::super::enqueue(&mut data, &root, "notice.event", "replace", 100).unwrap();
     let before = crate::load_push(&root).unwrap();
     for id in &ids {
         assert_eq!(before.outbox[id].generation, 2);

@@ -223,38 +223,52 @@ Creation of new grants and user credentials consumes ancestor metadata budget.
 
 ```json
 {
-  "locations": "alice.*",
+  "locations": "alice.index.html",
   "events": ["create", "replace", "delete"],
   "endpoint": "https://push-service.example/subscription",
   "keys": {"p256dh":"...","auth":"..."}
 }
 ```
 
-The `subscribe` operation is required and the subscription location
-matcher must be a subset of the grant's locations. `events` may be omitted,
-defaulting to all three mutation kinds. The server returns `id`,
-`capability`, and `deduped`. The same endpoint can have independent
-registrations for different scopes or events. A registration for the same
-endpoint, scope, and events may be refreshed with its own capability.
+`locations` must be exactly one concrete object key and is validated with the
+normal object identifier rules, including slash-containing paths. Prefix,
+wildcard, and empty location matchers are rejected, including `*` and names
+ending in `*`. The `subscribe` operation is required for that exact identifier.
+A grant whose `locations` scope covers the key may authorize subscribing to
+that one key within its scope; it does not subscribe the caller to the whole
+grant prefix. `events` may be omitted, defaulting to all three mutation kinds.
+The server returns `id`, `capability`, and `deduped`. The same endpoint can
+have independent registrations for different exact keys or events. A
+registration for the same endpoint, exact key, and events may be refreshed with
+its own capability.
 
 `PUT /push/subscriptions/{id}` changes an endpoint or cryptographic keys;
 `DELETE /push/subscriptions/{id}` removes it. These two routes require
 `X-Skrynia-Capability`. A subscription's locations/events are immutable.
 A grant revocation removes subscriptions funded by its subtree.
 
-Subscriptions are private server records. Matching object mutations enqueue
-durable retryable wake-ups, **coalescing multiple pending changes into
-one notification per subscription**. If an update occurs during delivery,
+Subscriptions are private server records. Mutations to the subscribed exact key
+enqueue durable retryable wake-ups for matching subscriptions, **coalescing
+multiple pending changes into one notification per subscription**. Changes to
+unrelated keys never enqueue those notifications. Matching and enqueue work is
+driven by subscriptions registered for the changed key rather than by scanning
+prefix matchers or all subscribers; persistent journal/outbox I/O may still add
+amplification and is assessed separately. If an update occurs during delivery,
 its newer notification remains pending. Push messages carry the constant
-`changed` and no object data. Delivery is retryable and duplicate wake-ups
-are possible. Non-permanent failures back off exponentially, and after
-12 failures by default the subscription is removed rather than retrying
-forever. Skrynia does not maintain a configurable push host allowlist.
-A full notification outbox rejects a mutation needing new
-entries before committing it, with HTTP 507. Deliveries have configurable
-timeouts and bounded concurrency (default eight simultaneous sends).
-Endpoints must use HTTPS; outbound DNS answers are validated and pinned
-to publicly routable addresses.
+`changed` and no object data. Delivery is retryable and duplicate wake-ups are
+possible. Non-permanent failures back off exponentially, and after 12 failures
+by default the subscription is removed rather than retrying forever. Skrynia
+does not maintain a configurable push host allowlist. A full notification outbox
+rejects a mutation needing new entries before committing it, with HTTP 507.
+Deliveries have configurable timeouts and bounded concurrency (default eight
+simultaneous sends). Endpoints must use HTTPS; outbound DNS answers are
+validated and pinned to publicly routable addresses.
+
+Existing prefix, wildcard, or empty subscription registrations from earlier
+releases are not silently broadened or reinterpreted as exact-key
+subscriptions. They require explicit migration: remove or replace them with
+exact-key registrations before startup accepts push state. Startup validation
+rejects legacy non-exact subscription locations.
 
 ## Other endpoints
 

@@ -18,7 +18,7 @@ pub fn sample(port: u16) -> (Subscription, PushConfig, Vapid, PathBuf) {
     let sub = Subscription {
         id: "a".repeat(32),
         grant_id: "b".repeat(32),
-        locations: "*".into(),
+        locations: "notice.event".into(),
         events: vec!["create".into()],
         endpoint: format!("https://push.example.org:{port}/notification"),
         keys: PushKeys {

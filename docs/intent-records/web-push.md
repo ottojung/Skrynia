@@ -1,10 +1,16 @@
 $id-6065450554435260
-title: Scoped Web Push
-date: 2026/11/10
+title: Exact-key Web Push
+date: 2026/11/17
 source: @ottojung
 kind: requirement
 
-A user token with subscribe authority creates subscriptions with their own location matcher (a subset of its grant) and mutation event kinds. Changes enqueue retryable wake-up notifications to matching subscriptions. Messages are generic wake-ups. Pending changes coalesce per subscriber, with durable generations preventing concurrent writes from being acknowledged by earlier deliveries. Per-subscription credentials manage updates and deletion.
+A user token with subscribe authority creates subscriptions for exactly one concrete object identifier, using normal identifier validation (including slash-containing paths). Prefix, wildcard, and empty location matchers are not accepted, including `*` and names ending in `*`. The token must have subscribe authority over that exact identifier; a grant with prefix scope may authorize subscribing to one key within its scope but does not imply subscribing to the entire prefix. Subscription events select mutation kinds.
+
+Changes to the subscribed exact key enqueue retryable wake-up notifications to matching subscriptions. Changes to unrelated keys never enqueue those notifications. Messages are generic wake-ups. Pending changes coalesce per subscriber, with durable generations preventing concurrent writes from being acknowledged by earlier deliveries. Per-subscription credentials manage updates and deletion.
+
+Mutation matching depends on subscriptions registered for the changed key rather than a scan of prefix matchers or all subscribers. Persistent journal/outbox amplification is assessed separately and is not claimed constant.
+
+Existing prefix, wildcard, or empty registrations are not silently broadened or reinterpreted. Startup validation rejects legacy non-exact subscription locations and requires explicit migration to exact-key registrations.
 
 Push requires HTTPS URLs without embedded credentials. Actual connections pin DNS resolution to public IP destinations. Delivery is timeout-bounded, concurrent within a configured bound, and retains a new notification generation if a mutation occurs during an earlier delivery.
 Failures are retried with exponential backoff up to a bounded attempt count.

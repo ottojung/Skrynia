@@ -4,7 +4,7 @@ use std::fs;
 fn one_subscriber_uses_the_canonical_outbox_with_one_write() {
     let (root, mut data, ids) = pending(1);
     let before = crate::outbox_write_count();
-    super::super::enqueue(&mut data, &root, "notice.test", "replace", 100).unwrap();
+    super::super::enqueue(&mut data, &root, "notice.event", "replace", 100).unwrap();
     assert_eq!(crate::outbox_write_count() - before, 1);
     let file = root.join("state/push/outbox.json");
     let records: serde_json::Value = serde_json::from_slice(&fs::read(file).unwrap()).unwrap();

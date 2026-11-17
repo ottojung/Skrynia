@@ -15,7 +15,7 @@ pub fn sample() -> (Subscription, PushConfig, EcKey<Private>) {
     let subscriber = Subscription {
         id: "a".repeat(32),
         grant_id: "b".repeat(32),
-        locations: "*".into(),
+        locations: "notice.event".into(),
         events: vec!["create".into()],
         endpoint: "https://push.example.org/notification".into(),
         keys: PushKeys {

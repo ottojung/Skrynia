@@ -81,7 +81,9 @@ server can serve them directly; never publish `state/`. Independent,
 mutually untrusted publishers require **separate HTTPS browser origins**.
 See [the nginx example](examples/nginx-origins.conf).
 
-Web Push subscriptions are grant-scoped and use a separate update capability.
+Web Push subscriptions target one exact object key, are grant-scoped, and use a
+separate update capability. A prefix grant may authorize subscribing to one key
+within its scope, but subscriptions do not cover key prefixes or wildcards.
 Notifications carry a generic `changed` wake-up; recipients fetch current
 values. Delivery state persists across restarts and duplicate wake-ups are
 possible. The server validates public HTTPS endpoints and pins DNS resolution.

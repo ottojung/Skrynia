@@ -13,7 +13,7 @@ fn failed_persistence_restores_old_and_new_pending_notifications() {
     data.push.outbox.remove(&ids[0]);
     let before = generations(&data);
     fs::remove_dir_all(root.join("state/push")).unwrap();
-    assert!(super::super::enqueue(&mut data, &root, "notice.test", "replace", 10).is_err());
+    assert!(super::super::enqueue(&mut data, &root, "notice.event", "replace", 10).is_err());
     assert_eq!(generations(&data), before);
     fs::remove_dir_all(root).unwrap();
 }

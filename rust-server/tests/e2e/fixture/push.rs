@@ -11,7 +11,7 @@ pub fn subscription(endpoint: &str) -> Value {
         .public_key()
         .to_bytes(&group, PointConversionForm::UNCOMPRESSED, &mut context)
         .unwrap();
-    json!({"locations":"notice.*","events":["create","replace","delete"],
+    json!({"locations":"notice.event","events":["create","replace","delete"],
         "endpoint":endpoint,"keys":{"p256dh":URL_SAFE_NO_PAD.encode(public),
         "auth":URL_SAFE_NO_PAD.encode([7u8;16])}})
 }

@@ -27,7 +27,7 @@ fn failed_replay_of_applied_mutation_must_block_new_writes() {
     fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{}.json", "b".repeat(32)));
     let intent = serde_json::json!({
-        "key":"pending", "kind":"create", "sha256":crate::sha(b"x"), "committed":true
+        "key":"notice.event", "kind":"create", "sha256":crate::sha(b"x"), "committed":true
     });
     fs::write(&path, serde_json::to_vec(&intent).unwrap()).unwrap();
     let outbox = f.path.join("state/push/outbox.json");

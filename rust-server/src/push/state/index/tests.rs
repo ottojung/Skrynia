@@ -1,5 +1,5 @@
 mod oracle;
-use super::SubIndex;
+pub(super) use super::SubIndex;
 use crate::{PushKeys, Subscription};
 fn sub(id: &str, scope: &str, events: &[&str]) -> Subscription {
     Subscription {
@@ -20,29 +20,26 @@ fn sorted(mut list: Vec<String>) -> Vec<String> {
     list
 }
 #[test]
-fn matcher_indexes_exact_prefix_and_events_without_duplicates() {
+fn matcher_indexes_exact_keys_and_events_without_duplicates() {
     let mut index = SubIndex::default();
-    let all = sub("all", "*", &["create"]);
-    let prefix = sub("prefix", "team.*", &["create", "replace"]);
-    let exact = sub("exact", "team.one", &["replace"]);
-    let empty = sub("empty", "", &["create"]);
-    for s in [&all, &prefix, &exact, &empty] {
+    let one = sub("one", "team.one", &["create", "replace"]);
+    let other = sub("other", "team.one", &["replace"]);
+    let unrelated = sub("unrelated", "team.two", &["create"]);
+    for s in [&one, &other, &unrelated] {
         index.insert(s);
     }
-    assert_eq!(
-        sorted(index.matching("team.one", "create")),
-        ["all", "prefix"]
-    );
+    assert_eq!(sorted(index.matching("team.one", "create")), ["one"]);
     assert_eq!(
         sorted(index.matching("team.one", "replace")),
-        ["exact", "prefix"]
+        ["one", "other"]
     );
-    assert_eq!(index.matching("unrelated", "replace"), Vec::<String>::new());
-    index.remove(&prefix);
-    assert_eq!(index.matching("team.one", "create"), ["all"]);
-    assert_eq!(index.matching("team.one", "replace"), ["exact"]);
-    index.remove(&exact);
-    index.remove(&all);
-    assert!(index.root.children.is_empty());
+    assert!(index.matching("team.two", "replace").is_empty());
+    assert!(index.matching("team", "create").is_empty());
+    index.remove(&one);
+    assert_eq!(index.matching("team.one", "create"), Vec::<String>::new());
+    assert_eq!(index.matching("team.one", "replace"), ["other"]);
+    index.remove(&other);
+    index.remove(&unrelated);
     assert!(index.matching("team.one", "replace").is_empty());
+    assert!(index.matching("team.two", "create").is_empty());
 }

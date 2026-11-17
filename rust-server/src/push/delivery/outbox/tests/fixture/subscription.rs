@@ -4,7 +4,7 @@ pub fn create(root: &Path, id: &str) -> Subscription {
     let entry = Subscription {
         id: id.into(),
         grant_id: "a".repeat(32),
-        locations: "*".into(),
+        locations: "notice.event".into(),
         events: vec!["replace".into()],
         endpoint: "https://push.example.org".into(),
         keys: PushKeys {

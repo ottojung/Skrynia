@@ -1,5 +1,5 @@
 pub use super::keys::valid as valid_keys;
-use crate::{Grant, PushState, subset, valid_scope};
+use crate::{Grant, PushState, subset, valid_key};
 use std::collections::{HashMap, HashSet};
 use std::io;
 pub fn validate_push(state: &PushState, grants: &HashMap<String, Grant>) -> io::Result<()> {
@@ -8,8 +8,12 @@ pub fn validate_push(state: &PushState, grants: &HashMap<String, Grant>) -> io::
             .get(&sub.grant_id)
             .ok_or_else(|| io::Error::other("orphan push subscription"))?;
         let mut seen = HashSet::new();
+        if !valid_key(&sub.locations) {
+            return Err(io::Error::other(
+                "legacy push subscription locations require explicit migration",
+            ));
+        }
         if id != &sub.id
-            || !valid_scope(&sub.locations)
             || !subset(&sub.locations, &grant.locations)
             || !grant.operations.iter().any(|op| op == "subscribe")
             || sub.events.is_empty()

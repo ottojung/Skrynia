@@ -1,4 +1,5 @@
-use super::{Server, subscription};
+use super::Server;
+use crate::e2e::fixture::subscription;
 use reqwest::{Method, StatusCode};
 #[tokio::test]
 async fn push_registration_rejects_private_targets() {

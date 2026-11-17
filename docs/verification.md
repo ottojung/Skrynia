@@ -73,7 +73,7 @@ bound is claimed. Every row additionally incurs the actual filesystem trace.
 | Direct object GET | `O(k+b)` | `O(1)` streaming buffer | `FSL(N,k) + FSR(b,e)`; reads whole value for SHA-256 |
 | New prefix grant | `O(k*ell*log(max(2,W)))` plus ancestry | `O(Gk+mk)` | Binary seeks into ell <= O(log W) immutable delta runs |
 | Mutation quota accounting | `O(k+h+k*log(m))` before compaction | `O(Gk+mk)` | In-memory updates; occasional sequential run flush/merge |
-| Subscription matching | `O(k+s)` | `O(Sk)` separately | In-memory exact/prefix/event trie |
+| Subscription matching | `O(s_k)` per changed key/event | `O(S)` separately | In-memory exact-key/event index |
 | POST/PUT excluding durable staging/journal/outbox | `O(k+b+h+s+k log(m))` plus old bytes and occasional compaction | `O(Gk+mk)` | Staging, journal, public mutation and derived-index flushing/merging each charged |
 
 Here `b` includes old bytes read for SHA-256 conditional PUT.
@@ -103,7 +103,7 @@ This is the current implementation's time/space trade-off, not a
 required property of the API.
 
 The tests include direct oracle comparisons of the indexed grant totals
-and subscription matcher against full scans, plus restart, nested-grant,
+and subscription matcher against full scans of unrelated subscribers, plus restart, nested-grant,
 revoke, conditional mutation, listing and durability tests.
 
 ## Object-count memory probe

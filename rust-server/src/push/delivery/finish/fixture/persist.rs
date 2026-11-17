@@ -9,7 +9,7 @@ pub fn prepare(path: &Path, generation: u64) -> Subscription {
     let sub = Subscription {
         id: id.clone(),
         grant_id: "b".repeat(32),
-        locations: "*".into(),
+        locations: "notice.event".into(),
         events: vec!["create".into()],
         endpoint: "https://push.example.org/s".into(),
         keys: PushKeys {

@@ -21,7 +21,7 @@ pub fn parse(value: &serde_json::Value) -> Result<Input> {
     let keys: PushKeys = serde_json::from_value(value.get("keys").cloned().unwrap_or_default())
         .map_err(|_| bad("invalid_subscription"))?;
     let mut seen = std::collections::HashSet::new();
-    if !crate::valid_scope(locations)
+    if !crate::valid_key(locations)
         || crate::parse_push_endpoint(endpoint).is_none()
         || !crate::valid_push_keys(&keys)
         || events.is_empty()

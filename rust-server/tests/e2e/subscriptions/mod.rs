@@ -4,7 +4,7 @@ use serde_json::Value;
 mod durable;
 mod invalid;
 mod revoked;
-async fn register(server: &Server, token: &str, endpoint: &str) -> String {
+pub(super) async fn register(server: &Server, token: &str, endpoint: &str) -> String {
     let result = server
         .call(Method::POST, "/push/subscriptions")
         .bearer_auth(token)
@@ -16,7 +16,12 @@ async fn register(server: &Server, token: &str, endpoint: &str) -> String {
     let data: Value = result.json().await.unwrap();
     data["id"].as_str().unwrap().into()
 }
-async fn publish(server: &Server, token: &str, method: Method, data: &str) -> StatusCode {
+pub(super) async fn publish(
+    server: &Server,
+    token: &str,
+    method: Method,
+    data: &str,
+) -> StatusCode {
     server
         .call(method, "/store/notice.event")
         .bearer_auth(token)
@@ -27,8 +32,8 @@ async fn publish(server: &Server, token: &str, method: Method, data: &str) -> St
         .status()
 }
 mod batch;
+mod exact_auth;
+mod exact_reject;
+mod exact_scope;
 mod layout;
 mod quiet;
-mod recovery;
-mod restart;
-mod revoke_recovery;
