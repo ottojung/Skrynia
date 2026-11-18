@@ -15,3 +15,15 @@ fn malformed_names_fail_without_lossy_conversion() {
     drop(it);
     fs::remove_dir_all(path).unwrap();
 }
+
+#[test]
+fn eof_is_not_a_stale_errno_failure() {
+    let path = std::env::temp_dir().join(format!("skrynia-v3-dir-eof-{}", std::process::id()));
+    std::fs::create_dir(&path).unwrap();
+    let fd = std::os::fd::OwnedFd::from(std::fs::File::open(&path).unwrap());
+    let mut it = Stream::open(&fd).unwrap();
+    unsafe { *libc::__errno_location() = libc::ENOENT };
+    assert!(matches!(it.next(), Ok(None)));
+    drop(it);
+    std::fs::remove_dir_all(&path).unwrap();
+}

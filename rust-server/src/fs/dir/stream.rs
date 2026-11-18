@@ -17,9 +17,13 @@ impl Stream {
     }
     pub fn next(&mut self) -> Result<Option<Vec<u8>>, &'static str> {
         loop {
-            let ent = unsafe { libc::readdir(self.0) };
+            let ent = unsafe {
+                *libc::__errno_location() = 0;
+                libc::readdir(self.0)
+            };
             if ent.is_null() {
-                return Ok(None);
+                let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+                return if errno == 0 { Ok(None) } else { Err("io") };
             }
             let name = unsafe { CStr::from_ptr((*ent).d_name.as_ptr()) };
             let s = name.to_str().map_err(|_| "invalid")?;
