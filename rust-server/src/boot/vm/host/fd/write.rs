@@ -15,7 +15,11 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                let buf = match crate::boot::vm::mem::read_buf(&mut c, mem, src, len) {
+                if src as u64 + len as u64 > mem.data_size(&c) as u64 {
+                    return crate::boot::vm::codes::ERR_RANGE;
+                }
+                let chunk = len.min(crate::boot::limits::IO_CHUNK);
+                let buf = match crate::boot::vm::mem::read_buf(&mut c, mem, src, chunk) {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
