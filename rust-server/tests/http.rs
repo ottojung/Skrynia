@@ -4,8 +4,8 @@ use skrynia_server::{boot, http};
 use std::fs;
 use tower::ServiceExt;
 
-fn kernel() -> boot::Kernel {
-    let dir = std::env::temp_dir().join("skrynia-v3-http");
+fn kernel(name: &str) -> boot::Kernel {
+    let dir = std::env::temp_dir().join(name);
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let wasm = dir.join("root.wasm");
@@ -17,11 +17,19 @@ fn kernel() -> boot::Kernel {
 
 #[tokio::test]
 async fn rejects_non_post_and_other_paths() {
-    let app = http::router(kernel());
+    let app = http::router(kernel("skrynia-v3-http-routes"));
     let req = Request::get("/").body(Body::empty()).unwrap();
     let res = app.clone().oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
     let req = Request::post("/other").body(Body::empty()).unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::METHOD_NOT_ALLOWED);
+}
+
+#[tokio::test]
+async fn post_root_reaches_kernel_path() {
+    let app = http::router(kernel("skrynia-v3-http-post"));
+    let req = Request::post("/").body(Body::from("hi")).unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::NOT_IMPLEMENTED);
 }

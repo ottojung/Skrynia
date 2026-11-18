@@ -1,18 +1,20 @@
+mod exec;
+mod limits;
+pub use exec::Request;
 use std::path::Path;
 use std::sync::Arc;
-use wasmtime::{Config, Engine, Module};
+use wasmtime::{Engine, Module};
 
 pub struct Kernel {
     engine: Engine,
     root: Module,
     ram: Arc<super::ram::Ram>,
-    data: super::fs::root::Root,
+    fs: Arc<super::fs::Fs>,
 }
 
 impl Kernel {
     pub fn start(root_wasm: &Path, data_dir: &Path) -> Result<Self, String> {
-        let mut cfg = Config::new();
-        cfg.consume_fuel(true);
+        let cfg = limits::engine_config()?;
         let engine = Engine::new(&cfg).map_err(|e| format!("engine: {e}"))?;
         let bytes = std::fs::read(root_wasm).map_err(|e| format!("read root: {e}"))?;
         let root = Module::new(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
@@ -21,7 +23,7 @@ impl Kernel {
             engine,
             root,
             ram: Arc::new(super::ram::Ram::new()),
-            data,
+            fs: Arc::new(super::fs::Fs::new(data)),
         })
     }
     pub fn engine(&self) -> &Engine {
@@ -33,7 +35,10 @@ impl Kernel {
     pub fn ram(&self) -> &Arc<super::ram::Ram> {
         &self.ram
     }
-    pub fn data(&self) -> &super::fs::root::Root {
-        &self.data
+    pub fn fs(&self) -> &Arc<super::fs::Fs> {
+        &self.fs
+    }
+    pub fn prepare(&self, fuel: u64) -> Result<Request, String> {
+        exec::prepare(&self.engine, &self.root, fuel)
     }
 }

@@ -1,6 +1,9 @@
 use std::os::fd::OwnedFd;
 use std::path::Path;
 mod open;
+pub mod parent;
+pub mod rel;
+pub mod walk;
 
 pub struct Root {
     fd: OwnedFd,
