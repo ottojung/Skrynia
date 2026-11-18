@@ -8,6 +8,9 @@ pub fn clean_relative(path: &Path) -> Result<PathBuf, &'static str> {
     if s.contains(&0) {
         return Err("null");
     }
+    if std::str::from_utf8(s).is_err() || s.windows(2).any(|w| w == b"//") || s.ends_with(b"/") {
+        return Err("invalid");
+    }
     if s.len() > 4096 {
         return Err("invalid");
     }

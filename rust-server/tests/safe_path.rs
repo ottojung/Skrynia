@@ -8,6 +8,10 @@ fn rejects_bad_paths() {
     assert!(safe::clean_relative(Path::new("a/../../b")).is_err());
     assert!(safe::clean_relative(Path::new("a\0b")).is_err());
     assert!(safe::clean_relative(Path::new("")).is_err());
+    assert!(safe::clean_relative(Path::new("a//b")).is_err());
+    assert!(safe::clean_relative(Path::new("a/")).is_err());
+    use std::os::unix::ffi::OsStrExt;
+    assert!(safe::clean_relative(Path::new(std::ffi::OsStr::from_bytes(b"a/\xff"))).is_err());
 }
 
 #[test]
