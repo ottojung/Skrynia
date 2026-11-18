@@ -8,7 +8,7 @@ impl Fs {
         off: u64,
     ) -> Result<(), &'static str> {
         match fds.get_mut(fd) {
-            Some(Item::Input(_)) => Err("perm"),
+            Some(Item::Input(_) | Item::Output(_)) => Err("perm"),
             Some(Item::Ram(e)) => {
                 e.pos = off;
                 Ok(())
@@ -24,7 +24,7 @@ impl Fs {
         size: u64,
     ) -> Result<(), &'static str> {
         match fds.get(fd) {
-            Some(Item::Input(_)) => Err("perm"),
+            Some(Item::Input(_) | Item::Output(_)) => Err("perm"),
             Some(Item::Ram(_)) => self.ram.truncate(size as usize),
             Some(Item::File(e)) => crate::fs::disk::truncate(e, size),
             _ => Err("badfd"),

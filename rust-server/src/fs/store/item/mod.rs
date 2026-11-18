@@ -1,3 +1,5 @@
+mod output;
+pub use output::Output;
 pub struct RamFd {
     pub pos: u64,
 }
@@ -34,6 +36,7 @@ impl Input {
 }
 pub enum Item {
     Input(Input),
+    Output(Output),
     File(crate::fs::disk::Entry),
     Dir(crate::fs::dir::Entry),
     Ram(RamFd),

@@ -12,9 +12,9 @@ pub async fn run(body: Body, tx: mpsc::Sender<io::Result<Bytes>>, max: usize) ->
             Ok(b) => b,
             Err(_) => {
                 if active {
-                    let _ = tx.send(Err(io::ErrorKind::Other.into())).await;
+                    let _ = tx.send(Err(io::ErrorKind::BrokenPipe.into())).await;
                 }
-                return Err(io::ErrorKind::Other.into());
+                return Err(io::ErrorKind::BrokenPipe.into());
             }
         };
         count = count

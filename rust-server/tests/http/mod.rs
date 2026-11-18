@@ -1,4 +1,8 @@
 mod basic;
+mod callback;
 mod early;
 mod failure;
+mod output_failure;
+mod output_first;
+mod output_large;
 mod streaming;

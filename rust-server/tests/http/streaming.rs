@@ -10,17 +10,24 @@ use tower::ServiceExt;
 
 pub(super) const STREAM_ROOT: &str = r#"(module
   (import "skrynia" "read" (func $read (param i32 i32 i32) (result i32)))
+  (import "skrynia" "write" (func $write (param i32 i32 i32) (result i32)))
   (memory (export "memory") 1)
-  (func (export "skrynia_main") (param $fd i32) (param $out i32) (param i32) (result i32)
-    (local $count i32) (local $n i32)
+  (func (export "skrynia_main") (param $input i32) (param $output i32) (result i32)
+    (local $n i32) (local $done i32)
     (loop $again
-      (local.set $n (call $read (local.get $fd)
-        (i32.add (local.get $out) (local.get $count)) (i32.const 4)))
+      (local.set $n (call $read (local.get $input) (i32.const 4096) (i32.const 4)))
       (if (i32.lt_s (local.get $n) (i32.const 0))
         (then (return (local.get $n))))
-      (local.set $count (i32.add (local.get $count) (local.get $n)))
+      (local.set $done (i32.const 0))
+      (block $written
+        (loop $write_more
+          (br_if $written (i32.eq (local.get $done) (local.get $n)))
+          (local.set $done (i32.add (local.get $done)
+            (call $write (local.get $output) (i32.add (i32.const 4096) (local.get $done))
+              (i32.sub (local.get $n) (local.get $done)))))
+          (br_if $write_more (i32.lt_s (local.get $done) (local.get $n)))))
       (br_if $again (i32.gt_s (local.get $n) (i32.const 0))))
-    (local.get $count)))"#;
+    (i32.const 0)))"#;
 #[tokio::test]
 async fn posted_chunks_arrive_through_descriptor() {
     let wasm = wat::parse_str(STREAM_ROOT).unwrap();

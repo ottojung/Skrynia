@@ -4,7 +4,8 @@ pub fn invoke(
     kernel: &crate::boot::Kernel,
     input: Box<dyn std::io::Read + Send>,
     max_bytes: u64,
-) -> Result<Vec<u8>, i32> {
+    output: Box<dyn std::io::Write + Send>,
+) -> Result<(), i32> {
     let engine = kernel.engine().clone();
     let cache = kernel.cache().clone();
     let mut store = wasmtime::Store::new(
@@ -20,6 +21,9 @@ pub fn invoke(
     let fd = store.data_mut().fds.insert(crate::fs::store::Item::Input(
         crate::fs::store::item::Input::new(input, max_bytes),
     ));
+    let output_fd = store.data_mut().fds.insert(crate::fs::store::Item::Output(
+        crate::fs::store::item::Output::new(output),
+    ));
     store
         .set_fuel(FUEL)
         .map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
@@ -32,5 +36,5 @@ pub fn invoke(
         .data_mut()
         .frames
         .push(crate::boot::vm::state::Frame::root(inst));
-    super::root::call_root(&mut store, fd.0)
+    super::root::call_root(&mut store, fd.0, output_fd.0)
 }

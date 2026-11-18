@@ -14,6 +14,18 @@ The separate `skrynia-tools` repository offers one optional Program 0
 implementation; it is **not** a dependency of the kernel. Users are free
 to provide completely different implementations.
 
+The root module exports `skrynia_main(input_fd:i32,output_fd:i32)->i32`.
+The input is a read-only, forward-only HTTP body descriptor and output is a
+write-only, forward-only response descriptor. Both may be closed; neither
+supports seeking, truncation or syncing. Successful return is exactly `0`;
+a negative return is a VM failure. `write` may be short; the program must
+retry for bytes it still needs to send. The kernel uses bounded channels with
+backpressure, not a fixed WASM response buffer or global RAM. A failure after
+bytes have already been sent terminates the HTTP body with an error rather
+than reporting a successful clean EOF. Child programs still expose the
+separate invoke-only ABI: no privileged filesystem, RAM or HTTP descriptors
+are inherited.
+
 Run `make test` for conformance tests using isolated, self-contained
 WebAssembly fixtures. The server repository has **no tests, example
 applications, deployment entry points, or build steps that assume the binary

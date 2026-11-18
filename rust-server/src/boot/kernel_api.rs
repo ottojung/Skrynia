@@ -25,16 +25,20 @@ impl Kernel {
         exec::prepare(&self.engine, &self.root, fuel)
     }
     pub fn invoke(&self, body: &[u8]) -> Result<Vec<u8>, i32> {
+        let sink = super::pipe::VecSink::default();
         self.invoke_stream(
             Box::new(std::io::Cursor::new(body.to_vec())),
             16 * 1024 * 1024,
-        )
+            Box::new(sink.clone()),
+        )?;
+        Ok(sink.result())
     }
     pub fn invoke_stream(
         &self,
         input: Box<dyn std::io::Read + Send>,
         max_bytes: u64,
-    ) -> Result<Vec<u8>, i32> {
-        vm::run::invoke(self, input, max_bytes)
+        output: Box<dyn std::io::Write + Send>,
+    ) -> Result<(), i32> {
+        vm::run::invoke(self, input, max_bytes, output)
     }
 }

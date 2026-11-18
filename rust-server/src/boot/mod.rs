@@ -1,6 +1,7 @@
 mod exec;
 mod kernel_api;
 mod limits;
+mod pipe;
 pub mod vm;
 pub use exec::Request;
 use std::path::Path;

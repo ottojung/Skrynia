@@ -9,9 +9,12 @@ use tower::ServiceExt;
 #[tokio::test]
 async fn root_can_return_without_consuming_endless_input() {
     let code = wat::parse_str(
-        r#"(module (memory(export "memory") 1)
-        (func(export "skrynia_main")(param i32 i32 i32)(result i32)
-          (i32.store8 (local.get 1) (i32.const 88)) (i32.const 1)))"#,
+        r#"(module
+        (import "skrynia" "write" (func $w (param i32 i32 i32) (result i32)))
+        (memory(export "memory") 1) (data (i32.const 8) "X")
+        (func(export "skrynia_main")(param i32 i32)(result i32)
+          (drop (call $w (local.get 1) (i32.const 8) (i32.const 1)))
+          (i32.const 0)))"#,
     )
     .unwrap();
     let app = http::router(kernel_with_wasm("skrynia-root-early", &code));

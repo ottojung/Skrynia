@@ -1,5 +1,5 @@
 use super::{
-    input, pump, respond,
+    flow, input, output, pump, respond,
     router::{App, max_req},
 };
 use axum::{
@@ -22,23 +22,17 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     }
     let (tx, rx) = tokio::sync::mpsc::channel(2);
-    let mut sender = tokio::spawn(pump::run(request.into_body(), tx, max));
+    let (out_tx, out_rx) = tokio::sync::mpsc::channel(2);
+    let pump = tokio::spawn(pump::run(request.into_body(), tx, max));
     let kernel = app.kernel;
-    let mut call = tokio::task::spawn_blocking(move || {
-        kernel.invoke_stream(Box::new(input::Input::new(rx)), max as u64)
+    let worker_tx = out_tx.clone();
+    let worker = tokio::task::spawn_blocking(move || {
+        kernel.invoke_stream(
+            Box::new(input::Input::new(rx)),
+            max as u64,
+            Box::new(output::Output(worker_tx)),
+        )
     });
-    let result = tokio::select! {
-        biased;
-        uploaded = &mut sender => {
-            if let Some(response) = respond::upload(uploaded) {
-                return response;
-            }
-            call.await
-        }
-        finished = &mut call => {
-            sender.abort();
-            finished
-        }
-    };
-    respond::vm(result)
+    tokio::spawn(flow::supervise(pump, worker, out_tx));
+    respond::response(out_rx).await
 }
