@@ -1,8 +1,10 @@
 mod delete;
 mod mkdir;
+mod mode;
 mod rename;
 mod stat;
 pub use delete::delete;
-pub use mkdir::{MkdirMode, mkdir};
+pub use mkdir::mkdir;
+pub use mode::MkdirMode;
 pub use rename::rename;
 pub use stat::{exists, is_dir};

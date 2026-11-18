@@ -37,9 +37,10 @@ fn guard_ops() {
     assert!(s.mkdir(b"link", mode).is_err());
     stdfs::write(d.join("data/plain"), b"file").unwrap();
     assert!(s.mkdir(b"plain", mode).is_err());
-    assert!(
+    assert_eq!(
         s.mkdir(b"reald", skrynia_server::fs::node::MkdirMode::create_new())
-            .is_err()
+            .err(),
+        Some("exists")
     );
     assert!(k.prepare(10_000).is_ok());
     let _ = stdfs::remove_dir_all(&d);

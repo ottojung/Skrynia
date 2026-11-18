@@ -1,25 +1,5 @@
+use super::mode::MkdirMode;
 use std::os::fd::AsRawFd;
-
-#[derive(Clone, Copy, Debug)]
-pub struct MkdirMode {
-    pub create: bool,
-    pub exclusive: bool,
-}
-
-impl MkdirMode {
-    pub fn create_if_absent() -> Self {
-        Self {
-            create: true,
-            exclusive: false,
-        }
-    }
-    pub fn create_new() -> Self {
-        Self {
-            create: true,
-            exclusive: true,
-        }
-    }
-}
 
 pub fn mkdir(
     root: &crate::fs::root::Root,
@@ -35,6 +15,9 @@ pub fn mkdir(
         return Ok(());
     }
     let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+    if e == libc::EEXIST && mode.exclusive {
+        return Err("exists");
+    }
     if e == libc::EEXIST && !mode.exclusive {
         let mut st: libc::stat = unsafe { std::mem::zeroed() };
         let r = unsafe {
