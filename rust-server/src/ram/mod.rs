@@ -2,6 +2,8 @@ use std::sync::Mutex;
 mod cas;
 mod io;
 
+pub const MAX_RAM_BYTES: usize = 64 * 1024 * 1024;
+
 #[derive(Debug, Default)]
 pub struct Ram {
     bytes: Mutex<Vec<u8>>,
@@ -17,8 +19,12 @@ impl Ram {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    pub fn truncate(&self, size: usize) {
+    pub fn truncate(&self, size: usize) -> Result<(), &'static str> {
+        if size > MAX_RAM_BYTES {
+            return Err("nospace");
+        }
         let mut b = self.bytes.lock().unwrap();
         b.resize(size, 0);
+        Ok(())
     }
 }

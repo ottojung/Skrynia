@@ -24,6 +24,9 @@ pub fn eval(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: Args) -
     if a.cb_idx < -1 {
         return crate::boot::vm::codes::ERR_INVALID;
     }
+    if let Some(f) = c.data_mut().frames.first_mut() {
+        f.last_overflow = -1;
+    }
     let cb = match super::cb::get_cb(c, a.cb_idx) {
         Ok(x) => x,
         Err(e) => return e,

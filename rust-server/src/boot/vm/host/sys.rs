@@ -15,7 +15,7 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
             |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>, ptr: u32, bits: u32| -> i32 {
                 let n = (bits as usize).div_ceil(8);
                 let mut b = vec![0u8; n];
-                if crate::sys::rand::fill_secure(&mut b).is_err() {
+                if crate::sys::rand::fill_bits(&mut b, bits).is_err() {
                     return crate::boot::vm::codes::ERR_IO;
                 }
                 let m = match crate::boot::vm::mem::get(&mut c) {

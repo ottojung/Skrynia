@@ -8,6 +8,9 @@ pub fn clean_relative(path: &Path) -> Result<PathBuf, &'static str> {
     if s.contains(&0) {
         return Err("null");
     }
+    if s.len() > 4096 {
+        return Err("invalid");
+    }
     if path.is_absolute() {
         return Err("absolute");
     }
@@ -23,6 +26,10 @@ pub fn clean_relative(path: &Path) -> Result<PathBuf, &'static str> {
     }
     if out.as_os_str().is_empty() {
         return Err("empty");
+    }
+    let out_len = out.as_os_str().as_encoded_bytes().len();
+    if out_len > 4096 {
+        return Err("invalid");
     }
     Ok(out)
 }

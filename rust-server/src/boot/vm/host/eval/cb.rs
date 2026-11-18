@@ -5,9 +5,9 @@ pub fn get_cb(
     if cb_idx < 0 {
         return Ok(None);
     }
-    let inst = c.data().frames[0].instance;
-    let table = inst
-        .get_table(&mut *c, "__indirect_function_table")
+    let table = c
+        .get_export("__indirect_function_table")
+        .and_then(|e| e.into_table())
         .ok_or(crate::boot::vm::codes::ERR_INVALID)?;
     let val = table
         .get(&mut *c, cb_idx as u64)

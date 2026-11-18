@@ -10,9 +10,16 @@ pub fn call_cb(
         Some(m) => m,
         None => return crate::boot::vm::codes::ERR_FAULT,
     };
-    let base = 1u32 << 20;
-    let res_base = base + req.len() as u32;
-    if let Err(e) = super::mem::ensure(c, root_mem, (res_base + res_cap) as u64) {
+    let base = root_mem.data_size(&*c) as u32;
+    let res_base = match base.checked_add(req.len() as u32) {
+        Some(v) => v,
+        None => return crate::boot::vm::codes::ERR_LIMIT,
+    };
+    let need = match (res_base as u64).checked_add(res_cap as u64) {
+        Some(v) => v,
+        None => return crate::boot::vm::codes::ERR_LIMIT,
+    };
+    if let Err(e) = super::mem::ensure(c, root_mem, need) {
         return e;
     }
     if crate::boot::vm::mem::write_buf(c, root_mem, base, req).is_err() {

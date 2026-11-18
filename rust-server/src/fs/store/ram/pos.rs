@@ -14,10 +14,7 @@ impl Fs {
     pub fn truncate_ram(&self, fd: crate::fs::Fd, size: u64) -> Result<(), &'static str> {
         let t = self.items.lock().unwrap();
         match t.get(fd) {
-            Some(Item::Ram(_)) => {
-                self.ram.truncate(size as usize);
-                Ok(())
-            }
+            Some(Item::Ram(_)) => self.ram.truncate(size as usize),
             _ => Err("badfd"),
         }
     }

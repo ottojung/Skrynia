@@ -38,3 +38,10 @@ fn boot_compiles_empty_module() {
     assert!(boot::Kernel::start(&wasm, &data).is_ok());
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn ram_max_limit() {
+    let ram = skrynia_server::ram::Ram::new();
+    assert!(ram.truncate(64 * 1024 * 1024).is_ok());
+    assert!(ram.truncate(64 * 1024 * 1024 + 1).is_err());
+}
