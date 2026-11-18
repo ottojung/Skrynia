@@ -23,8 +23,13 @@ impl Registry {
         let ids = store_ls::list_ids(disk, dir)?;
         let mut code = BTreeMap::new();
         for pid in ids {
-            let bytes = store_io::get(disk, dir, &pid)?;
-            code.insert(pid, bytes);
+            match store_io::get(disk, dir, &pid) {
+                Ok(bytes) => {
+                    code.insert(pid, bytes);
+                }
+                Err(StoreErr::Missing | StoreErr::BadRecord | StoreErr::BadId) => {}
+                Err(e) => return Err(e),
+            }
         }
         Ok(Self {
             dir: dir.to_string(),

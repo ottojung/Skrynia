@@ -17,7 +17,7 @@ unsafe extern "C" {
     pub fn next_entry(dir: i32, dst_ptr: u32, cap: u32) -> i32;
     pub fn is_dir(path_ptr: u32, path_len: u32) -> i32;
     pub fn open_ram() -> i32;
-    pub fn cas_ram_u64(ram_fd: i32, off: u64, exp: u64, des: u64, obs: u32) -> i32;
+    pub fn cas_ram_u64(ram_fd: i32, off: u64, exp: u64, des: u64) -> i64;
     pub fn sync(fd: i32) -> i32;
     pub fn now() -> i64;
     pub fn secure_random_bits(dst_ptr: u32, bits: u32) -> i32;

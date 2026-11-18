@@ -60,4 +60,5 @@ fn register_set_invoke_and_recover() {
     assert_eq!(reg2.invoke(&disk, &EchoEval, &id, b"y").unwrap(), b"v2y");
     reg2.revoke(&disk, &id).unwrap();
     assert!(reg2.lookup(&id).is_err());
+    assert!(reg2.set(&disk, &id, b"v3".to_vec()).is_err());
 }

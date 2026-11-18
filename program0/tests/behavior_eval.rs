@@ -66,5 +66,15 @@ fn wrong_secret_cannot_set() {
     let disk = MemDisk::default();
     let reg = Registry::open(&disk, "reg").unwrap();
     let _ = reg.register(&disk, &Rng(5), b"v1".to_vec()).unwrap();
-    assert!(reg.set(&disk, &vec![0u8; 32], b"v2".to_vec()).is_err());
+    assert!(reg.set(&disk, &[0u8; 32], b"v2".to_vec()).is_err());
+}
+
+#[test]
+fn wrong_secret_cannot_revoke_or_lookup() {
+    let disk = MemDisk::default();
+    let reg = Registry::open(&disk, "reg").unwrap();
+    let _ = reg.register(&disk, &Rng(6), b"v1".to_vec()).unwrap();
+    assert!(reg.revoke(&disk, &[0u8; 32]).is_err());
+    assert!(reg.lookup(&[0u8; 32]).is_err());
+    assert!(reg.invoke(&disk, &GuardEval, &[0u8; 32], b"").is_err());
 }
