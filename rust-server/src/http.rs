@@ -29,7 +29,7 @@ async fn handle(
     body: Bytes,
 ) -> impl IntoResponse {
     if method != Method::POST || uri.path() != "/" {
-        return (StatusCode::METHOD_NOT_ALLOWED, "only POST /").into_response();
+        return StatusCode::NOT_FOUND.into_response();
     }
     if body.len() > MAX_REQ {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();

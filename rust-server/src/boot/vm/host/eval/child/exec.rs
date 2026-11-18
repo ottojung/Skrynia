@@ -15,10 +15,15 @@ pub fn run_inner(
     let child_mem = inst
         .get_memory(&mut *c, "memory")
         .ok_or(crate::boot::vm::codes::ERR_FAULT)?;
-    let in_off = 0u32;
-    let out_off = input.len() as u32;
-    let child_cap = (out_off).max(65536);
-    super::mem::ensure(c, child_mem, (out_off + child_cap) as u64)?;
+    let in_off = child_mem.data_size(&*c) as u32;
+    let out_off = in_off
+        .checked_add(input.len() as u32)
+        .ok_or(crate::boot::vm::codes::ERR_LIMIT)?;
+    let child_cap: u32 = 1024 * 1024;
+    let need = (out_off as u64)
+        .checked_add(child_cap as u64)
+        .ok_or(crate::boot::vm::codes::ERR_LIMIT)?;
+    super::mem::ensure(c, child_mem, need)?;
     crate::boot::vm::mem::write_buf(c, child_mem, in_off, input)?;
     let main: wasmtime::TypedFunc<(u32, u32, u32, u32), i32> = inst
         .get_typed_func(&mut *c, "skrynia_main")

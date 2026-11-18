@@ -1,4 +1,3 @@
-const IN_OFF: u32 = 0;
 const OUT_CAP: u32 = 1024 * 1024;
 
 fn ensure(
@@ -25,15 +24,22 @@ pub fn call_root(
 ) -> Result<Vec<u8>, i32> {
     let inst = store.data().frames[0].instance;
     let in_len = body.len() as u32;
-    let out_off = in_len;
-    ensure(store, inst, (out_off + OUT_CAP) as u64)?;
+    let mem0 = crate::boot::vm::mem::get_in(store, inst)?;
+    let in_off = mem0.data_size(&*store) as u32;
+    let out_off = in_off
+        .checked_add(in_len)
+        .ok_or(crate::boot::vm::codes::ERR_LIMIT)?;
+    let need = (out_off as u64)
+        .checked_add(OUT_CAP as u64)
+        .ok_or(crate::boot::vm::codes::ERR_LIMIT)?;
+    ensure(store, inst, need)?;
     let mem = crate::boot::vm::mem::get_in(store, inst)?;
-    crate::boot::vm::mem::write_inst(store, mem, IN_OFF, body)?;
+    crate::boot::vm::mem::write_inst(store, mem, in_off, body)?;
     let f: wasmtime::TypedFunc<(u32, u32, u32, u32), i32> = inst
         .get_typed_func(&mut *store, "skrynia_main")
         .map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
     let n = f
-        .call(&mut *store, (IN_OFF, in_len, out_off, OUT_CAP))
+        .call(&mut *store, (in_off, in_len, out_off, OUT_CAP))
         .map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
     if n < 0 {
         return Err(n);
