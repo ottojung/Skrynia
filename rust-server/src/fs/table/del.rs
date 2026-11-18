@@ -8,7 +8,8 @@ impl<T> Table<T> {
             Some(Slot::Live { tag, .. }) if *tag == fd.tag() => *tag,
             _ => return None,
         };
-        let next_tag = tag + 1;
+        let next_tag = (tag + 1) & 0xffff;
+        let next_tag = if next_tag == 0 { 1 } else { next_tag };
         let Slot::Live { val, .. } = std::mem::replace(
             &mut self.slots[i],
             Slot::Free {

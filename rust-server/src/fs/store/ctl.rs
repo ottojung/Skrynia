@@ -18,6 +18,7 @@ impl Fs {
                 let rc = unsafe { libc::fsync(e.fd.as_raw_fd()) };
                 if rc == 0 { Ok(()) } else { Err("io") }
             }
+            Some(Item::Ram(_)) => Ok(()),
             None => Err("badfd"),
         }
     }

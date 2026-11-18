@@ -22,7 +22,8 @@ impl<T> Table<T> {
             return self.reuse(i, val);
         }
         let i = self.slots.len();
-        self.slots.push(Slot::Live { tag: 1, val });
-        Fd::new(i as u32, 1)
+        let tag = 1u32;
+        self.slots.push(Slot::Live { tag, val });
+        Fd::new(i as u32, tag)
     }
 }

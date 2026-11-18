@@ -1,0 +1,28 @@
+pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
+    linker
+        .func_wrap(
+            "skrynia",
+            "read",
+            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
+             fd: i32,
+             dst: u32,
+             len: u32|
+             -> i32 {
+                let mut buf = vec![0u8; len as usize];
+                let n = match c.data().fs.read(crate::fs::Fd(fd), &mut buf) {
+                    Ok(n) => n,
+                    Err(e) => return crate::boot::vm::err::map(e),
+                };
+                let m = match crate::boot::vm::mem::get(&mut c) {
+                    Ok(x) => x,
+                    Err(e) => return e,
+                };
+                if crate::boot::vm::mem::write_buf(&mut c, m, dst, &buf[..n]).is_err() {
+                    return crate::boot::vm::codes::ERR_RANGE;
+                }
+                n as i32
+            },
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
