@@ -11,3 +11,9 @@ pub fn prepare(engine: &Engine, module: &Module, fuel: u64) -> Result<Request, S
     let instance = Instance::new(&mut store, module, &[]).map_err(|e| format!("instance: {e}"))?;
     Ok(Request { store, instance })
 }
+
+impl super::Kernel {
+    pub fn cache(&self) -> &std::sync::Arc<super::vm::state::Cache> {
+        &self.cache
+    }
+}

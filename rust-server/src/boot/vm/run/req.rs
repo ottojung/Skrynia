@@ -2,14 +2,13 @@ const FUEL: u64 = 10_000_000;
 
 pub fn invoke(kernel: &crate::boot::Kernel, body: &[u8]) -> Result<Vec<u8>, i32> {
     let engine = kernel.engine().clone();
-    let cache = std::sync::Arc::new(crate::boot::vm::state::Cache::new());
     let mut store = wasmtime::Store::new(
         &engine,
         crate::boot::vm::state::Vm::new(
             engine.clone(),
             kernel.fs().clone(),
             kernel.ram().clone(),
-            cache,
+            kernel.cache().clone(),
         ),
     );
     store

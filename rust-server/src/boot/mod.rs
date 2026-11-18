@@ -11,6 +11,7 @@ pub struct Kernel {
     root: Module,
     ram: Arc<crate::ram::Ram>,
     fs: Arc<crate::fs::Fs>,
+    cache: Arc<vm::state::Cache>,
 }
 
 impl Kernel {
@@ -27,6 +28,7 @@ impl Kernel {
             root,
             ram,
             fs,
+            cache: Arc::new(vm::state::Cache::new()),
         })
     }
     pub fn engine(&self) -> &Engine {

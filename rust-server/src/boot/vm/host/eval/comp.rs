@@ -8,6 +8,6 @@ pub fn compile(
     let engine = c.data().engine.clone();
     let m =
         wasmtime::Module::new(&engine, code).map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;
-    c.data().cache.put(code.to_vec(), m.clone());
+    c.data().cache.put(code, m.clone());
     Ok(m)
 }
