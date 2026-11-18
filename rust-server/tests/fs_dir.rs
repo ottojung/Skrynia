@@ -40,5 +40,9 @@ fn dir_ops() {
         s.next_entry(&mut fds, fd, &mut [0u8; 1]).unwrap(),
         fs::dir::Next::Small
     ));
+    use std::os::unix::ffi::OsStrExt;
+    let invalid = std::ffi::OsStr::from_bytes(b"\xFF");
+    stdfs::write(d.join("data/x").join(invalid), b"").unwrap();
+    assert!(s.open_directory(&mut fds, b"x").is_err());
     let _ = stdfs::remove_dir_all(&d);
 }

@@ -18,9 +18,15 @@ pub fn read_names(fd: &OwnedFd) -> Result<Vec<String>, &'static str> {
             break;
         }
         let name = unsafe { CStr::from_ptr((*ent).d_name.as_ptr()) };
-        let s = name.to_string_lossy();
+        let s = match name.to_str() {
+            Ok(value) => value,
+            Err(_) => {
+                unsafe { libc::closedir(dir) };
+                return Err("invalid");
+            }
+        };
         if s != "." && s != ".." {
-            out.push(s.into_owned());
+            out.push(s.to_owned());
         }
     }
     unsafe { libc::closedir(dir) };
