@@ -1,16 +1,12 @@
-//! Application-level Program 0 registry workstream.
+//! Application-defined durable program registry and VM root.
 pub mod cap;
-pub mod handle;
-pub mod id;
-pub mod rcache;
-pub mod reg;
-pub mod reg_ops;
-pub mod store;
-pub mod store_io;
-pub mod store_ls;
-pub mod wdec;
-pub mod wenc;
-pub mod wire;
+pub mod protocol;
+pub mod registry;
 
-pub mod root_abi;
-pub mod root_main;
+pub use protocol::{handle, wdec, wenc, wire};
+pub use registry::{id, rcache, reg, reg_ops, store, store_io, store_ls};
+
+#[cfg(any(target_arch = "wasm32", feature = "vm-check"))]
+pub mod host;
+#[cfg(any(target_arch = "wasm32", feature = "vm-check"))]
+pub use host::{root_abi, root_main};
