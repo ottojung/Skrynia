@@ -14,8 +14,9 @@ build:
 
 check: test
 
+CONTAINER_ENGINE ?= $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 docker-build:
-	docker build -t skrynia:local .
+	$(CONTAINER_ENGINE) build -t skrynia-v3:local .
 
 source-check:
 	@if git ls-files | grep -E '\.(js|jsx|mjs|cjs|ts|tsx)$$'; then 	  echo 'Non-Rust implementation source is forbidden'; exit 1; fi
