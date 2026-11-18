@@ -28,3 +28,18 @@ fn time_and_random_look_valid() {
     assert_ne!(a, [0u8; 32]);
     assert_ne!(a, b);
 }
+
+#[test]
+fn eval_overflow_is_reported() {
+    let root = r#"(module(import "skrynia" "eval"(func $e(param i32 i32 i32 i32 i32 i32 i32)(result i32)))(import "skrynia" "eval_output_len"(func $l(result i32)))(memory(export "memory") 2)(func(export "skrynia_main")(param $i i32)(param $il i32)(param $o i32)(param $oc i32)(result i32)(local $r i32)(local.set $r(call $e(local.get $i)(local.get $il)(i32.const 65536)(i32.const 0)(i32.const -1)(i32.const 70000)(i32.const 1)))(i32.store8(local.get $o)(i32.eq(local.get $r)(i32.const -11)))(i32.store8(i32.add(local.get $o)(i32.const 1))(i32.eq(call $l)(i32.const 5)))(i32.const 2)))"#;
+    let child = r#"(module(memory(export "memory") 1)(data(i32.const 0) "hello")(func(export "skrynia_main")(param i32 i32 i32 i32)(result i32)(i32.const 5)))"#;
+    let dir = std::env::temp_dir().join("skrynia-v3-overflow");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("data")).unwrap();
+    std::fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
+    let k = skrynia_server::boot::Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
+    assert_eq!(
+        k.invoke(&wat::parse_str(child).unwrap()).unwrap(),
+        vec![1, 1]
+    );
+}
