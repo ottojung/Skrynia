@@ -9,6 +9,6 @@
     (i32.const 0))
   (elem (i32.const 0) func $handler)
   (func (export "skrynia_main")
-    (param i32 i32 i32 i32) (result i32)
+    (param i32 i32 i32) (result i32)
     (i32.const 0))
 )

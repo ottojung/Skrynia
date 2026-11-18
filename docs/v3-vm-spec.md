@@ -15,8 +15,12 @@ safety limits. The kernel MUST NOT implement grants, quotas, accounting,
 authentication, registration, lookup, mutable `set`, routing, program IDs,
 v2 object-store semantics, or any implicit capability distribution.
 
-Program 0 is configured by `SKRYNIA_ROOT_WASM`, loaded/validated/compiled at
-every process initialization and restart. `SKRYNIA_DATA_DIR` is the confined
+Program 0 is **entirely user-supplied**, configured by `SKRYNIA_ROOT_WASM`,
+loaded/validated/compiled at every process initialization and restart.
+The Skrynia repository and server MUST NOT include any built-in Program 0,
+build one, select one automatically, or depend on a specific Program 0 protocol.
+An optional Program 0 implementation belongs in the separate `skrynia-tools`
+repository; users may provide arbitrary conforming alternatives. `SKRYNIA_DATA_DIR` is the confined
 filesystem subtree for privileged disk access. Initialization fails closed.
 
 ## HTTP and response contract
@@ -25,9 +29,21 @@ The only endpoint is `POST /` with `Content-Type: application/octet-stream`
 and an arbitrary binary body. No selector header, path parameter, query
 routing, or kernel interpretation of body structure.
 
-For each request the kernel performs: read request body into kernel memory,
-invoke Program 0 once with that body as input, collect Program 0 output from
-its private memory, then return that output. Each request is a fresh logical
+For each request the kernel supplies Program 0 with a kernel-managed,
+read-only, forward-only **input stream descriptor**, not a WASM pointer/array.
+The HTTP request body is read on demand, with bounded backpressure into
+kernel-owned transient buffers (never global RAM or guest linear memory).
+The server MUST NOT require buffering the entire body before invocation.
+Program 0 reads input using `read(input_fd, dst_private_ptr, count)`, which
+returns bytes transferred and zero at EOF. A read after EOF returns zero.
+The descriptor rejects `write`, `seek`, `truncate`, `sync`, and other
+non-read operations with `ERR_PERM` and can be explicitly `close`d.
+Stream/read errors return a negative code; excess bytes over the configured
+request limit terminate the request with a limit error. Programs should read
+until EOF when request completion matters. The descriptor is request-local,
+non-rewindable, not a disk or global RAM object, and never shared across guests.
+The kernel invokes Program 0 once, collects output from its private memory,
+and returns that output. Each request is a fresh logical
 Program 0 invocation: no shared private WASM globals, stack, or linear memory.
 Compiled Program 0 code may be cached; execution state must not be reused.
 
@@ -53,6 +69,7 @@ not inspect output meaning. Legacy v2 HTTP behavior belongs in `skrynia-tools`.
 
 1. **Private WASM linear memory**: separate linear memory per module instance.
    Every pointer passed to or from host imports/exports addresses this memory.
+   Input-stream descriptors are opaque handles, never pointers.
    A guest never receives a pointer to another instance's memory or to RAM.
 2. **Kernel-owned memory**: request/result staging, frames, descriptors,
    compiled artifacts, and transient copies. Never exposed as guest pointers.
@@ -102,8 +119,13 @@ Status codes: `>= 0` means success/value as specified; negative means error.
 
 ## `eval` and nested `invoke` ABI
 
-Program 0 and every evaluated child must export `memory` and export
-`skrynia_main(in_ptr: u32, in_len: u32, out_ptr: u32, out_cap: u32) -> i32`.
+Program 0 exports `memory` and
+`skrynia_main(input_fd: i32, out_ptr: u32, out_cap: u32) -> i32`.
+Its input_fd refers to the HTTP request stream, **not** private WASM memory.
+For security, evaluated child modules retain the separate, invoke-only ABI
+`skrynia_main(in_ptr: u32, in_len: u32, out_ptr: u32, out_cap: u32) -> i32`;
+child programs cannot import privileged `read` and must communicate through
+caller-defined `invoke` if they need a stream protocol.
 Program 0 must export funcref table `__indirect_function_table` when it uses
 `eval` callbacks.
 `cb_table_idx` indexes that caller-exported table; the element must be a
@@ -199,6 +221,27 @@ with `ERR_RANGE` or `ERR_FAULT` as specified and cause no partial out-of-range
 memory access. Modules with non-zero data segments are valid provided data
 segments are instantiated normally; kernel-selected transient buffers must not
 overlap those initialized data segments.
+
+## Root request input stream
+
+The input descriptor is created on every `POST /` request and passed as the
+first argument to Program 0, using the same opaque descriptor table as disk
+and RAM handles. It contains an abstract read-only source of bytes. Its
+`read(fd,dst,len)` copies at most `len` bytes into caller-private WASM memory
+and advances the stream by exactly that many bytes; reads may be short even
+before EOF. `read(fd,dst,0)` returns 0 without advancing. Invalid destination
+pointers MUST be rejected before consuming any input. `close` releases this
+invocation's handle; closed descriptors return `ERR_BADFD`.
+
+`write`, `seek`, `truncate`, and `sync` on input descriptors return
+`ERR_PERM`, never rewinding, changing or materializing the stream. A body
+must not be copied into shared global RAM or pre-populated into WASM memory.
+HTTP body consumption must be incremental with bounded staging and backpressure.
+An implementation may use a bounded asynchronous-to-synchronous bridge to
+support Wasmtime's synchronous host imports. Cancel or drop the input source
+when Program 0 finishes without reading to EOF. The total amount of delivered
+HTTP data is bounded by `SKRYNIA_MAX_REQUEST_BYTES`; overflow or transport
+failure is reported as a read/VM error, never silently changed to EOF.
 
 ## Disk, paths, and descriptors
 

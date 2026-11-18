@@ -60,14 +60,20 @@ is never implicitly replayed.
 
 ## Response/status semantics
 
-**Decision (authoritative):** Program 0 and child modules export
-`skrynia_main(in_ptr: u32, in_len: u32, out_ptr: u32, out_cap: u32) -> i32`.
+**Decision (authoritative):** Program 0 exports
+`skrynia_main(input_fd: i32, out_ptr: u32, out_cap: u32) -> i32`,
+where `input_fd` is the read-only, forward-only HTTP body stream. It never
+points to a WASM array. Child modules instead export
+`skrynia_main(in_ptr: u32, in_len: u32, out_ptr: u32, out_cap: u32) -> i32`
+because their only host import is the evaluator-controlled `invoke`, not
+privileged `read`. Child stream protocols may be built over `invoke`.
 Non-negative return is produced output byte count written to
 `[out_ptr, out_ptr+n)`. Negative return is a VM-visible failure (`ERR_*` code)
 at the module boundary.
 
-For `POST /`, kernel places request bytes in Program 0 private memory, passes
-a host-chosen output buffer/capacity within kernel limits, and on `n >= 0`
+For `POST /`, kernel provides Program 0 a one-way read-only input descriptor
+without copying the body into private WASM memory, passes a host-chosen output
+buffer/capacity within kernel limits, and on `n >= 0`
 returns HTTP 200 with those `n` bytes. For `eval`, kernel places input in
 child private memory, passes caller-provided `(out_ptr,out_cap)` in caller
 context for result delivery as specified by `eval` contract, and applies the
@@ -120,3 +126,17 @@ and descriptors are lost on process restart.
   per-turn transient scratch growth needs implementation calibration.
 - Filesystem-portable directory-sync/rename corner cases require Linux-focused
   conformance execution and documentation.
+
+
+## Root input-stream descriptor
+
+The native kernel accepts only a **user-supplied** Program 0 module; it does not
+build or embed a default. The optional `skrynia-tools` Program 0 is just one
+possible implementation. HTTP `POST /` content is delivered through a
+request-local, read-only input FD supporting only `read` and `close`.
+`read` copies bytes to Program 0 private WASM memory on demand; no entire-body
+prebuffering, implicit global RAM access or seekability is allowed. Other
+operations return `ERR_PERM`. Invalid destination pointers are rejected
+before advancing the stream, EOF is sticky, and transport/body-size failures
+are signaled as errors rather than clean EOF. The root entrypoint is
+`skrynia_main(input_fd:i32, out_ptr:u32, out_cap:u32)->i32`.

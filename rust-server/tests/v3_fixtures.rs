@@ -23,3 +23,13 @@ fn fixtures_and_spec_reflect_resolved_abi() {
     assert!(spec.contains("observed_ptr: u32) -> i32"));
     assert!(spec.contains("must never overwrite"));
 }
+#[test]
+fn root_uses_input_descriptor_not_a_wasm_array() {
+    let root = read("docs/v3/fixtures/root_input_stream.wat");
+    assert!(root.contains("(import \"skrynia\" \"read\""));
+    assert!(root.contains("(param $input_fd i32)"));
+    assert!(!root.contains("(param $in_ptr i32)"));
+    let spec = read("docs/v3-vm-spec.md");
+    assert!(spec.contains("skrynia_main(input_fd: i32, out_ptr: u32, out_cap: u32)"));
+    assert!(spec.contains("user-supplied"));
+}
