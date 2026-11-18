@@ -1,5 +1,5 @@
 pub struct Entry {
-    pub names: Vec<String>,
-    pub pos: usize,
+    pub stream: super::stream::Stream,
+    pub pending: Option<Vec<u8>>,
     pub fd: std::os::fd::OwnedFd,
 }

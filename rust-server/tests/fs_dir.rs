@@ -34,15 +34,17 @@ fn dir_ops() {
     seen.sort();
     assert_eq!(seen, vec![b"a".to_vec(), b"bb".to_vec()]);
     s.sync(&mut fds, fd).unwrap();
-    s.close(&mut fds, fd).unwrap();
     let fd = s.open_directory(&mut fds, b"x").unwrap();
     assert!(matches!(
-        s.next_entry(&mut fds, fd, &mut [0u8; 1]).unwrap(),
+        s.next_entry(&mut fds, fd, &mut []).unwrap(),
         fs::dir::Next::Small
     ));
-    use std::os::unix::ffi::OsStrExt;
-    let invalid = std::ffi::OsStr::from_bytes(b"\xFF");
-    stdfs::write(d.join("data/x").join(invalid), b"").unwrap();
-    assert!(s.open_directory(&mut fds, b"x").is_err());
+    assert!(matches!(
+        s.next_entry(&mut fds, fd, &mut []).unwrap(),
+        fs::dir::Next::Small
+    ));
+    let mut bytes = [0u8; 16];
+    assert!(matches!(s.next_entry(&mut fds, fd, &mut bytes).unwrap(),
+        fs::dir::Next::Name(n) if n > 0));
     let _ = stdfs::remove_dir_all(&d);
 }
