@@ -2,6 +2,7 @@
 pub mod cap;
 pub mod handle;
 pub mod id;
+pub mod rcache;
 pub mod reg;
 pub mod reg_ops;
 pub mod store;

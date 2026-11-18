@@ -1,4 +1,3 @@
-use crate::cap::Disk;
 use crate::id;
 
 pub const REC_VER: u8 = 1;
