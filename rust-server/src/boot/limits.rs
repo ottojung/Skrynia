@@ -1,7 +1,7 @@
 use wasmtime::Config;
 
-pub const DEFAULT_FUEL: u64 = 10_000_000;
 pub const MAX_WASM_STACK: usize = 512 * 1024;
+pub const MAX_IO: u32 = 64 * 1024 * 1024;
 
 pub fn engine_config() -> Result<Config, String> {
     let mut cfg = Config::new();

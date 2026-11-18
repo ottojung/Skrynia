@@ -5,6 +5,9 @@ pub fn call_cb(
     res_ptr: u32,
     res_cap: u32,
 ) -> i32 {
+    if res_cap > crate::boot::limits::MAX_IO {
+        return crate::boot::vm::codes::ERR_LIMIT;
+    }
     let root_inst = c.data().frames[0].instance;
     let root_mem = match root_inst.get_memory(&mut *c, "memory") {
         Some(m) => m,
@@ -31,7 +34,7 @@ pub fn call_cb(
     };
     let n = match cb_t.call(&mut *c, (base, req.len() as u32, res_base, res_cap)) {
         Ok(n) => n,
-        Err(_) => return crate::boot::vm::codes::ERR_FAULT,
+        Err(e) => return crate::boot::vm::err::trap(e),
     };
     if n < 0 {
         return n;

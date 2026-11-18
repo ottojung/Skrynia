@@ -8,6 +8,9 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
              src: u32,
              len: u32|
              -> i32 {
+                if len > crate::boot::limits::MAX_IO {
+                    return crate::boot::vm::codes::ERR_LIMIT;
+                }
                 let mem = match crate::boot::vm::mem::get(&mut c) {
                     Ok(x) => x,
                     Err(e) => return e,

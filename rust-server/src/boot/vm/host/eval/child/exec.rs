@@ -30,6 +30,6 @@ pub fn run_inner(
         .map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;
     let n = main
         .call(&mut *c, (in_off, input.len() as u32, out_off, child_cap))
-        .map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
+        .map_err(crate::boot::vm::err::trap)?;
     super::fin::finish(c, child_mem, n, out_off, out_ptr, out_cap)
 }

@@ -6,8 +6,10 @@ pub fn copy_res(
     n: u32,
     res_cap: u32,
 ) -> i32 {
-    let copy_n = n.min(res_cap);
-    let resp = match crate::boot::vm::mem::read_buf(c, root_mem, res_base, copy_n) {
+    if n > res_cap {
+        return crate::boot::vm::codes::ERR_OVERFLOW;
+    }
+    let resp = match crate::boot::vm::mem::read_buf(c, root_mem, res_base, n) {
         Ok(x) => x,
         Err(e) => return e,
     };

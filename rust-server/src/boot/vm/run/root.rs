@@ -40,7 +40,7 @@ pub fn call_root(
         .map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
     let n = f
         .call(&mut *store, (in_off, in_len, out_off, OUT_CAP))
-        .map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
+        .map_err(crate::boot::vm::err::trap)?;
     if n < 0 {
         return Err(n);
     }
