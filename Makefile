@@ -1,4 +1,4 @@
-.PHONY: test build lint check docker-build source-check benchmark v3-smoke
+.PHONY: test build lint check docker-build source-check benchmark
 test: source-check lint
 	cargo test --locked --lib --bins --tests --examples
 
@@ -22,8 +22,3 @@ source-check:
 
 benchmark: build
 	cargo run --locked --release --example skrynia_bench
-
-# Skrynia is only a kernel; operators provide their own Program 0 WASM.
-v3-smoke:
-	@test -n "$(PROGRAM0_WASM)" || (echo "Set PROGRAM0_WASM to user-supplied root WASM" >&2; exit 1)
-	cargo run --locked -p skrynia-server --example v3_smoke -- "$(PROGRAM0_WASM)"

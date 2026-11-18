@@ -14,10 +14,15 @@ The separate `skrynia-tools` repository offers one optional Program 0
 implementation; it is **not** a dependency of the kernel. Users are free
 to provide completely different implementations.
 
-Run `make test` and independently test a user-supplied module using
-`make v3-smoke PROGRAM0_WASM=/path/to/root.wasm`. The smoke test's
-application-level requests are specific to the optional tools example;
-it does not define the kernel's binary HTTP protocol.
+Run `make test` for conformance tests using isolated, self-contained
+WebAssembly fixtures. The server repository has **no tests, example
+applications, deployment entry points, or build steps that assume the binary
+protocol of a particular Program 0**.
+
+The optional Program 0 and its application-specific HTTP integration tests
+live entirely in `skrynia-tools`. Cross-repository verification should run
+against a disposable v3 server whose root module was separately built by its
+owner, never against a deployed v2 data directory.
 
 ## Security boundaries and unfinished release gates
 
