@@ -42,15 +42,28 @@ Stream/read errors return a negative code; excess bytes over the configured
 request limit terminate the request with a limit error. Programs should read
 until EOF when request completion matters. The descriptor is request-local,
 non-rewindable, not a disk or global RAM object, and never shared across guests.
-The kernel invokes Program 0 once, collects output from its private memory,
-and returns that output. Each request is a fresh logical
+The kernel gives Program 0 a second, **write-only, forward-only output
+descriptor**. Program 0 writes response bytes using
+`write(output_fd, src_private_ptr, count)`, which may return a short write.
+There is no output pointer or capacity in `skrynia_main`, and output is not
+collected from WASM memory after return. `read`, `seek`, `truncate`, and
+`sync` on the output descriptor return `ERR_PERM`; `close` is allowed.
+Response bytes can be streamed to HTTP with bounded backpressure.
+The kernel invokes Program 0 once and streams its output. Each request is a fresh logical
 Program 0 invocation: no shared private WASM globals, stack, or linear memory.
 Compiled Program 0 code may be cached; execution state must not be reused.
 
 Successful VM completion returns HTTP `200` with
-`Content-Type: application/octet-stream` and the exact output bytes produced
-by Program 0. VM completion means the Program 0 entry returned normally and
-the kernel copied its declared output without trap or kernel fault.
+`Content-Type: application/octet-stream` and the exact bytes written to the
+output descriptor. The root return value is `0` for success or a negative VM
+error; any positive value is invalid. The root need not close the output
+descriptor before returning: the kernel closes it at invocation completion.
+The output is not buffered in global RAM or guest memory beyond caller-supplied
+write buffers. An application-level failure is encoded in output bytes.
+A VM error **before** sending response bytes may become HTTP `500`. If a
+VM/transport error occurs **after** HTTP response bytes were committed, the
+stream MUST terminate with an error (not silently report EOF or send success).
+Partial output cannot be rolled back and the kernel does not retry execution.
 
 Transport/VM failures are distinct from application failures:
 - malformed request framing or unreadable body: `400`
@@ -59,7 +72,8 @@ Transport/VM failures are distinct from application failures:
 - request body exceeds `SKRYNIA_MAX_REQUEST_BYTES` (default 16 MiB): `413`
 - Program 0 trap, resource-limit exhaustion, invalid ABI use, or kernel
   execution fault: `500`
-- Program 0 produced no output descriptor or invalid output range: `500`
+- output descriptor failure or invalid write pointer: `500` if no
+  response bytes have been sent; otherwise terminate the HTTP stream in error
 
 Application-level errors are encoded by Program 0 in its output bytes and are
 returned as HTTP `200` unless Program 0 fails at the VM level. The kernel does
@@ -69,7 +83,7 @@ not inspect output meaning. Legacy v2 HTTP behavior belongs in `skrynia-tools`.
 
 1. **Private WASM linear memory**: separate linear memory per module instance.
    Every pointer passed to or from host imports/exports addresses this memory.
-   Input-stream descriptors are opaque handles, never pointers.
+   Input/output stream descriptors are opaque handles, never pointers.
    A guest never receives a pointer to another instance's memory or to RAM.
 2. **Kernel-owned memory**: request/result staging, frames, descriptors,
    compiled artifacts, and transient copies. Never exposed as guest pointers.
@@ -120,8 +134,9 @@ Status codes: `>= 0` means success/value as specified; negative means error.
 ## `eval` and nested `invoke` ABI
 
 Program 0 exports `memory` and
-`skrynia_main(input_fd: i32, out_ptr: u32, out_cap: u32) -> i32`.
-Its input_fd refers to the HTTP request stream, **not** private WASM memory.
+`skrynia_main(input_fd: i32, output_fd: i32) -> i32`.
+Its input_fd refers to the HTTP request stream, and output_fd refers to the
+HTTP response stream; neither refers to WASM memory.
 For security, evaluated child modules retain the separate, invoke-only ABI
 `skrynia_main(in_ptr: u32, in_len: u32, out_ptr: u32, out_cap: u32) -> i32`;
 child programs cannot import privileged `read` and must communicate through
@@ -242,6 +257,24 @@ support Wasmtime's synchronous host imports. Cancel or drop the input source
 when Program 0 finishes without reading to EOF. The total amount of delivered
 HTTP data is bounded by `SKRYNIA_MAX_REQUEST_BYTES`; overflow or transport
 failure is reported as a read/VM error, never silently changed to EOF.
+
+## Root response output stream
+
+An independent request-local output descriptor is passed as Program 0's second
+argument. Only `write(fd,src,len)` and `close(fd)` are permitted. Valid writes
+copy up to `len` bytes from caller-private linear memory into a bounded,
+forward-only response stream and return the number accepted. Short writes are
+allowed; `write(fd,src,0)` succeeds without advancing. Invalid pointer ranges
+must be rejected before any bytes are sent. `read`, `seek`, `truncate`, and
+`sync` return `ERR_PERM`. Closed output descriptors return `ERR_BADFD`.
+A dropped response reader or transport failure must propagate as `ERR_IO`,
+never successful truncation. The HTTP server consumes output incrementally,
+rather than buffering the entire result. A response failure after headers/bytes
+have been sent must terminate the body stream with an error instead of
+returning a fabricated successful response.
+
+The input and output descriptors are distinct opaque handles. They are
+neither RAM nor disk files and are not inherited by evaluated children.
 
 ## Disk, paths, and descriptors
 
