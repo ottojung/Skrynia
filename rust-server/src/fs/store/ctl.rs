@@ -21,6 +21,7 @@ impl Fs {
                 if rc == 0 { Ok(()) } else { Err("io") }
             }
             Some(Item::Ram(_)) => Ok(()),
+            Some(Item::Input(_)) => Err("perm"),
             None => Err("badfd"),
         }
     }

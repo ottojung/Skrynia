@@ -6,35 +6,18 @@ v2-to-v3 differential parity. Do not deploy over an existing v2 installation.
 
 ## Build and test
 
-Use Rust 1.93 with the `wasm32-unknown-unknown` target and `rust-src` installed.
-When only the Rust sources are available, build the target standard library with:
+Skrynia is **only the native VM server**. It must not ship or
+compile a privileged Program 0. Any user may supply a conforming
+WASM module at `SKRYNIA_ROOT_WASM`.
 
-```sh
-RUSTC_BOOTSTRAP=1 cargo -Z build-std=std,panic_abort build \
-  --target wasm32-unknown-unknown --release -p skrynia-program0
-```
+The separate `skrynia-tools` repository offers one optional Program 0
+implementation; it is **not** a dependency of the kernel. Users are free
+to provide completely different implementations.
 
-The resulting artifact is
-`target/wasm32-unknown-unknown/release/skrynia_program0.wasm`
-(or below `$CARGO_TARGET_DIR`, when set).
-
-Run `make test` and then the **separate** disposable integration test:
-
-```sh
-cargo run --locked -p skrynia-server --example v3_smoke -- \
-  target/wasm32-unknown-unknown/release/skrynia_program0.wasm
-```
-
-The smoke test uses fresh temporary data only. It executes a real compiled root
-and guest WASM, registers a program, invokes it, changes its definition,
-invokes the new code, restarts the kernel, recovers the durable version, revokes
-it and tests invalid output lengths, memory limits, and directory bounds.
-
-The fixed Program 0 wire framing is currently an application protocol:
-version byte 1; operation 1 register, 2 set, 3 invoke, 4 lookup, 5 revoke;
-32-byte opaque program identifier, length-prefixed inputs; responses use
-version, status byte, 32-bit little-endian body length and body. It is **not**
-part of the native kernel or a substitute for the old grant-based protocol.
+Run `make test` and independently test a user-supplied module using
+`make v3-smoke PROGRAM0_WASM=/path/to/root.wasm`. The smoke test's
+application-level requests are specific to the optional tools example;
+it does not define the kernel's binary HTTP protocol.
 
 ## Security boundaries and unfinished release gates
 

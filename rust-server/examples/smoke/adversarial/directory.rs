@@ -11,11 +11,11 @@ pub fn check(dir: &Path) -> Result<(), String> {
        (import "skrynia" "close" (func $close (param i32) (result i32)))
        (memory (export "memory") 1)
        (data (i32.const 0) "children")
-       (func (export "skrynia_main") (param i32 i32 i32 i32) (result i32)
+       (func (export "skrynia_main") (param i32 i32 i32) (result i32)
          (local $fd i32) (local $n i32)
          (local.set $fd (call $open (i32.const 0) (i32.const 8)))
          (drop (call $next (local.get $fd) (i32.const -1) (i32.const -1)))
-         (local.set $n (call $next (local.get $fd) (local.get 2) (i32.const 16)))
+         (local.set $n (call $next (local.get $fd) (local.get 1) (i32.const 16)))
          (drop (call $close (local.get $fd))) (local.get $n)))"#,
     )
     .unwrap();

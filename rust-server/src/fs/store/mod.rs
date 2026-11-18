@@ -1,7 +1,7 @@
 mod ctl;
 mod dir;
 mod disk;
-mod item;
+pub mod item;
 mod node;
 mod ram;
 pub use item::Item;

@@ -8,6 +8,7 @@ impl Fs {
         dst: &mut [u8],
     ) -> Result<usize, &'static str> {
         match fds.get_mut(fd) {
+            Some(Item::Input(e)) => e.read(dst),
             Some(Item::Ram(e)) => {
                 let off = e.pos as usize;
                 let n = self.ram.read(off, dst)?;
@@ -25,6 +26,7 @@ impl Fs {
         src: &[u8],
     ) -> Result<usize, &'static str> {
         match fds.get_mut(fd) {
+            Some(Item::Input(_)) => Err("perm"),
             Some(Item::Ram(e)) => {
                 let off = e.pos as usize;
                 let n = self.ram.write(off, src)?;

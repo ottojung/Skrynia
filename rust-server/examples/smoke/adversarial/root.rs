@@ -3,7 +3,7 @@ use std::path::Path;
 pub fn check(dir: &Path) -> Result<(), String> {
     let wasm = wat::parse_str(
         r#"(module (memory (export "memory") 1)
-        (func (export "skrynia_main") (param i32 i32 i32 i32) (result i32)
+        (func (export "skrynia_main") (param i32 i32 i32) (result i32)
         (i32.const 1048577)))"#,
     )
     .unwrap();
@@ -15,7 +15,7 @@ pub fn check(dir: &Path) -> Result<(), String> {
     }
     let huge = wat::parse_str(
         r#"(module (memory (export "memory") 2048)
-      (func (export "skrynia_main") (param i32 i32 i32 i32) (result i32)
+      (func (export "skrynia_main") (param i32 i32 i32) (result i32)
       (i32.const 0)))"#,
     )
     .unwrap();
