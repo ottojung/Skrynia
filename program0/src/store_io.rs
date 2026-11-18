@@ -25,3 +25,9 @@ pub fn get<D: Disk>(disk: &D, dir: &str, pid: &[u8]) -> Result<Vec<u8>, StoreErr
         .ok_or(StoreErr::Missing)?;
     store::decode_record(&bytes).ok_or(StoreErr::BadRecord)
 }
+
+pub fn del<D: Disk>(disk: &D, dir: &str, pid: &[u8]) -> Result<(), StoreErr<D::Err>> {
+    id::validate(pid).map_err(|_| StoreErr::BadId)?;
+    let path = store::path_for(dir, pid).ok_or(StoreErr::BadId)?;
+    disk.remove(&path).map_err(StoreErr::Disk)
+}

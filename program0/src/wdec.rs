@@ -1,4 +1,6 @@
-use crate::wire::{OP_INVOKE, OP_REGISTER, OP_SET, Request, Response, VERSION};
+use crate::wire::{
+    OP_INVOKE, OP_LOOKUP, OP_REGISTER, OP_REVOKE, OP_SET, Request, Response, VERSION,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DecodeErr {
@@ -48,6 +50,22 @@ pub fn decode_req(mut src: &[u8]) -> Result<Request, DecodeErr> {
                 return Err(DecodeErr::Short);
             }
             Ok(Request::Invoke { id, input })
+        }
+        OP_LOOKUP => {
+            let il = u16::from_le_bytes(take(&mut src, 2)?.try_into().unwrap()) as usize;
+            let id = take(&mut src, il)?.to_vec();
+            if !src.is_empty() {
+                return Err(DecodeErr::Short);
+            }
+            Ok(Request::Lookup { id })
+        }
+        OP_REVOKE => {
+            let il = u16::from_le_bytes(take(&mut src, 2)?.try_into().unwrap()) as usize;
+            let id = take(&mut src, il)?.to_vec();
+            if !src.is_empty() {
+                return Err(DecodeErr::Short);
+            }
+            Ok(Request::Revoke { id })
         }
         _ => Err(DecodeErr::Op),
     }

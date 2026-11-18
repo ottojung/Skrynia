@@ -41,5 +41,13 @@ pub fn handle<D: Disk, R: Random, E: Eval>(
             Ok(out) => ok(out),
             Err(_) => err(4),
         },
+        Request::Lookup { id } => match reg.lookup(&id) {
+            Ok(code) => ok(code),
+            Err(_) => err(5),
+        },
+        Request::Revoke { id } => match reg.revoke(disk, &id) {
+            Ok(()) => ok(Vec::new()),
+            Err(_) => err(6),
+        },
     }
 }

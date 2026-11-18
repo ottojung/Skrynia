@@ -1,4 +1,6 @@
-use crate::wire::{OP_INVOKE, OP_REGISTER, OP_SET, Request, Response, VERSION};
+use crate::wire::{
+    OP_INVOKE, OP_LOOKUP, OP_REGISTER, OP_REVOKE, OP_SET, Request, Response, VERSION,
+};
 
 pub fn encode_req(req: &Request) -> Vec<u8> {
     let mut out = vec![VERSION];
@@ -21,6 +23,16 @@ pub fn encode_req(req: &Request) -> Vec<u8> {
             out.extend_from_slice(id);
             out.extend_from_slice(&(input.len() as u32).to_le_bytes());
             out.extend_from_slice(input);
+        }
+        Request::Lookup { id } => {
+            out.push(OP_LOOKUP);
+            out.extend_from_slice(&(id.len() as u16).to_le_bytes());
+            out.extend_from_slice(id);
+        }
+        Request::Revoke { id } => {
+            out.push(OP_REVOKE);
+            out.extend_from_slice(&(id.len() as u16).to_le_bytes());
+            out.extend_from_slice(id);
         }
     }
     out

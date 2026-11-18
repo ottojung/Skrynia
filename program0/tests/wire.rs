@@ -16,6 +16,8 @@ fn req_roundtrip() {
             id: vec![7; 16],
             input: vec![8, 9],
         },
+        Request::Lookup { id: vec![5; 32] },
+        Request::Revoke { id: vec![6; 32] },
     ];
     for c in cases {
         let b = encode_req(&c);

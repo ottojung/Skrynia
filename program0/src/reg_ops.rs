@@ -30,6 +30,23 @@ impl Registry {
         map.insert(pid.to_vec(), code);
         Ok(())
     }
+    pub fn lookup(&self, pid: &[u8]) -> Result<Vec<u8>, RegErr<(), (), ()>> {
+        self.code
+            .read()
+            .unwrap()
+            .get(pid)
+            .cloned()
+            .ok_or(RegErr::Missing)
+    }
+    pub fn revoke<D: Disk>(&self, disk: &D, pid: &[u8]) -> Result<(), RegErr<D::Err, (), ()>> {
+        let mut map = self.code.write().unwrap();
+        if map.get(pid).is_none() {
+            return Err(RegErr::Missing);
+        }
+        store_io::del(disk, &self.dir, pid).map_err(RegErr::Store)?;
+        map.remove(pid);
+        Ok(())
+    }
     pub fn invoke<D: Disk, E: Eval>(
         &self,
         _disk: &D,
