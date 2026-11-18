@@ -18,6 +18,10 @@ fn guard_ops() {
     let mut fds = skrynia_server::fs::table::Table::new();
     let fd = s.open_disk(&mut fds, b"a", M::read_write()).unwrap();
     s.close(&mut fds, fd).unwrap();
+    assert_eq!(
+        s.open_disk(&mut fds, b"a", M::create_new_rw()).err(),
+        Some("exists")
+    );
     let fd2 = s.open_disk(&mut fds, b"b", M::read_write()).unwrap();
     assert!(s.read(&mut fds, fd, &mut [0u8; 1]).is_err());
     s.close(&mut fds, fd2).unwrap();

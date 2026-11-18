@@ -30,7 +30,14 @@ fn open_final(dir: RawFd, name: &CString, flags: i32, mode: u32) -> Result<Owned
         )
     };
     if fd < 0 {
-        return Err("open");
+        let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+        return Err(match e {
+            libc::EEXIST => "exists",
+            libc::ENOENT => "missing",
+            libc::ENOSPC => "nospace",
+            libc::EACCES | libc::EPERM => "perm",
+            _ => "open",
+        });
     }
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
