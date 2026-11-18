@@ -1,6 +1,7 @@
 .PHONY: test build lint check docker-build source-check benchmark
 test: source-check lint
 	cargo test --locked --lib --bins --tests --examples
+	cargo check --locked -p skrynia-program0 --features vm-check
 
 lint:
 	cargo fmt --all -- --check
