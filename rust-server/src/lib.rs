@@ -1,6 +1,7 @@
 pub mod boot;
 pub mod conf;
 pub mod error;
+pub mod fs;
 pub mod http;
 pub mod ram;
 pub mod safe;

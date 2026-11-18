@@ -9,8 +9,10 @@ fn kernel() -> boot::Kernel {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let wasm = dir.join("root.wasm");
+    let data = dir.join("data");
+    fs::create_dir_all(&data).unwrap();
     fs::write(&wasm, b"\0asm\x01\0\0\0").unwrap();
-    boot::Kernel::start(&wasm).unwrap()
+    boot::Kernel::start(&wasm, &data).unwrap()
 }
 
 #[tokio::test]

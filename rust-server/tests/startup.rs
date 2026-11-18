@@ -19,7 +19,9 @@ fn boot_rejects_invalid_wasm() {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let wasm = dir.join("bad.wasm");
+    let data = dir.join("data");
+    fs::create_dir_all(&data).unwrap();
     fs::write(&wasm, b"not wasm").unwrap();
-    assert!(boot::Kernel::start(&wasm).is_err());
+    assert!(boot::Kernel::start(&wasm, &data).is_err());
     let _ = fs::remove_dir_all(&dir);
 }
