@@ -1,5 +1,6 @@
 //! Application-level Program 0 registry workstream.
 pub mod cap;
+pub mod handle;
 pub mod id;
 pub mod reg;
 pub mod reg_ops;
