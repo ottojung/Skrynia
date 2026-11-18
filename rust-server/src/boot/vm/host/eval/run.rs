@@ -9,6 +9,9 @@ pub struct Args {
 }
 
 pub fn eval(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: Args) -> i32 {
+    if a.code_len as usize > crate::boot::vm::state::MAX_MODULE_BYTES {
+        return crate::boot::vm::codes::ERR_LIMIT;
+    }
     let mem = match crate::boot::vm::mem::get(c) {
         Ok(m) => m,
         Err(e) => return e,
