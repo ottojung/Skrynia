@@ -15,5 +15,13 @@ pub fn rename(
             n.name.as_ptr(),
         )
     };
-    if rc == 0 { Ok(()) } else { Err("rename") }
+    if rc == 0 {
+        return Ok(());
+    }
+    let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+    Err(match e {
+        libc::EXDEV => "unsupported",
+        libc::ENOENT => "missing",
+        _ => "rename",
+    })
 }
