@@ -5,7 +5,8 @@ fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
     let _ = stdfs::remove_dir_all(&dir);
     stdfs::create_dir_all(dir.join("data")).unwrap();
     let wasm = dir.join("r.wasm");
-    stdfs::write(&wasm, b"\0asm\x01\0\0\0").unwrap();
+    let code = wat::parse_str(include_str!("../test-fixtures/root_stub.wat")).unwrap();
+    stdfs::write(&wasm, code).unwrap();
     let k = boot::Kernel::start(&wasm, &dir.join("data")).unwrap();
     (dir, k)
 }

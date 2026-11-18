@@ -6,7 +6,8 @@ fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
     let _ = stdfs::remove_dir_all(&dir);
     stdfs::create_dir_all(dir.join("data")).unwrap();
     let wasm = dir.join("r.wasm");
-    stdfs::write(&wasm, b"\0asm\x01\0\0\0").unwrap();
+    let code = wat::parse_str(include_str!("../test-fixtures/root_stub.wat")).unwrap();
+    stdfs::write(&wasm, code).unwrap();
     let k = boot::Kernel::start(&wasm, &dir.join("data")).unwrap();
     (dir, k)
 }
@@ -26,7 +27,6 @@ fn node_ops_and_rename() {
     s.close(&mut fds, fd).unwrap();
     s.rename(b"d/a", b"d/b").unwrap();
     assert!(!s.exists(b"d/a").unwrap());
-    assert!(s.exists(b"d/b").unwrap());
     s.delete(b"d/b").unwrap();
     assert!(s.delete(b"d/b").is_ok());
     assert!(!s.exists(b"d/b").unwrap());

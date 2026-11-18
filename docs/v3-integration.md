@@ -36,6 +36,15 @@ live entirely in `skrynia-tools`. Cross-repository verification should run
 against a disposable v3 server whose root module was separately built by its
 owner, never against a deployed v2 data directory.
 
+## Root validation at startup
+
+Every startup compiles the operator-provided root module, then checks its
+\`memory\` export, the exact \`skrynia_main(i32,i32)->i32\` signature, and the
+privileged host import allowlist and function signatures. Unknown/WASI or
+mistyped imports fail startup before the data directory is opened. The kernel
+does **not** execute root WASM as part of this static validation. Traps and
+resource failures during an actual request still produce VM/transport errors.
+
 ## Security boundaries and unfinished release gates
 
 Program 0 uses explicit kernel disk and evaluation calls; requests, compiled

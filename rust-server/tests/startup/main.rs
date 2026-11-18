@@ -27,15 +27,15 @@ fn boot_rejects_invalid_wasm() {
 }
 
 #[test]
-fn boot_compiles_empty_module() {
+fn boot_rejects_empty_root_abi() {
     let dir = std::env::temp_dir().join("skrynia-v3-test-ok");
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
-    let wasm = dir.join("ok.wasm");
+    let wasm = dir.join("empty.wasm");
     let data = dir.join("data");
     fs::create_dir_all(&data).unwrap();
     fs::write(&wasm, b"\0asm\x01\0\0\0").unwrap();
-    assert!(boot::Kernel::start(&wasm, &data).is_ok());
+    assert!(boot::Kernel::start(&wasm, &data).is_err());
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -45,3 +45,6 @@ fn ram_max_limit() {
     assert!(ram.truncate(64 * 1024 * 1024).is_ok());
     assert!(ram.truncate(64 * 1024 * 1024 + 1).is_err());
 }
+mod case;
+mod exports;
+mod imports;
