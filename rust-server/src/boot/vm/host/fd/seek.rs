@@ -3,8 +3,9 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
         .func_wrap(
             "skrynia",
             "seek",
-            |c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>, fd: i32, off: u64| -> i32 {
-                match c.data().fs.seek(crate::fs::Fd(fd), off) {
+            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>, fd: i32, off: u64| -> i32 {
+                let fs = c.data().fs.clone();
+                match fs.seek(&mut c.data_mut().fds, crate::fs::Fd(fd), off) {
                     Ok(()) => 0,
                     Err(e) => crate::boot::vm::err::map(e),
                 }
@@ -15,8 +16,9 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
         .func_wrap(
             "skrynia",
             "truncate",
-            |c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>, fd: i32, size: u64| -> i32 {
-                match c.data().fs.truncate_fd(crate::fs::Fd(fd), size) {
+            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>, fd: i32, size: u64| -> i32 {
+                let fs = c.data().fs.clone();
+                match fs.truncate_fd(&mut c.data_mut().fds, crate::fs::Fd(fd), size) {
                     Ok(()) => 0,
                     Err(e) => crate::boot::vm::err::map(e),
                 }

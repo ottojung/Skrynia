@@ -5,8 +5,9 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
         .func_wrap(
             "skrynia",
             "open_ram",
-            |c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>| -> i32 {
-                c.data().fs.open_ram().0
+            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>| -> i32 {
+                let fs = c.data().fs.clone();
+                fs.open_ram(&mut c.data_mut().fds).0
             },
         )
         .map_err(|e| e.to_string())?;

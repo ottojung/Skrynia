@@ -9,7 +9,8 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
              len: u32|
              -> i32 {
                 let mut buf = vec![0u8; len as usize];
-                let n = match c.data().fs.read(crate::fs::Fd(fd), &mut buf) {
+                let fs = c.data().fs.clone();
+                let n = match fs.read(&mut c.data_mut().fds, crate::fs::Fd(fd), &mut buf) {
                     Ok(n) => n,
                     Err(e) => return crate::boot::vm::err::map(e),
                 };

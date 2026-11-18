@@ -5,20 +5,15 @@ mod item;
 mod node;
 mod ram;
 pub use item::Item;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub struct Fs {
-    pub root: crate::fs::root::Root,
+    pub root: Arc<crate::fs::root::Root>,
     pub ram: Arc<crate::ram::Ram>,
-    pub items: Mutex<crate::fs::table::Table<Item>>,
 }
 
 impl Fs {
-    pub fn new(root: crate::fs::root::Root, ram: Arc<crate::ram::Ram>) -> Self {
-        Self {
-            root,
-            ram,
-            items: Mutex::new(crate::fs::table::Table::new()),
-        }
+    pub fn new(root: Arc<crate::fs::root::Root>, ram: Arc<crate::ram::Ram>) -> Self {
+        Self { root, ram }
     }
 }

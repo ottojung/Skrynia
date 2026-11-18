@@ -12,7 +12,8 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                match c.data().fs.open_directory(&p) {
+                let fs = c.data().fs.clone();
+                match fs.open_directory(&mut c.data_mut().fds, &p) {
                     Ok(fd) => fd.0,
                     Err(e) => crate::boot::vm::err::map(e),
                 }

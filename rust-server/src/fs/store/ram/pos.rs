@@ -1,9 +1,13 @@
 use super::{Fs, Item};
 
 impl Fs {
-    pub fn seek_ram(&self, fd: crate::fs::Fd, off: u64) -> Result<(), &'static str> {
-        let mut t = self.items.lock().unwrap();
-        match t.get_mut(fd) {
+    pub fn seek_ram(
+        &self,
+        fds: &mut crate::fs::table::Table<Item>,
+        fd: crate::fs::Fd,
+        off: u64,
+    ) -> Result<(), &'static str> {
+        match fds.get_mut(fd) {
             Some(Item::Ram(e)) => {
                 e.pos = off;
                 Ok(())
@@ -11,9 +15,13 @@ impl Fs {
             _ => Err("badfd"),
         }
     }
-    pub fn truncate_ram(&self, fd: crate::fs::Fd, size: u64) -> Result<(), &'static str> {
-        let t = self.items.lock().unwrap();
-        match t.get(fd) {
+    pub fn truncate_ram(
+        &self,
+        fds: &mut crate::fs::table::Table<Item>,
+        fd: crate::fs::Fd,
+        size: u64,
+    ) -> Result<(), &'static str> {
+        match fds.get(fd) {
             Some(Item::Ram(_)) => self.ram.truncate(size as usize),
             _ => Err("badfd"),
         }

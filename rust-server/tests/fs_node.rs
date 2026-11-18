@@ -15,16 +15,17 @@ fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
 fn node_ops_and_rename() {
     let (dir, k) = setup("skrynia-fs-node");
     let s = k.fs();
+    let mut fds = fs::table::Table::new();
     s.mkdir(b"d", fs::node::MkdirMode::create_if_absent())
         .unwrap();
     assert!(s.exists(b"d").unwrap());
     assert!(s.is_dir(b"d").unwrap());
     assert!(!s.exists(b"d/nope").unwrap());
     let fd = s
-        .open_disk(b"d/a", fs::disk::DiskMode::read_write())
+        .open_disk(&mut fds, b"d/a", fs::disk::DiskMode::read_write())
         .unwrap();
-    s.write(fd, b"hi").unwrap();
-    s.close(fd).unwrap();
+    s.write(&mut fds, fd, b"hi").unwrap();
+    s.close(&mut fds, fd).unwrap();
     s.rename(b"d/a", b"d/b").unwrap();
     assert!(!s.exists(b"d/a").unwrap());
     assert!(s.exists(b"d/b").unwrap());
@@ -43,8 +44,9 @@ fn rejects_bad_and_escaping_paths() {
     assert!(s.exists(b"a/../../b").is_err());
     assert!(s.exists(b"a\0b").is_err());
     assert!(s.exists(b"").is_err());
+    let mut fds = fs::table::Table::new();
     assert!(
-        s.open_disk(b"../out", fs::disk::DiskMode::read_write())
+        s.open_disk(&mut fds, b"../out", fs::disk::DiskMode::read_write())
             .is_err()
     );
     let _ = stdfs::remove_dir_all(&dir);

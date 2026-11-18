@@ -13,28 +13,29 @@ fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
 fn disk_ops_modes_and_errors() {
     let (dir, k) = setup("skrynia-fs-disk");
     let s = k.fs();
+    let mut fds = fs::table::Table::new();
     assert!(
-        s.open_disk(b"ro.txt", fs::disk::DiskMode::read_only())
+        s.open_disk(&mut fds, b"ro.txt", fs::disk::DiskMode::read_only())
             .is_err()
     );
     let fd = s
-        .open_disk(b"a.txt", fs::disk::DiskMode::read_write())
+        .open_disk(&mut fds, b"a.txt", fs::disk::DiskMode::read_write())
         .unwrap();
-    assert_eq!(s.write(fd, b"hello").unwrap(), 5);
-    s.seek(fd, 0).unwrap();
+    assert_eq!(s.write(&mut fds, fd, b"hello").unwrap(), 5);
+    s.seek(&mut fds, fd, 0).unwrap();
     let mut b = [0u8; 5];
-    assert_eq!(s.read(fd, &mut b).unwrap(), 5);
+    assert_eq!(s.read(&mut fds, fd, &mut b).unwrap(), 5);
     assert_eq!(&b, b"hello");
-    s.truncate_fd(fd, 2).unwrap();
-    s.seek(fd, 0).unwrap();
+    s.truncate_fd(&mut fds, fd, 2).unwrap();
+    s.seek(&mut fds, fd, 0).unwrap();
     let mut c = [0u8; 5];
-    assert_eq!(s.read(fd, &mut c).unwrap(), 2);
-    s.sync(fd).unwrap();
-    s.close(fd).unwrap();
-    assert!(s.read(fd, &mut b).is_err());
+    assert_eq!(s.read(&mut fds, fd, &mut c).unwrap(), 2);
+    s.sync(&mut fds, fd).unwrap();
+    s.close(&mut fds, fd).unwrap();
+    assert!(s.read(&mut fds, fd, &mut b).is_err());
     let r = s
-        .open_disk(b"a.txt", fs::disk::DiskMode::read_only())
+        .open_disk(&mut fds, b"a.txt", fs::disk::DiskMode::read_only())
         .unwrap();
-    assert!(s.write(r, b"y").is_err());
+    assert!(s.write(&mut fds, r, b"y").is_err());
     let _ = stdfs::remove_dir_all(&dir);
 }

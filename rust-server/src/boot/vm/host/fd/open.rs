@@ -25,7 +25,8 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                match c.data().fs.open_disk(&path, mode(m)) {
+                let fs = c.data().fs.clone();
+                match fs.open_disk(&mut c.data_mut().fds, &path, mode(m)) {
                     Ok(fd) => fd.0,
                     Err(e) => crate::boot::vm::err::map(e),
                 }

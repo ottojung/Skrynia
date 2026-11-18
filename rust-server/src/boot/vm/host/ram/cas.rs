@@ -23,13 +23,10 @@ fn run(
     des: u64,
     op: u32,
 ) -> i32 {
-    let ok = {
-        let t = c.data().fs.items.lock().unwrap();
-        matches!(
-            t.get(crate::fs::Fd(fd)),
-            Some(crate::fs::store::Item::Ram(_))
-        )
-    };
+    let ok = matches!(
+        c.data().fds.get(crate::fs::Fd(fd)),
+        Some(crate::fs::store::Item::Ram(_))
+    );
     if !ok {
         return crate::boot::vm::codes::ERR_BADFD;
     }

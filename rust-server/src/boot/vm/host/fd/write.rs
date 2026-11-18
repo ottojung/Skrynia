@@ -8,15 +8,16 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
              src: u32,
              len: u32|
              -> i32 {
-                let m = match crate::boot::vm::mem::get(&mut c) {
+                let mem = match crate::boot::vm::mem::get(&mut c) {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                let buf = match crate::boot::vm::mem::read_buf(&mut c, m, src, len) {
+                let buf = match crate::boot::vm::mem::read_buf(&mut c, mem, src, len) {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                match c.data().fs.write(crate::fs::Fd(fd), &buf) {
+                let fs = c.data().fs.clone();
+                match fs.write(&mut c.data_mut().fds, crate::fs::Fd(fd), &buf) {
                     Ok(n) => n as i32,
                     Err(e) => crate::boot::vm::err::map(e),
                 }
