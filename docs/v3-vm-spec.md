@@ -67,7 +67,7 @@ truncate/cas_ram_u64` operations. Global RAM offsets are not capabilities.
 ## Root imports (Program 0 only)
 
 Program 0 is instantiated with module name `skrynia` and exactly these imports.
-Types: `i32` return values are status/length codes as defined below.
+Types: `i32` return values are status/length codes as specified.
 
 ```text
 open_disk(path_ptr: u32, path_len: u32, mode: u32) -> i32
@@ -84,7 +84,8 @@ open_directory(path_ptr: u32, path_len: u32) -> i32
 next_entry(dir: i32, dst_ptr: u32, cap: u32) -> i32
 is_dir(path_ptr: u32, path_len: u32) -> i32
 open_ram() -> i32
-cas_ram_u64(ram_fd: i32, offset: u64, expected: u64, desired: u64) -> i64
+cas_ram_u64(ram_fd: i32, offset: u64, expected: u64, desired: u64,
+            observed_ptr: u32) -> i32
 sync(fd: i32) -> i32
 now() -> i64
 secure_random_bits(dst_ptr: u32, bits: u32) -> i32
@@ -121,23 +122,27 @@ module "skrynia", name "invoke"
 Any other import (including memory/table/global/function/WASI) is rejected with
 `ERR_INVALID` before child instantiation/side effects.
 
-`eval` copies `input_ptr..+input_len` into child private memory and calls
+`eval` copies `input_ptr..+input_len` from caller private memory and calls
 child export `skrynia_main(in_ptr: u32, in_len: u32, out_ptr: u32,
 out_cap: u32) -> i32` in a fresh instance with its own linear memory/globals.
-The kernel selects child-private `in_ptr`, `out_ptr`, and `out_cap` regions
-within child memory bounds; request bytes are written to `[in_ptr,in_ptr+in_len)`.
-On non-negative return `n`, child output is read from `[out_ptr,out_ptr+n)`
-in child memory and delivered per `eval` overflow contract. Memories are never aliased.
+The kernel selects child-private `in_ptr`, `out_ptr`, and `out_cap` using the
+transient I/O buffer allocation rules below, writes request bytes to
+`[in_ptr,in_ptr+in_len)`, and provides an output window `[out_ptr,out_ptr+out_cap)`
+for child-produced bytes. On non-negative return `n`, child output is read
+from `[out_ptr,out_ptr+n)` in child memory and delivered per the `eval`
+overflow contract. Memories are never aliased.
 
 When the child calls imported `invoke`, the kernel pauses the child, copies
-`req_len` bytes from child memory at `req_ptr` into the *parent* callback's
-request region (kernel-staged, then exposed at the parent callback's
-`req_ptr` in parent private memory for that callback turn), and invokes the
-parent callback selected by `cb_table_idx`. The callback writes response bytes
-into `res_ptr..+res_cap` in its own private memory and returns produced byte
-count or negative error. The kernel copies at most that count into the child's
-`res_ptr..+res_cap`. No private memory, table, globals, descriptors, or root
-imports are shared between parent and child; only copied byte payloads cross.
+`req_len` bytes from child memory at `req_ptr` into a kernel-staged buffer,
+allocates a parent callback request region and response region in parent
+private memory per the transient I/O buffer allocation rules, copies the
+request to `[parent_req_ptr,parent_req_ptr+req_len)`, and invokes the selected
+callback as `cb(parent_req_ptr, req_len, parent_res_ptr, parent_res_cap)`.
+The callback writes response bytes into `[parent_res_ptr,parent_res_ptr+n)`
+in its own private memory and returns produced byte count or negative error.
+The kernel copies at most that count into the child's `[res_ptr,res_ptr+res_cap)`.
+No private memory, table, globals, descriptors, or root imports are shared
+between parent and child; only copied byte payloads cross.
 
 Nested `eval` is allowed: a callback may call `eval` itself, creating another
 child context. Each active frame has distinct private memory and its own
@@ -160,6 +165,40 @@ depth is enforced (`SKRYNIA_MAX_EVAL_DEPTH`, default 32); exceeding it yields
 
 This one-shot/length-query design prevents hidden re-execution of
 effectful children while allowing callers to size buffers deterministically.
+
+## Transient I/O buffer allocation
+
+The kernel must never overwrite a guest's instantiated data segments, active
+stack, or active heap when preparing host-provided I/O buffers.
+
+**Kernel-selected buffers** are regions whose addresses the kernel chooses:
+child `skrynia_main` input `[in_ptr,in_ptr+in_len)`, child output window
+`[out_ptr,out_ptr+out_cap)`, and parent callback request/response regions
+`[parent_req_ptr,parent_req_ptr+req_len)` / `[parent_res_ptr,parent_res_ptr+parent_res_cap)`
+used for one `invoke` turn. For each turn requiring such buffers, the kernel
+allocates them entirely within linear-memory addresses `>= base_size`, where
+`base_size` is the instance's linear-memory byte size immediately before
+buffer preparation for that turn. The kernel may `memory.grow` by zeroed pages
+to satisfy the request, subject to configured memory limits; growth failure
+fails the operation with `ERR_LIMIT`. Because appended pages did not exist
+before preparation, kernel writes to kernel-selected buffers cannot overwrite
+previously existing data segments, stack, or heap contents. Buffers are valid
+only for the synchronous turn/call that established them and may be reused by
+later turns after that turn completes.
+
+**Guest-supplied buffers** are regions named by guest-provided pointers and
+lengths/capacities (for example `eval` caller `input_ptr/input_len` and
+`out_ptr/out_cap`, disk/RAM/next_entry/random destination or source ranges,
+child `invoke` `req_ptr/req_len` and `res_ptr/res_cap`). The kernel validates
+that each range is within the addressed instance's current linear memory and
+reads/writes only within that range. The guest is responsible for choosing
+guest-supplied buffer addresses that do not corrupt its own required state.
+
+All pointer ranges are bounds-checked. Invalid or out-of-bounds ranges fail
+with `ERR_RANGE` or `ERR_FAULT` as specified and cause no partial out-of-range
+memory access. Modules with non-zero data segments are valid provided data
+segments are instantiated normally; kernel-selected transient buffers must not
+overlap those initialized data segments.
 
 ## Disk, paths, and descriptors
 
@@ -230,18 +269,24 @@ state consistently; operations touching removed bytes fail with `ERR_RANGE`.
 Resize itself is not atomic with concurrent readers/writers except through
 this range/serialization rule.
 
-`cas_ram_u64(ram_fd, offset, expected, desired) -> i64` requires `offset`
-8-byte aligned and `offset+8 <= ram_size`. It atomically loads a little-endian
-`u64`, compares to `expected`, stores `desired` on equality, and returns the
-observed old value as non-negative `i64` bit pattern reinterpretation is not
-used: values are returned in `[0, 2^63-1]` when representable; for the full
-`u64` domain the ABI returns low 63 bits in value and encodes bit 63 via
-`cas_ram_u64_hi` companion result is avoided by defining return as two-value
-struct in future; **phase-1 decision:** return the observed old `u64` as
-`i64` via unsigned-to-signed bit cast in wasm (`i64` is a bit container),
-and callers interpret bits as unsigned. Misalignment/OOB returns `-ERR_RANGE`
-in a distinguished error path (`ERR_RANGE`); on API error no memory changes.
-Successful CAS returns old word regardless of match.
+`cas_ram_u64(ram_fd, offset, expected, desired, observed_ptr) -> i32`
+requires `offset` 8-byte aligned and `offset+8 <= ram_size`, and requires
+`[observed_ptr, observed_ptr+8)` to be a valid writable range in caller
+private memory. It atomically loads a little-endian `u64` from shared RAM,
+compares it to `expected`, stores `desired` on equality, and on success
+returns `0` and writes the observed old `u64` (the value loaded before any
+conditional store), encoded little-endian, to `observed_ptr`. The caller
+determines whether the exchange occurred by comparing the observed value to
+`expected`; this applies uniformly to all bit patterns, including values with
+the high bit set and `0xFFFF_FFFF_FFFF_FFFF`.
+
+API/validation errors return a negative `ERR_*` code and perform no RAM
+mutation and no write to `observed_ptr`: invalid descriptor/permissions →
+`ERR_BADFD`/`ERR_PERM` as applicable, misalignment or out-of-range RAM/guest
+buffer access → `ERR_RANGE`, and kernel fault/limit conditions → `ERR_FAULT`/
+`ERR_LIMIT`. Error status is never ambiguous with a successful observed value
+because success is reported only as non-negative status (`0`) with the
+observed word written to caller memory.
 
 CAS operations are linearizable and sequentially consistent with each other.
 Ordinary byte `read/write` operations on RAM are data-race-free at host level

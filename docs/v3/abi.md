@@ -25,11 +25,28 @@ instance's private memory.
 
 ## Private pointer ownership and lifetime
 
-**Decision:** every pointer argument is owned by the caller's current WASM
-instance for the duration of the synchronous host operation and bounds-checked
-against that instance's current linear memory. `eval` snapshots child code and
-input bytes before validation/execution so caller-memory mutation cannot change
-validated/executed bytes. Output is written only to caller-provided buffers.
+**Decision:** every pointer argument is owned by the addressed instance's
+current private linear memory for the duration of the synchronous host
+operation and bounds-checked against that memory. `eval` snapshots child code
+and input bytes before validation/execution so caller-memory mutation cannot
+change validated/executed bytes. Output is written only to explicitly provided
+or kernel-selected I/O buffers as defined below.
+
+## Safe transient I/O buffer allocation
+
+**Decision:** kernel-selected transient buffers (child `skrynia_main` input and
+output window; parent callback request and response regions for an `invoke`
+turn) are allocated by the kernel in the target instance's linear memory at
+addresses `>= base_size`, where `base_size` is that memory's byte size before
+buffer preparation for the turn. The kernel may grow linear memory by zeroed
+pages to make space, subject to limits; it never writes kernel-selected buffer
+bytes below `base_size`. Therefore kernel buffer preparation cannot overwrite
+instantiated data segments, active stack contents, or active heap contents that
+existed before the turn. Buffers are turn-scoped and may be reused after the
+turn. Guest-supplied buffers (caller-chosen eval I/O, `invoke` req/res ranges,
+disk/RAM/random/entry buffers) are bounds-checked and accessed only within the
+supplied range; guests must choose them so writes do not corrupt required
+state. This contract is valid for modules with non-zero data segments.
 
 ## Output-buffer overflow without repeated side effects
 
@@ -57,14 +74,19 @@ context for result delivery as specified by `eval` contract, and applies the
 overflow/no-reexecution rule. This uniform signature avoids hidden output
 regions and makes ownership explicit.
 
-## Atomic RAM CAS vs overlapping ordinary I/O
+## RAM CAS ABI and atomicity
 
-**Decision:** `cas_ram_u64` is linearizable and sequentially consistent with
-all `cas_ram_u64` operations. Ordinary RAM byte `read/write` are host-safe
-(no Rust UB/kernel corruption) but not atomic with overlapping ordinary or
-CAS accesses; overlapping observations are program-level unspecified except
-for safety. Correct synchronization requires CAS/alignment/non-overlap
-protocols.
+**Decision:** `cas_ram_u64(ram_fd, offset, expected, desired, observed_ptr) -> i32`
+returns `0` on a completed CAS operation and writes the observed old `u64`
+(little-endian, full 64-bit domain including high-bit/all-ones patterns) to
+`observed_ptr` in caller private memory. Negative returns are `ERR_*` status
+codes and perform no RAM mutation and no observed-value write, so API errors
+cannot be confused with observed bit patterns that match negative `i32` codes.
+`cas_ram_u64` operations are linearizable and sequentially consistent with all
+`cas_ram_u64` operations. Ordinary RAM byte `read/write` are host-safe (no Rust
+UB/kernel corruption) but not atomic with overlapping ordinary or CAS accesses;
+overlapping observations are program-level unspecified except for safety.
+Correct synchronization requires CAS/alignment/non-overlap protocols.
 
 ## Descriptors, paths, and crash details
 
@@ -77,12 +99,24 @@ requires explicit `sync` of file and parent directory. Un-synced disk state
 may be lost/reordered on crash consistent with filesystem guarantees; all RAM
 and descriptors are lost on process restart.
 
+## Coordination notes
+
+- **Kernel (runtime implementation):** must implement the unambiguous
+  `cas_ram_u64(..., observed_ptr) -> i32` status+out-parameter ABI, transient
+  buffer allocation via pre-turn memory growth (never clobbering existing data
+  segments/stack/heap), strict bounds/import validation, and CAS linearizability
+  without implicit RAM access.
+- **Program 0:** must treat `cas_ram_u64` status separately from observed
+  values, provide valid observed/result buffers, and not assume kernel I/O
+  buffers persist across turns. Existing v2 Program 0 behavior is out of scope
+  for this v3 contract except compatibility boundaries stated in the spec.
+
 ## Remaining blockers
 
 - Full WASM runtime, compiler, fuel metering, and host import implementation
   are not present in the current v2 server; phase-1 artifacts here are
   contract/prototype checks and fixtures.
-- Exact memory-limit policy for host-allocated Program 0 output windows needs
-  implementation calibration.
+- Exact memory-limit policy for host-allocated Program 0 output windows and
+  per-turn transient scratch growth needs implementation calibration.
 - Filesystem-portable directory-sync/rename corner cases require Linux-focused
   conformance execution and documentation.
