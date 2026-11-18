@@ -30,16 +30,19 @@ fn time_and_random_look_valid() {
 }
 
 #[test]
-fn eval_overflow_is_reported() {
-    let root = r#"(module(import "skrynia" "eval"(func $e(param i32 i32 i32 i32 i32 i32 i32)(result i32)))(import "skrynia" "eval_output_len"(func $l(result i32)))(memory(export "memory") 2)(func(export "skrynia_main")(param $i i32)(param $il i32)(param $o i32)(param $oc i32)(result i32)(local $r i32)(local.set $r(call $e(local.get $i)(local.get $il)(i32.const 65536)(i32.const 0)(i32.const -1)(i32.const 70000)(i32.const 1)))(i32.store8(local.get $o)(i32.eq(local.get $r)(i32.const -11)))(i32.store8(i32.add(local.get $o)(i32.const 1))(i32.eq(call $l)(i32.const 5)))(i32.const 2)))"#;
-    let child = r#"(module(memory(export "memory") 1)(data(i32.const 0) "hello")(func(export "skrynia_main")(param i32 i32 i32 i32)(result i32)(i32.const 5)))"#;
-    let dir = std::env::temp_dir().join("skrynia-v3-overflow");
+fn nested_eval_overflow_visible() {
+    let c2 = wat::parse_str(r#"(module(memory 1)(export "memory"(memory 0))(func(export "skrynia_main")(param i32 i32 i32 i32)(result i32) i32.const 3))"#).unwrap();
+    let data: String = c2.iter().map(|b| format!("\\{:02x}", b)).collect();
+    let c1 = format!(
+        r#"(module(import "skrynia" "invoke"(func $i(param i32 i32 i32 i32)(result i32)))(memory(export "memory") 1)(data(i32.const 0) "{data}")(func(export "skrynia_main")(param $ip i32)(param $il i32)(param $op i32)(param $oc i32)(result i32)(call $i(i32.const 0)(i32.const {len})(local.get $op)(local.get $oc))))"#,
+        data = data,
+        len = c2.len()
+    );
+    let root = r#"(module(import "skrynia" "eval"(func $e(param i32 i32 i32 i32 i32 i32 i32)(result i32)))(import "skrynia" "eval_output_len"(func $l(result i32)))(table(export "__indirect_function_table") 1 funcref)(memory(export "memory") 4)(func $cb(param $rp i32)(param $rl i32)(param $dp i32)(param $dc i32)(result i32)(local $r i32)(local.set $r(call $e(local.get $rp)(local.get $rl)(i32.const 65536)(i32.const 0)(i32.const -1)(i32.const 70000)(i32.const 1)))(i32.store8(local.get $dp)(i32.add(i32.const 48)(i32.and(i32.eq(local.get $r)(i32.const -11))(i32.eq(call $l)(i32.const 3)))))(i32.const 1))(elem(i32.const 0) func $cb)(func(export "skrynia_main")(param $i i32)(param $il i32)(param $o i32)(param $oc i32)(result i32)(call $e(local.get $i)(local.get $il)(i32.const 0)(i32.const 0)(i32.const 0)(local.get $o)(local.get $oc))))"#;
+    let dir = std::env::temp_dir().join("skrynia-v3-nest-ov");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("data")).unwrap();
     std::fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
     let k = skrynia_server::boot::Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
-    assert_eq!(
-        k.invoke(&wat::parse_str(child).unwrap()).unwrap(),
-        vec![1, 1]
-    );
+    assert_eq!(k.invoke(&wat::parse_str(&c1).unwrap()).unwrap(), b"1");
 }
