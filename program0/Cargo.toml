@@ -12,4 +12,8 @@ crate-type = ["rlib", "cdylib"]
 [features]
 vm-check = []
 
+[dev-dependencies]
+skrynia-server = { path = "../rust-server" }
+wat = "1"
+
 [dependencies]

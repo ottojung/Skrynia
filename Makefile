@@ -1,4 +1,4 @@
-.PHONY: test build lint check docker-build source-check benchmark
+.PHONY: test test-v3-root build lint check docker-build source-check benchmark
 test: source-check lint
 	cargo test --locked --lib --bins --tests --examples
 	cargo check --locked -p skrynia-program0 --features vm-check
@@ -23,3 +23,9 @@ source-check:
 
 benchmark: build
 	cargo run --locked --release --example skrynia_bench
+
+# Strong acceptance gate: build root WASM and execute it against the Rust kernel.
+# Requires the wasm32-unknown-unknown Rust target; no deployed data is used.
+test-v3-root:
+	cargo build --locked --release -p skrynia-program0 --target wasm32-unknown-unknown
+	SKRYNIA_TEST_ROOT_WASM="$(CURDIR)/target/wasm32-unknown-unknown/release/skrynia_program0.wasm" cargo test --locked -p skrynia-program0 --test program0 -- root_live
