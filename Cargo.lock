@@ -1996,6 +1996,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "skrynia-program0"
+version = "0.1.0"
+
+[[package]]
 name = "skrynia-server"
 version = "0.1.0"
 dependencies = [
