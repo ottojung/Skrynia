@@ -1,6 +1,6 @@
 .PHONY: test build lint check docker-build source-check benchmark
 test: source-check lint
-	cargo test --locked --all-targets
+	cargo test --locked --lib --bins --tests --examples
 
 lint:
 	cargo fmt --all -- --check

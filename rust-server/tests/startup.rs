@@ -1,0 +1,25 @@
+use skrynia_server::{boot, conf};
+use std::ffi::OsString;
+use std::fs;
+
+#[test]
+fn config_requires_env() {
+    assert!(conf::Config::from_lookup(|_| None).is_err());
+    let ok = conf::Config::from_lookup(|k| match k {
+        "SKRYNIA_ROOT_WASM" => Some(OsString::from("a.wasm")),
+        "SKRYNIA_DATA_DIR" => Some(OsString::from("/tmp/d")),
+        _ => None,
+    });
+    assert!(ok.is_ok());
+}
+
+#[test]
+fn boot_rejects_invalid_wasm() {
+    let dir = std::env::temp_dir().join("skrynia-v3-test-bad");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let wasm = dir.join("bad.wasm");
+    fs::write(&wasm, b"not wasm").unwrap();
+    assert!(boot::Kernel::start(&wasm).is_err());
+    let _ = fs::remove_dir_all(&dir);
+}
