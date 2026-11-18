@@ -5,9 +5,17 @@ use skrynia_program0::wire::{Request, Response, STATUS_OK};
 #[test]
 fn req_roundtrip() {
     let cases = vec![
-        Request::Register { code: vec![1, 2, 3] },
-        Request::Set { id: vec![9; 32], code: vec![4, 5] },
-        Request::Invoke { id: vec![7; 16], input: vec![8, 9] },
+        Request::Register {
+            code: vec![1, 2, 3],
+        },
+        Request::Set {
+            id: vec![9; 32],
+            code: vec![4, 5],
+        },
+        Request::Invoke {
+            id: vec![7; 16],
+            input: vec![8, 9],
+        },
     ];
     for c in cases {
         let b = encode_req(&c);
@@ -17,7 +25,10 @@ fn req_roundtrip() {
 
 #[test]
 fn res_roundtrip() {
-    let r = Response { status: STATUS_OK, body: vec![42, 43] };
+    let r = Response {
+        status: STATUS_OK,
+        body: vec![42, 43],
+    };
     let b = encode_res(&r);
     assert_eq!(decode_res(&b).unwrap(), r);
 }

@@ -13,7 +13,10 @@ impl Disk for MemDisk {
         Ok(self.0.lock().unwrap().get(path).cloned())
     }
     fn write_atomic(&self, path: &str, bytes: &[u8]) -> Result<(), ()> {
-        self.0.lock().unwrap().insert(path.to_string(), bytes.to_vec());
+        self.0
+            .lock()
+            .unwrap()
+            .insert(path.to_string(), bytes.to_vec());
         Ok(())
     }
     fn remove(&self, path: &str) -> Result<(), ()> {
@@ -23,7 +26,9 @@ impl Disk for MemDisk {
     fn list(&self, dir: &str) -> Result<Vec<String>, ()> {
         let p = format!("{}/", dir.trim_end_matches('/'));
         let g = self.0.lock().unwrap();
-        Ok(g.keys().filter_map(|k| k.strip_prefix(&p).map(|s| s.to_string())).collect())
+        Ok(g.keys()
+            .filter_map(|k| k.strip_prefix(&p).map(|s| s.to_string()))
+            .collect())
     }
 }
 

@@ -6,7 +6,9 @@ pub enum IdErr {
 }
 
 pub fn validate(id: &[u8]) -> Result<(), IdErr> {
-    if id.len() != ID_LEN { return Err(IdErr::Len); }
+    if id.len() != ID_LEN {
+        return Err(IdErr::Len);
+    }
     Ok(())
 }
 

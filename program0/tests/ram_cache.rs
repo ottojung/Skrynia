@@ -3,24 +3,34 @@ use skrynia_program0::rcache;
 use std::sync::Mutex;
 
 struct MemRam(Mutex<Vec<u8>>);
-impl MemRam { fn new(n: usize) -> Self { Self(Mutex::new(vec![0; n])) } }
+impl MemRam {
+    fn new(n: usize) -> Self {
+        Self(Mutex::new(vec![0; n]))
+    }
+}
 impl Ram for MemRam {
     type Err = ();
     fn read(&self, off: u64, out: &mut [u8]) -> Result<(), ()> {
         let g = self.0.lock().unwrap();
-        let s = off as usize; let e = s + out.len();
-        out.copy_from_slice(&g[s..e]); Ok(())
+        let s = off as usize;
+        let e = s + out.len();
+        out.copy_from_slice(&g[s..e]);
+        Ok(())
     }
     fn write(&self, off: u64, data: &[u8]) -> Result<(), ()> {
         let mut g = self.0.lock().unwrap();
-        let s = off as usize; let e = s + data.len();
-        g[s..e].copy_from_slice(data); Ok(())
+        let s = off as usize;
+        let e = s + data.len();
+        g[s..e].copy_from_slice(data);
+        Ok(())
     }
     fn cas_u64(&self, off: u64, expect: u64, want: u64) -> Result<u64, ()> {
         let mut g = self.0.lock().unwrap();
         let s = off as usize;
-        let cur = u64::from_le_bytes(g[s..s+8].try_into().unwrap());
-        if cur == expect { g[s..s+8].copy_from_slice(&want.to_le_bytes()); }
+        let cur = u64::from_le_bytes(g[s..s + 8].try_into().unwrap());
+        if cur == expect {
+            g[s..s + 8].copy_from_slice(&want.to_le_bytes());
+        }
         Ok(cur)
     }
 }

@@ -1,4 +1,4 @@
-use crate::wire::{Request, Response, OP_INVOKE, OP_REGISTER, OP_SET, VERSION};
+use crate::wire::{OP_INVOKE, OP_REGISTER, OP_SET, Request, Response, VERSION};
 
 pub fn encode_req(req: &Request) -> Vec<u8> {
     let mut out = vec![VERSION];

@@ -10,7 +10,13 @@ pub struct Registry {
 }
 
 #[derive(Debug)]
-pub enum RegErr<D, E, R> { Store(StoreErr<D>), Eval(E), Rand(R), BadId, Missing }
+pub enum RegErr<D, E, R> {
+    Store(StoreErr<D>),
+    Eval(E),
+    Rand(R),
+    BadId,
+    Missing,
+}
 
 impl Registry {
     pub fn open<D: Disk>(disk: &D, dir: &str) -> Result<Self, StoreErr<D::Err>> {
@@ -20,6 +26,9 @@ impl Registry {
             let bytes = store_io::get(disk, dir, &pid)?;
             code.insert(pid, bytes);
         }
-        Ok(Self { dir: dir.to_string(), code: RwLock::new(code) })
+        Ok(Self {
+            dir: dir.to_string(),
+            code: RwLock::new(code),
+        })
     }
 }

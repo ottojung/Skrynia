@@ -9,11 +9,17 @@ pub fn encode_record(code: &[u8]) -> Vec<u8> {
 }
 
 pub fn decode_record(bytes: &[u8]) -> Option<Vec<u8>> {
-    if bytes.first().copied()? != REC_VER { return None; }
+    if bytes.first().copied()? != REC_VER {
+        return None;
+    }
     Some(bytes[1..].to_vec())
 }
 
 pub fn path_for(dir: &str, id: &[u8]) -> Option<String> {
     id::validate(id).ok()?;
-    Some(format!("{}/{}.bin", dir.trim_end_matches('/'), id::to_hex(id)))
+    Some(format!(
+        "{}/{}.bin",
+        dir.trim_end_matches('/'),
+        id::to_hex(id)
+    ))
 }
