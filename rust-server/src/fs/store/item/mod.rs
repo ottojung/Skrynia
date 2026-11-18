@@ -19,7 +19,9 @@ impl Input {
         if dst.is_empty() {
             return Ok(0);
         }
-        let max = dst.len().min(self.remaining.saturating_add(1) as usize);
+        let max = dst
+            .len()
+            .min(self.remaining.saturating_add(1).min(dst.len() as u64) as usize);
         let n = self.reader.read(&mut dst[..max]).map_err(|e| {
             if e.kind() == std::io::ErrorKind::InvalidData {
                 "limit"

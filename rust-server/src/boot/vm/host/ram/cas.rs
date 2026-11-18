@@ -30,18 +30,15 @@ fn run(
     if !ok {
         return crate::boot::vm::codes::ERR_BADFD;
     }
-    let m = match crate::boot::vm::mem::get(c) {
-        Ok(x) => x,
+    let (m, end, off) = match super::check::bounds(c, op, off) {
+        Ok(v) => v,
         Err(e) => return e,
     };
-    if op as usize + 8 > m.data(&c).len() {
-        return crate::boot::vm::codes::ERR_RANGE;
-    }
-    let old = match c.data().ram.cas_u64(off as usize, exp, des) {
+    let old = match c.data().ram.cas_u64(off, exp, des) {
         Ok(v) => v,
         Err(e) if e == "oob" || e == "unaligned" => return crate::boot::vm::codes::ERR_RANGE,
         Err(_) => return crate::boot::vm::codes::ERR_FAULT,
     };
-    m.data_mut(&mut *c)[op as usize..op as usize + 8].copy_from_slice(&old.to_le_bytes());
+    m.data_mut(&mut *c)[op as usize..end].copy_from_slice(&old.to_le_bytes());
     0
 }

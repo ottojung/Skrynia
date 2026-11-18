@@ -22,6 +22,11 @@ fn truncate_zero_fills() {
     let mut buf = [1u8; 8];
     ram.read(0, &mut buf).unwrap();
     assert_eq!(&buf[4..], &[0, 0, 0, 0]);
+    assert_eq!(
+        ram.truncate(skrynia_server::ram::MAX_RAM_BYTES + 1),
+        Err("nospace")
+    );
+    assert_eq!(ram.len(), 8);
 }
 
 #[test]

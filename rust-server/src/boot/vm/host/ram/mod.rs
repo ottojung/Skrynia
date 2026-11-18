@@ -1,4 +1,5 @@
 mod cas;
+mod check;
 
 pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
     linker

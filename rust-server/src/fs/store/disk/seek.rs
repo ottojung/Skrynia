@@ -25,7 +25,9 @@ impl Fs {
     ) -> Result<(), &'static str> {
         match fds.get(fd) {
             Some(Item::Input(_) | Item::Output(_)) => Err("perm"),
-            Some(Item::Ram(_)) => self.ram.truncate(size as usize),
+            Some(Item::Ram(_)) => self
+                .ram
+                .truncate(usize::try_from(size).map_err(|_| "nospace")?),
             Some(Item::File(e)) => crate::fs::disk::truncate(e, size),
             _ => Err("badfd"),
         }

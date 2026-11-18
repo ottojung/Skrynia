@@ -24,6 +24,8 @@ impl Ram {
             return Err("nospace");
         }
         let mut b = self.bytes.lock().unwrap();
+        let extra = size.saturating_sub(b.len());
+        b.try_reserve(extra).map_err(|_| "nospace")?;
         b.resize(size, 0);
         Ok(())
     }

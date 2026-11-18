@@ -11,7 +11,7 @@ impl Fs {
             Some(Item::Input(e)) => e.read(dst),
             Some(Item::Output(_)) => Err("perm"),
             Some(Item::Ram(e)) => {
-                let off = e.pos as usize;
+                let off = usize::try_from(e.pos).map_err(|_| "oob")?;
                 let n = self.ram.read(off, dst)?;
                 e.pos += n as u64;
                 Ok(n)
@@ -30,7 +30,7 @@ impl Fs {
             Some(Item::Input(_)) => Err("perm"),
             Some(Item::Output(e)) => e.write(src),
             Some(Item::Ram(e)) => {
-                let off = e.pos as usize;
+                let off = usize::try_from(e.pos).map_err(|_| "oob")?;
                 let n = self.ram.write(off, src)?;
                 e.pos += n as u64;
                 Ok(n)
