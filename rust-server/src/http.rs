@@ -20,7 +20,12 @@ pub fn router(kernel: super::boot::Kernel) -> Router {
     Router::new().fallback(any(handle)).with_state(app)
 }
 
-const MAX_REQ: usize = 16 * 1024 * 1024;
+fn max_req() -> usize {
+    std::env::var("SKRYNIA_MAX_REQUEST_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(16 * 1024 * 1024)
+}
 
 async fn handle(
     State(app): State<App>,
@@ -31,7 +36,7 @@ async fn handle(
     if method != Method::POST || uri.path() != "/" {
         return StatusCode::NOT_FOUND.into_response();
     }
-    if body.len() > MAX_REQ {
+    if body.len() > max_req() {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     }
     match app.kernel.invoke(&body) {
