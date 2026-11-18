@@ -27,6 +27,16 @@ fn guard_ops() {
     stdfs::create_dir(d.join("data/reald")).unwrap();
     std::os::unix::fs::symlink("../outside", d.join("data/reald/esc")).unwrap();
     assert!(s.open_disk(&mut fds, b"reald/esc", M::read_only()).is_err());
+    let mode = skrynia_server::fs::node::MkdirMode::create_if_absent();
+    assert!(s.mkdir(b"reald", mode).is_ok());
+    assert!(s.mkdir(b"a", mode).is_err());
+    assert!(s.mkdir(b"link", mode).is_err());
+    stdfs::write(d.join("data/plain"), b"file").unwrap();
+    assert!(s.mkdir(b"plain", mode).is_err());
+    assert!(
+        s.mkdir(b"reald", skrynia_server::fs::node::MkdirMode::create_new())
+            .is_err()
+    );
     assert!(k.prepare(10_000).is_ok());
     let _ = stdfs::remove_dir_all(&d);
 }

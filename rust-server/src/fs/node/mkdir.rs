@@ -45,7 +45,7 @@ pub fn mkdir(
                 libc::AT_SYMLINK_NOFOLLOW,
             )
         };
-        if r == 0 {
+        if r == 0 && (st.st_mode & libc::S_IFMT) == libc::S_IFDIR {
             return Ok(());
         }
     }
