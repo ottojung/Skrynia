@@ -23,7 +23,7 @@ impl Eval for EchoEval { type Err = (); fn eval(&self, wasm: &[u8], input: &[u8]
 #[test]
 fn register_set_invoke_and_recover() {
     let disk = MemDisk::default();
-    let mut reg = Registry::open(&disk, "reg").unwrap();
+    let reg = Registry::open(&disk, "reg").unwrap();
     let id = reg.register(&disk, &Rng(7), b"v1".to_vec()).unwrap();
     assert_eq!(reg.invoke(&disk, &EchoEval, &id, b"in").unwrap(), b"v1in");
     reg.set(&disk, &id, b"v2".to_vec()).unwrap();

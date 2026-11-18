@@ -8,7 +8,7 @@ fn ok(body: Vec<u8>) -> Vec<u8> { encode_res(&Response { status: STATUS_OK, body
 fn err(code: u8) -> Vec<u8> { encode_res(&Response { status: STATUS_ERR, body: vec![code] }) }
 
 pub fn handle<D: Disk, R: Random, E: Eval>(
-    reg: &mut Registry, disk: &D, rng: &R, eval: &E, req: &[u8],
+    reg: &Registry, disk: &D, rng: &R, eval: &E, req: &[u8],
 ) -> Vec<u8> {
     let req = match decode_req(req) { Ok(r) => r, Err(_) => return err(1) };
     match req {
