@@ -14,10 +14,6 @@ fn disk_ops_modes_and_errors() {
     let (dir, k) = setup("skrynia-fs-disk");
     let s = k.fs();
     let mut fds = fs::table::Table::new();
-    assert!(
-        s.open_disk(&mut fds, b"ro.txt", fs::disk::DiskMode::read_only())
-            .is_err()
-    );
     let fd = s
         .open_disk(&mut fds, b"a.txt", fs::disk::DiskMode::read_write())
         .unwrap();
@@ -37,5 +33,17 @@ fn disk_ops_modes_and_errors() {
         .open_disk(&mut fds, b"a.txt", fs::disk::DiskMode::read_only())
         .unwrap();
     assert!(s.write(&mut fds, r, b"y").is_err());
+    s.mkdir(b"subdir", fs::node::MkdirMode::create_if_absent())
+        .unwrap();
+    assert!(
+        s.open_disk(&mut fds, b"subdir", fs::disk::DiskMode::read_only())
+            .is_err()
+    );
+    let fifo = std::ffi::CString::new(dir.join("data/fifo").to_str().unwrap()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+    assert!(
+        s.open_disk(&mut fds, b"fifo", fs::disk::DiskMode::read_only())
+            .is_err()
+    );
     let _ = stdfs::remove_dir_all(&dir);
 }

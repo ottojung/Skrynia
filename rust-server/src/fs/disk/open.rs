@@ -6,7 +6,7 @@ pub fn open_disk(
     rel: &std::path::Path,
     mode: DiskMode,
 ) -> Result<Entry, &'static str> {
-    let mut flags = libc::O_CLOEXEC | libc::O_NOFOLLOW;
+    let mut flags = libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK;
     if mode.read && mode.write {
         flags |= libc::O_RDWR;
     } else if mode.write {
@@ -25,6 +25,9 @@ pub fn open_disk(
     }
     let fd = super::super::root::rel::open_rel(root.fd(), rel, flags, 0o666)?;
     let file = unsafe { std::fs::File::from_raw_fd(std::os::fd::IntoRawFd::into_raw_fd(fd)) };
+    if !file.metadata().map_err(|_| "open")?.file_type().is_file() {
+        return Err("unsupported");
+    }
     Ok(Entry {
         file,
         can_read: mode.read,
