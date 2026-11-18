@@ -16,6 +16,9 @@ pub fn read_buf<T>(
     if len > crate::boot::limits::MAX_IO {
         return Err(super::codes::ERR_LIMIT);
     }
+    if ptr as u64 + len as u64 > mem.data_size(&*caller) as u64 {
+        return Err(ERR_RANGE);
+    }
     let mut buf = vec![0u8; len as usize];
     mem.read(caller, ptr as usize, &mut buf)
         .map_err(|_| ERR_RANGE)?;

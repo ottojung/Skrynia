@@ -11,6 +11,13 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                 if len > crate::boot::limits::MAX_IO {
                     return crate::boot::vm::codes::ERR_LIMIT;
                 }
+                let m = match crate::boot::vm::mem::get(&mut c) {
+                    Ok(x) => x,
+                    Err(e) => return e,
+                };
+                if dst as u64 + len as u64 > m.data_size(&c) as u64 {
+                    return crate::boot::vm::codes::ERR_RANGE;
+                }
                 let mut buf = vec![0u8; len as usize];
                 let fs = c.data().fs.clone();
                 let n = match fs.read(&mut c.data_mut().fds, crate::fs::Fd(fd), &mut buf) {

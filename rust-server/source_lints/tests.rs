@@ -34,3 +34,7 @@ fn normal_sibling_imports_are_allowed() {
     );
     assert!(issues.is_empty());
 }
+#[test]
+fn enforce_program0_style() {
+    super::check(std::path::Path::new("program0"));
+}

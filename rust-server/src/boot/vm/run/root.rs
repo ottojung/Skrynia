@@ -44,6 +44,9 @@ pub fn call_root(
     if n < 0 {
         return Err(n);
     }
+    if n as u32 > OUT_CAP {
+        return Err(crate::boot::vm::codes::ERR_OVERFLOW);
+    }
     let mem = crate::boot::vm::mem::get_in(store, inst)?;
     crate::boot::vm::mem::read_inst(store, mem, out_off, n as u32)
 }

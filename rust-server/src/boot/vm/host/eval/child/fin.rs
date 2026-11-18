@@ -10,7 +10,7 @@ pub fn finish(
         return Err(n);
     }
     let n = n as u32;
-    if n > out_cap {
+    if n > out_cap || n > 1024 * 1024 {
         c.data_mut().root_mut().last_overflow = n as i32;
         return Err(crate::boot::vm::codes::ERR_OVERFLOW);
     }

@@ -2,7 +2,7 @@ const FUEL: u64 = 10_000_000;
 
 pub fn invoke(kernel: &crate::boot::Kernel, body: &[u8]) -> Result<Vec<u8>, i32> {
     let engine = kernel.engine().clone();
-    let cache = std::sync::Arc::new(crate::boot::vm::state::Cache::new());
+    let cache = kernel.cache().clone();
     let mut store = wasmtime::Store::new(
         &engine,
         crate::boot::vm::state::Vm::new(
@@ -12,6 +12,7 @@ pub fn invoke(kernel: &crate::boot::Kernel, body: &[u8]) -> Result<Vec<u8>, i32>
             cache,
         ),
     );
+    store.limiter(|vm| &mut vm.limits);
     store
         .set_fuel(FUEL)
         .map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;

@@ -1,6 +1,6 @@
 mod cache;
 mod frame;
-pub use cache::Cache;
+pub use cache::{Cache, MAX_MODULE_BYTES};
 pub use frame::Frame;
 use std::sync::Arc;
 
@@ -12,6 +12,7 @@ pub struct Vm {
     pub frames: Vec<Frame>,
     pub cache: Arc<Cache>,
     pub depth: u32,
+    pub limits: wasmtime::StoreLimits,
 }
 
 impl Vm {
@@ -29,6 +30,13 @@ impl Vm {
             frames: Vec::new(),
             cache,
             depth: 0,
+            limits: wasmtime::StoreLimitsBuilder::new()
+                .memory_size(64 * 1024 * 1024)
+                .table_elements(10_000)
+                .instances(16)
+                .tables(16)
+                .memories(16)
+                .build(),
         }
     }
     pub fn root_mut(&mut self) -> &mut Frame {
