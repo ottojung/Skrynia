@@ -20,3 +20,9 @@ pub trait Eval {
     type Err;
     fn eval(&self, wasm: &[u8], input: &[u8]) -> Result<Vec<u8>, Self::Err>;
 }
+
+/// Secure random bytes for secret ID minting.
+pub trait Random {
+    type Err;
+    fn fill(&self, out: &mut [u8]) -> Result<(), Self::Err>;
+}
