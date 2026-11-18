@@ -1,7 +1,11 @@
 use std::os::fd::AsRawFd;
 
 pub fn delete(root: &crate::fs::root::Root, rel: &std::path::Path) -> Result<(), &'static str> {
-    let p = super::super::root::parent::parent(root.fd(), rel)?;
+    let p = match super::super::root::parent::parent(root.fd(), rel) {
+        Ok(p) => p,
+        Err("missing") => return Ok(()),
+        Err(e) => return Err(e),
+    };
     let rc = unsafe { libc::unlinkat(p.dir.as_raw_fd(), p.name.as_ptr(), 0) };
     if rc == 0 {
         return Ok(());

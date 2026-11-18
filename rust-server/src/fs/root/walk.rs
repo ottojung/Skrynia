@@ -32,7 +32,8 @@ pub fn open_dir_at(dir: RawFd, name: &CString) -> Result<OwnedFd, &'static str> 
         )
     };
     if fd < 0 {
-        return Err("open");
+        let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+        return Err(if e == libc::ENOENT { "missing" } else { "open" });
     }
     Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }

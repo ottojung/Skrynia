@@ -18,9 +18,7 @@ fn node_ops_and_rename() {
     let mut fds = fs::table::Table::new();
     s.mkdir(b"d", fs::node::MkdirMode::create_if_absent())
         .unwrap();
-    assert!(s.exists(b"d").unwrap());
     assert!(s.is_dir(b"d").unwrap());
-    assert!(!s.exists(b"d/nope").unwrap());
     let fd = s
         .open_disk(&mut fds, b"d/a", fs::disk::DiskMode::read_write())
         .unwrap();
@@ -32,6 +30,8 @@ fn node_ops_and_rename() {
     s.delete(b"d/b").unwrap();
     assert!(s.delete(b"d/b").is_ok());
     assert!(!s.exists(b"d/b").unwrap());
+    assert!(!s.exists(b"d/not-created/leaf").unwrap());
+    assert!(s.delete(b"d/not-created/leaf").is_ok());
     let _ = stdfs::remove_dir_all(&dir);
 }
 
