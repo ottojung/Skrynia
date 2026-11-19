@@ -1,3 +1,4 @@
+mod backpressure;
 mod cancel;
 mod fixture;
 mod flow;
