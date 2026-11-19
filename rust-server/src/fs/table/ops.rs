@@ -8,7 +8,7 @@ impl<T> Table<T> {
                 self.free = next;
                 tag
             }
-            Slot::Live { .. } => unreachable!(),
+            Slot::Live { .. } | Slot::Retired => unreachable!(),
         };
         self.slots[i] = Slot::Live { tag, val };
         Fd::new(i as u32, tag)

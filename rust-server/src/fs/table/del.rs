@@ -8,18 +8,22 @@ impl<T> Table<T> {
             Some(Slot::Live { tag, .. }) if *tag == fd.tag() => *tag,
             _ => return None,
         };
-        let next_tag = (tag + 1) & 0xffff;
-        let next_tag = if next_tag == 0 { 1 } else { next_tag };
-        let Slot::Live { val, .. } = std::mem::replace(
-            &mut self.slots[i],
+        // Never wrap a generation or encode a valid descriptor as an error.
+        let reusable = tag < 0x7fff;
+        let slot = if reusable {
             Slot::Free {
                 next: self.free,
-                tag: next_tag,
-            },
-        ) else {
+                tag: tag + 1,
+            }
+        } else {
+            Slot::Retired
+        };
+        let Slot::Live { val, .. } = std::mem::replace(&mut self.slots[i], slot) else {
             unreachable!()
         };
-        self.free = Some(i);
+        if reusable {
+            self.free = Some(i);
+        }
         Some(val)
     }
 }

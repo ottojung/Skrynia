@@ -8,7 +8,7 @@ impl Fs {
     ) -> Result<crate::fs::Fd, &'static str> {
         let rel = crate::fs::path::clean(p)?;
         let e = crate::fs::dir::open_dir(&self.root, &rel)?;
-        Ok(fds.insert(Item::Dir(e)))
+        fds.insert(Item::Dir(e))
     }
     pub fn next_entry(
         &self,
