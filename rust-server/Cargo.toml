@@ -30,6 +30,7 @@ percent-encoding = "2.3"
 [dev-dependencies]
 wat = "1"
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+tokio = { version = "1", features = ["full", "test-util"] }
 
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
