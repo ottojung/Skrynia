@@ -15,7 +15,8 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                 if dst as u64 + cap as u64 > m.data_size(&c) as u64 {
                     return crate::boot::vm::codes::ERR_RANGE;
                 }
-                let mut buf = vec![0u8; cap.min(256) as usize];
+                let max = cap.min(4096);
+                let mut buf = vec![0u8; max as usize];
                 let fs = c.data().fs.clone();
                 let res = fs.next_entry(&mut c.data_mut().fds, crate::fs::Fd(fd), &mut buf);
                 let out = match res {

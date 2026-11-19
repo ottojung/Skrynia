@@ -1,5 +1,7 @@
 use super::handle::Fd;
 
+pub(super) const MAX_FDS: usize = 1 << 16;
+
 pub(super) enum Slot<T> {
     Free { next: Option<usize>, tag: u32 },
     Live { tag: u32, val: T },
@@ -17,13 +19,15 @@ impl<T> Table<T> {
             free: None,
         }
     }
-    pub fn insert(&mut self, val: T) -> Fd {
+    pub fn insert(&mut self, val: T) -> Result<Fd, &'static str> {
         if let Some(i) = self.free {
-            return self.reuse(i, val);
+            return Ok(self.reuse(i, val));
         }
         let i = self.slots.len();
-        let tag = 1u32;
-        self.slots.push(Slot::Live { tag, val });
-        Fd::new(i as u32, tag)
+        if i >= MAX_FDS {
+            return Err("limit");
+        }
+        self.slots.push(Slot::Live { tag: 1, val });
+        Ok(Fd::new(i as u32, 1))
     }
 }

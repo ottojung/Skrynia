@@ -13,3 +13,17 @@ fn oversized_eval_module_fails_before_reading_guest_memory() {
   (i32.const 1)))"#;
     assert_eq!(run("v3-eval-limit", root, b"").unwrap(), &[1]);
 }
+#[test]
+fn bounded_compile_returns_promptly() {
+    let mut wat = String::from("(module");
+    for _ in 0..4000 {
+        wat.push_str("(func(param i32)(result i32)(local.get 0))");
+    }
+    wat.push(')');
+    let wasm = wat::parse_str(&wat).unwrap();
+    let eng = wasmtime::Engine::default();
+    let t = std::time::Instant::now();
+    let r = skrynia_server::boot::vm::compile::bounded(&eng, &wasm);
+    assert!(t.elapsed() < std::time::Duration::from_millis(800));
+    assert!(r.is_ok() || matches!(r, Err("limit") | Err("invalid")));
+}

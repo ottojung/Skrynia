@@ -9,8 +9,8 @@ pub fn compile(
         return Ok(m);
     }
     let engine = c.data().engine.clone();
-    let m =
-        wasmtime::Module::new(&engine, code).map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;
+    let m = crate::boot::vm::compile::bounded(&engine, code)
+        .map_err(|e| crate::boot::vm::err::map(e))?;
     c.data().cache.put(code, m.clone());
     Ok(m)
 }

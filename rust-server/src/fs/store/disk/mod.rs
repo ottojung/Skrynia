@@ -11,6 +11,6 @@ impl Fs {
     ) -> Result<crate::fs::Fd, &'static str> {
         let rel = crate::fs::path::clean(path)?;
         let e = crate::fs::disk::open_disk(&self.root, &rel, mode)?;
-        Ok(fds.insert(Item::File(e)))
+        fds.insert(Item::File(e))
     }
 }

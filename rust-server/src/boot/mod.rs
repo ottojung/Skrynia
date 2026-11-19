@@ -22,7 +22,8 @@ impl Kernel {
         let cfg = limits::engine_config()?;
         let engine = Engine::new(&cfg).map_err(|e| format!("engine: {e}"))?;
         let bytes = std::fs::read(root_wasm).map_err(|e| format!("read root: {e}"))?;
-        let root = Module::new(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
+        let root =
+            vm::compile::bounded(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
         validate::check(&root)?;
         let data = Arc::new(crate::fs::root::Root::open(data_dir)?);
         let ram = Arc::new(crate::ram::Ram::new());
