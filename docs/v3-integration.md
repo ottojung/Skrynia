@@ -1,8 +1,10 @@
 # Skrynia v3 isolated integration (development only)
 
-Status: experimental, **not a release candidate**. The v2 HTTP/grant server still
-exists on this branch, and the external compatibility facade has not passed
-v2-to-v3 differential parity. Do not deploy over an existing v2 installation.
+Status: experimental, **not a release candidate**. Skrynia v3 exposes
+binary POST only; the withdrawn v2 HTTP/grant/Web Push compatibility goals
+are not a release gate. Apps migrate to native Program 0 protocols and
+separately hosted static HTTPS origins. Do not replace an existing v2
+installation until independent migration and rollback are verified.
 
 ## Build and test
 
@@ -53,11 +55,31 @@ has per-request fuel, stack and StoreLimits plus a bounded, SHA-256-keyed
 compiled guest cache shared across requests. Guest imports other than
 `skrynia.invoke` are rejected.
 
-These checks do **not** establish full v3 correctness. Remaining requirements
-include application authorization/delegation and complete recursive callback
-support, cross-request transaction coordination for registry changes, durable
-revoke semantics, eliminating v2 business logic from the new native server,
-full v2 HTTP/grant/quota/Web Push compatibility in `skrynia-tools`, production
-resource limits, comprehensive fault injection, independent security review,
-and reproducible migration with rollback. No production cutover is authorized
-by these tests.
+These checks do **not** establish full v3 correctness. Remaining work
+includes operator capability issuance and authorization, native versioned
+code activation and rollback, stress and failure injection, independent
+security review, and reproducible app-data migration. No legacy HTTP
+GET/grants/Web Push facades are required. No production cutover is
+authorized by these tests.
+
+## Request-scoped mutation serialization
+
+An optional root may call skrynia.try_mutation_lock() -> i32: 1 acquires
+a kernel-owned global mutation lock, 0 means another request holds it.
+Only its owner can call skrynia.release_mutation_lock() -> i32 and get 0;
+nonowners get -4. The lock is not recursive. These imports are root-only
+and are not inherited by evaluated child programs.
+
+The kernel tracks ownership on the request VM and closes its descriptors
+before releasing the lock when that VM terminates, including due to a
+WASM trap, fuel exhaustion, or failed output transport. It never steals a
+live request's lock using timestamps. An HTTP disconnect alone does not
+terminate a still-running worker and thus cannot release its lock early.
+The open_ram and cas_ram_u64 imports remain general shared memory
+operations and are not automatically rolled back on VM termination.
+
+The current VM fuel limit is 128 million units per root request.
+A fuel-exhausted root may fail, but it must not disable the next mutation.
+This lock serializes Program 0's mutation calls but does not turn a set
+of filesystem syscalls into a durable transaction; the operator-supplied
+Program 0 remains responsible for atomic publication and crash recovery.
