@@ -8,7 +8,7 @@ RUN cargo build --locked --release -p skrynia-server
 
 FROM docker.io/library/debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3
-RUN groupadd -g 1000 skrynia && useradd -u 1000 -g 1000 -M skrynia && mkdir -p /var/lib/skrynia && chown skrynia:skrynia /var/lib/skrynia
+RUN groupadd -g 1000 skrynia && useradd -u 1000 -g 1000 -M skrynia && mkdir -p /var/lib/skrynia && chmod 0700 /var/lib/skrynia && chown skrynia:skrynia /var/lib/skrynia
 COPY --from=build /work/target/release/skrynia-server /usr/local/bin/skrynia-server
 USER 1000:1000
 ENV SKRYNIA_BIND=0.0.0.0:17380

@@ -23,7 +23,7 @@ pub fn open_disk(
     if mode.truncate {
         flags |= libc::O_TRUNC;
     }
-    let fd = super::super::root::rel::open_rel(root.fd(), rel, flags, 0o666)?;
+    let fd = super::super::root::rel::open_rel(root.fd(), rel, flags, 0o600)?;
     let file = unsafe { std::fs::File::from_raw_fd(std::os::fd::IntoRawFd::into_raw_fd(fd)) };
     if !file.metadata().map_err(|_| "open")?.file_type().is_file() {
         return Err("unsupported");

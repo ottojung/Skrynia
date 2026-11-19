@@ -58,7 +58,7 @@ interprets Program 0's request or response body.
 A container image can be built with podman or docker (`make docker-build`).
 It contains **only the kernel** and listens on port 17380. Mount the root
 WASM read-only, set `SKRYNIA_ROOT_WASM` explicitly, and mount a private,
-UID 1000-writable `SKRYNIA_DATA_DIR`. No default WASM, application grant,
+UID 1000-owned, mode 0700 `SKRYNIA_DATA_DIR`. No default WASM, application grant,
 admin CLI, credential, or native health endpoint is provided. Use an
 orchestrator TCP liveness check; application health is a Program 0 protocol.
 

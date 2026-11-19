@@ -1,15 +1,8 @@
-use skrynia_server::{boot, fs};
+mod setup;
+use setup::setup;
+mod private;
+use skrynia_server::fs;
 use std::fs as stdfs;
-fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
-    let dir = std::env::temp_dir().join(name);
-    let _ = stdfs::remove_dir_all(&dir);
-    stdfs::create_dir_all(dir.join("data")).unwrap();
-    let wasm = dir.join("r.wasm");
-    let code = wat::parse_str(include_str!("../test-fixtures/root_stub.wat")).unwrap();
-    stdfs::write(&wasm, code).unwrap();
-    let k = boot::Kernel::start(&wasm, &dir.join("data")).unwrap();
-    (dir, k)
-}
 #[test]
 fn disk_ops_modes_and_errors() {
     let (dir, k) = setup("skrynia-fs-disk");
