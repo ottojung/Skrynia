@@ -1,12 +1,14 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, atomic::AtomicBool};
 mod cas;
 mod io;
+mod mutation;
 
 pub const MAX_RAM_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Default)]
 pub struct Ram {
     bytes: Mutex<Vec<u8>>,
+    mutation_held: AtomicBool,
 }
 
 impl Ram {

@@ -5,7 +5,7 @@ pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
         "close" | "sync" => ("i", "i"),
         "exists" | "delete" | "is_dir" | "open_directory" | "secure_random_bits" => ("ii", "i"),
         "rename" => ("iiii", "i"),
-        "open_ram" | "eval_output_len" => ("", "i"),
+        "open_ram" | "eval_output_len" | "try_mutation_lock" | "release_mutation_lock" => ("", "i"),
         "cas_ram_u64" => ("illli", "i"),
         "now" => ("", "l"),
         "eval" => ("iiiiiii", "i"),

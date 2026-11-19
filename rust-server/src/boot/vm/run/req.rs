@@ -1,4 +1,4 @@
-const FUEL: u64 = 10_000_000;
+const FUEL: u64 = 128_000_000;
 
 pub fn invoke(
     kernel: &crate::boot::Kernel,
