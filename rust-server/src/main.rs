@@ -1,38 +1,29 @@
-mod error;
-mod exports;
-mod grants;
-mod http;
-mod net;
-mod operator;
-mod push;
-mod push_mode;
-mod store;
+use skrynia_server::{boot, conf, http};
 
 #[tokio::main]
-async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let mut args = std::env::args().skip(1);
-    if let Some(action) = args.next() {
-        if args.next().is_some() {
-            return Err("usage: skrynia-server [root-credentials|healthcheck]".into());
-        }
-        match action.as_str() {
-            "root-credentials" => operator::run()?,
-            "healthcheck" => net::healthcheck()?,
-            _ => return Err("unknown command".into()),
-        }
-        return Ok(());
-    }
-    let server = store::State::open()?;
-    let address = std::env::var("SKRYNIA_HOST").unwrap_or_else(|_| "127.0.0.1".into());
-    let port = std::env::var("SKRYNIA_PORT").unwrap_or_else(|_| "17380".into());
-    let listener = tokio::net::TcpListener::bind(format!("{address}:{port}")).await?;
-    let router = http::router(server, push_mode::delivery_enabled());
-    let options = net::NetworkOptions::load()?;
-    let listener = net::BoundedListener::new(listener, options);
-    axum::serve(listener, router)
-        .with_graceful_shutdown(net::shutdown_signal())
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let cfg = conf::Config::from_env()?;
+    let kernel = boot::Kernel::start(&cfg.root_wasm, &cfg.data_dir)?;
+    let addr = std::env::var("SKRYNIA_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
+    let listener = tokio::net::TcpListener::bind(&addr).await?;
+    axum::serve(listener, http::router(kernel))
+        .with_graceful_shutdown(shutdown())
         .await?;
     Ok(())
 }
 
-pub use exports::*;
+async fn shutdown() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        let mut term = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {},
+            _ = term.recv() => {},
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
