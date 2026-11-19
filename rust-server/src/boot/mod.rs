@@ -2,6 +2,7 @@ mod exec;
 mod kernel_api;
 mod limits;
 mod pipe;
+mod root;
 mod validate;
 pub mod vm;
 pub use exec::Request;
@@ -21,8 +22,9 @@ impl Kernel {
     pub fn start(root_wasm: &Path, data_dir: &Path) -> Result<Self, String> {
         let cfg = limits::engine_config()?;
         let engine = Engine::new(&cfg).map_err(|e| format!("engine: {e}"))?;
-        let bytes = std::fs::read(root_wasm).map_err(|e| format!("read root: {e}"))?;
-        let root = Module::new(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
+        let bytes = root::bytes(root_wasm)?;
+        let root =
+            vm::compile::bounded(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
         validate::check(&root)?;
         let data = Arc::new(crate::fs::root::Root::open(data_dir)?);
         let ram = Arc::new(crate::ram::Ram::new());

@@ -36,6 +36,25 @@ live entirely in `skrynia-tools`. Cross-repository verification should run
 against a disposable v3 server whose root module was separately built by its
 owner, never against a deployed v2 data directory.
 
+## Resource-bounded WebAssembly compilation
+
+The kernel compiles root and evaluated guest modules in a **separate, killable
+worker process**, not a detached thread. Worker input/output pipes are
+handled independently of the watchdog so a hung compiler cannot indefinitely
+block the parent while the body is being sent. At most four workers execute
+concurrently; additional requests wait for a bounded slot. Compilation is
+limited to 8 MiB source, 64 MiB serialized output, 3.5 s wall-clock
+execution, 4 s CPU time and 512 MiB virtual address space per worker.
+The parent kills and reaps a worker on timeout or wait failure; input/output
+thread handles are joined after the worker has exited. A successful
+precompile is deserialized under the caller's matching Wasmtime engine.
+Input compile errors map to an invalid-module error; timeout/resource
+errors map to a limit error. The worker receives an empty environment and cannot inherit application
+secrets via environment variables. It runs with no-new-privileges on Linux
+and ordinarily uses only compiler memory and pipes; it still has the server
+UID and OS filesystem permissions. These per-worker limits are **not**
+a full seccomp, filesystem namespace or privilege-separation sandbox.
+
 ## Root validation at startup
 
 Every startup compiles the operator-provided root module, then checks its

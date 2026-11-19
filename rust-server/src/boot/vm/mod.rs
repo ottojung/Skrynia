@@ -1,4 +1,5 @@
-pub mod codes;
+mod codes;
+pub mod compile;
 pub mod err;
 pub mod host;
 pub mod link;

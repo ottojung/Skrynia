@@ -1,3 +1,4 @@
+mod wrap;
 use skrynia_server::fs::table::Table;
 
 #[test]
