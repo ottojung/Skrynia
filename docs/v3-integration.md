@@ -45,6 +45,24 @@ mistyped imports fail startup before the data directory is opened. The kernel
 does **not** execute root WASM as part of this static validation. Traps and
 resource failures during an actual request still produce VM/transport errors.
 
+## HTTP execution admission
+
+The HTTP adapter admits at most **16 concurrent native VM invocations**;
+each admitted request holds its permit until its blocking WASM worker
+actually exits, even if HTTP response bytes have already begun streaming.
+An excess request fails before starting any VM instance (HTTP 500, the
+VM resource-exhaustion response), rather than accumulating new Wasmtime
+stores and their 64 MiB per-store memory budgets. Invalid method/path
+and declared-overlength request bodies are checked before admission.
+A deterministic test holds sixteen requests after early output, rejects
+the seventeenth, then proves capacity returns when inputs end.
+
+This limit bounds the count of active HTTP-invoked VM stores, **not**
+overall service lifetime or disk I/O latency. A maliciously stalled upload,
+a hung filesystem operation, or a disconnected slow client can still hold
+a worker. Robust input inactivity/total wall-clock deadlines remain a
+separate release security and availability gate.
+
 ## Security boundaries and unfinished release gates
 
 Program 0 uses explicit kernel disk and evaluation calls; requests, compiled

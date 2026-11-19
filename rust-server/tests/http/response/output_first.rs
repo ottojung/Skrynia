@@ -1,4 +1,4 @@
-use super::basic::kernel_with_wasm;
+use super::kernel_with_wasm;
 use axum::{
     body::{Body, Bytes},
     http::{Request, StatusCode},
@@ -9,7 +9,10 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn response_is_available_before_request_eof() {
-    let wasm = wat::parse_str(include_str!("../../test-fixtures/stream_early_output.wat")).unwrap();
+    let wasm = wat::parse_str(include_str!(
+        "../../../test-fixtures/stream_early_output.wat"
+    ))
+    .unwrap();
     let app = http::router(kernel_with_wasm("skrynia-first-output", &wasm));
     let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(2);
     let input = stream::unfold(rx, |mut r| async move {

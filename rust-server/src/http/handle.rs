@@ -21,12 +21,17 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
     {
         return StatusCode::PAYLOAD_TOO_LARGE.into_response();
     }
+    let permit = match app.permits.try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
     let (tx, rx) = tokio::sync::mpsc::channel(2);
     let (out_tx, out_rx) = tokio::sync::mpsc::channel(2);
     let pump = tokio::spawn(pump::run(request.into_body(), tx, max));
     let kernel = app.kernel;
     let worker_tx = out_tx.clone();
     let worker = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
         kernel.invoke_stream(
             Box::new(input::Input::new(rx)),
             max as u64,

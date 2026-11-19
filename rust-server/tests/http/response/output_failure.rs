@@ -1,4 +1,4 @@
-use super::basic::kernel_with_wasm;
+use super::kernel_with_wasm;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -9,8 +9,10 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn output_followed_by_vm_failure_is_not_clean_eof() {
-    let wasm =
-        wat::parse_str(include_str!("../../test-fixtures/stream_failed_output.wat")).unwrap();
+    let wasm = wat::parse_str(include_str!(
+        "../../../test-fixtures/stream_failed_output.wat"
+    ))
+    .unwrap();
     let app = http::router(kernel_with_wasm("skrynia-failed-output", &wasm));
     let request = Request::post("/").body(Body::empty()).unwrap();
     let response = app.oneshot(request).await.unwrap();
