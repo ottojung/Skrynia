@@ -48,3 +48,4 @@ fn ram_max_limit() {
 mod case;
 mod exports;
 mod imports;
+mod qualify;
