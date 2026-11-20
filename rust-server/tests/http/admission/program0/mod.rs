@@ -1,6 +1,7 @@
 pub(super) mod auth;
 pub(super) mod concurrency;
 pub(super) mod denied;
+pub(super) mod mutation_lock;
 pub(super) mod recover;
 pub(super) mod restart;
 pub(super) mod rotate;

@@ -1,6 +1,7 @@
 mod cache;
 mod cap;
 mod frame;
+mod mutation;
 pub use cache::{Cache, MAX_MODULE_BYTES};
 pub use cap::GuestCap;
 pub use frame::Frame;
@@ -15,6 +16,7 @@ pub struct Vm {
     pub cache: Arc<Cache>,
     pub depth: u32,
     pub guest: Option<GuestCap>,
+    pub mutation_held: bool,
     pub limits: wasmtime::StoreLimits,
 }
 
@@ -34,6 +36,7 @@ impl Vm {
             cache,
             depth: 0,
             guest: None,
+            mutation_held: false,
             limits: wasmtime::StoreLimitsBuilder::new()
                 .memory_size(64 * 1024 * 1024)
                 .table_elements(10_000)
