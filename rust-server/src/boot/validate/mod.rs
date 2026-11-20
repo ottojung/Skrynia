@@ -9,8 +9,8 @@ pub fn check(module: &wasmtime::Module) -> Result<(), String> {
     Ok(())
 }
 
-pub fn check_program1(module: &wasmtime::Module) -> Result<(), String> {
+pub fn check_program1(module: &wasmtime::Module, scoped: bool) -> Result<(), String> {
     exports::check(module)?;
-    imports::check_program1(module)?;
+    imports::check_program1(module, scoped)?;
     Ok(())
 }

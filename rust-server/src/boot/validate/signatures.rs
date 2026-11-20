@@ -14,10 +14,20 @@ pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
     })
 }
 
-pub fn program1(name: &str) -> Option<(&'static str, &'static str)> {
+pub fn program1(name: &str, scoped: bool) -> Option<(&'static str, &'static str)> {
     Some(match name {
         "read" | "write" => ("iii", "i"),
         "close" => ("i", "i"),
+        _ if !scoped => return None,
+        "open_disk" | "mkdir" | "next_entry" => ("iii", "i"),
+        "truncate" | "seek" => ("il", "i"),
+        "sync" => ("i", "i"),
+        "exists" | "delete" | "is_dir" | "open_directory" | "secure_random_bits" => ("ii", "i"),
+        "rename" => ("iiii", "i"),
+        "eval" => ("iiiiiii", "i"),
+        "eval_output_len" => ("", "i"),
+        "try_mutation_lock" | "release_mutation_lock" => ("", "i"),
+        "now" => ("", "l"),
         _ => return None,
     })
 }

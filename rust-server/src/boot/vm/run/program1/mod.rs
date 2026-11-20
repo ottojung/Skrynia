@@ -1,12 +1,19 @@
+mod context;
+mod link;
+pub use context::Context;
 pub fn run(
-    engine: &wasmtime::Engine,
-    module: &wasmtime::Module,
-    fs: std::sync::Arc<crate::fs::Fs>,
-    ram: std::sync::Arc<crate::ram::Ram>,
-    cache: std::sync::Arc<crate::boot::vm::state::Cache>,
+    ctx: Context<'_>,
     input: crate::fs::store::Item,
     output: crate::fs::store::Item,
 ) -> Result<(), i32> {
+    let Context {
+        engine,
+        module,
+        fs,
+        ram,
+        cache,
+        scoped,
+    } = ctx;
     let mut store = wasmtime::Store::new(
         engine,
         crate::boot::vm::state::Vm::new(engine.clone(), fs, ram, cache, None),
@@ -25,8 +32,7 @@ pub fn run(
         .fds
         .insert(output)
         .map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
-    let mut linker = wasmtime::Linker::new(engine);
-    crate::boot::vm::host::fd::add(&mut linker).map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
+    let linker = link::new_linker(engine, scoped)?;
     let inst = linker
         .instantiate(&mut store, module)
         .map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;

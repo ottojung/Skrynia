@@ -1,6 +1,7 @@
 mod cache;
 mod frame;
 mod mutation;
+mod root;
 pub use cache::{Cache, MAX_MODULE_BYTES};
 pub use frame::Frame;
 use std::sync::Arc;
@@ -15,6 +16,7 @@ pub struct Vm {
     pub depth: u32,
     pub mutation_held: bool,
     pub program1: Option<wasmtime::Module>,
+    pub program1_storage: Option<Arc<crate::fs::Fs>>,
     pub limits: wasmtime::StoreLimits,
 }
 
@@ -36,6 +38,7 @@ impl Vm {
             depth: 0,
             mutation_held: false,
             program1,
+            program1_storage: None,
             limits: wasmtime::StoreLimitsBuilder::new()
                 .memory_size(64 * 1024 * 1024)
                 .table_elements(10_000)
@@ -44,8 +47,5 @@ impl Vm {
                 .memories(16)
                 .build(),
         }
-    }
-    pub fn root_mut(&mut self) -> &mut Frame {
-        &mut self.frames[0]
     }
 }

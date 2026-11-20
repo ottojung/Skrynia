@@ -12,6 +12,9 @@ impl Kernel {
     pub fn program1(&self) -> Option<&Module> {
         self.program1.as_ref()
     }
+    pub fn program1_storage(&self) -> Option<&Arc<crate::fs::Fs>> {
+        self.program1_storage.as_ref()
+    }
     pub fn ram(&self) -> &Arc<crate::ram::Ram> {
         &self.ram
     }

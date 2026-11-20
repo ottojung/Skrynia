@@ -8,16 +8,15 @@ pub fn invoke(
 ) -> Result<(), i32> {
     let engine = kernel.engine().clone();
     let cache = kernel.cache().clone();
-    let mut store = wasmtime::Store::new(
-        &engine,
-        crate::boot::vm::state::Vm::new(
-            engine.clone(),
-            kernel.fs().clone(),
-            kernel.ram().clone(),
-            cache,
-            kernel.program1().cloned(),
-        ),
+    let mut vm = crate::boot::vm::state::Vm::new(
+        engine.clone(),
+        kernel.fs().clone(),
+        kernel.ram().clone(),
+        cache,
+        kernel.program1().cloned(),
     );
+    vm.program1_storage = kernel.program1_storage().cloned();
+    let mut store = wasmtime::Store::new(&engine, vm);
     store.limiter(|vm| &mut vm.limits);
     let fd = store
         .data_mut()

@@ -2,13 +2,17 @@ pub fn check(module: &wasmtime::Module) -> Result<(), String> {
     check_with(module, super::signatures::expected, "root")
 }
 
-pub fn check_program1(module: &wasmtime::Module) -> Result<(), String> {
-    check_with(module, super::signatures::program1, "program1")
+pub fn check_program1(module: &wasmtime::Module, scoped: bool) -> Result<(), String> {
+    check_with(
+        module,
+        |name| super::signatures::program1(name, scoped),
+        "program1",
+    )
 }
 
 fn check_with(
     module: &wasmtime::Module,
-    expected: fn(&str) -> Option<(&'static str, &'static str)>,
+    expected: impl Fn(&str) -> Option<(&'static str, &'static str)>,
     name: &str,
 ) -> Result<(), String> {
     for import in module.imports() {

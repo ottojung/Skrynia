@@ -1,18 +1,8 @@
-pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
-    linker
-        .func_wrap(
-            "skrynia",
-            "run_program1",
-            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
-             in_fd: i32,
-             out_fd: i32|
-             -> i32 { run(&mut c, in_fd, out_fd) },
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-fn run(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, in_fd: i32, out_fd: i32) -> i32 {
+pub(super) fn run(
+    c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
+    in_fd: i32,
+    out_fd: i32,
+) -> i32 {
     let module = match c.data().program1.clone() {
         Some(m) => m,
         None => return crate::boot::vm::codes::ERR_UNSUPPORTED,
@@ -32,10 +22,19 @@ fn run(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, in_fd: i32, out
         }
     };
     let engine = c.data().engine.clone();
-    let fs = c.data().fs.clone();
+    let scoped = c.data().program1_storage.clone();
+    let fs = scoped.clone().unwrap_or_else(|| c.data().fs.clone());
     let ram = c.data().ram.clone();
     let cache = c.data().cache.clone();
-    match crate::boot::vm::run::program1::run(&engine, &module, fs, ram, cache, input, output) {
+    let ctx = crate::boot::vm::run::program1::Context {
+        engine: &engine,
+        module: &module,
+        fs,
+        ram,
+        cache,
+        scoped: scoped.is_some(),
+    };
+    match crate::boot::vm::run::program1::run(ctx, input, output) {
         Ok(()) => 0,
         Err(e) => e,
     }
