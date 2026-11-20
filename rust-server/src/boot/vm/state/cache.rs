@@ -29,4 +29,12 @@ impl Cache {
     pub fn len(&self) -> usize {
         self.map.lock().unwrap().len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.map.lock().unwrap().is_empty()
+    }
+}
+impl Default for Cache {
+    fn default() -> Self {
+        Self::new()
+    }
 }

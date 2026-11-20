@@ -32,3 +32,9 @@ impl<T> Table<T> {
         Ok(Fd::new(i as u32, 1))
     }
 }
+
+impl<T> Default for Table<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
