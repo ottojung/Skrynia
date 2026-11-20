@@ -9,6 +9,9 @@ impl Kernel {
     pub fn root(&self) -> &Module {
         &self.root
     }
+    pub fn program1(&self) -> Option<&Module> {
+        self.program1.as_ref()
+    }
     pub fn ram(&self) -> &Arc<crate::ram::Ram> {
         &self.ram
     }

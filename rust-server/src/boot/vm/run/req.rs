@@ -1,4 +1,4 @@
-const FUEL: u64 = 128_000_000;
+pub(crate) const FUEL: u64 = 128_000_000;
 
 pub fn invoke(
     kernel: &crate::boot::Kernel,
@@ -15,6 +15,7 @@ pub fn invoke(
             kernel.fs().clone(),
             kernel.ram().clone(),
             cache,
+            kernel.program1().cloned(),
         ),
     );
     store.limiter(|vm| &mut vm.limits);

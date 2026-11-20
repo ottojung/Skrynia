@@ -1,4 +1,4 @@
-use super::basic::kernel_with_wasm;
+use crate::basic::kernel_with_wasm;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -9,7 +9,10 @@ use tower::ServiceExt;
 
 #[tokio::test]
 async fn streaming_output_exceeds_old_one_megabyte_buffer() {
-    let wasm = wat::parse_str(include_str!("../../test-fixtures/stream_large_output.wat")).unwrap();
+    let wasm = wat::parse_str(include_str!(
+        "../../../test-fixtures/stream_large_output.wat"
+    ))
+    .unwrap();
     let app = http::router(kernel_with_wasm("skrynia-large-output", &wasm));
     let request = Request::post("/").body(Body::empty()).unwrap();
     let response = app.oneshot(request).await.unwrap();

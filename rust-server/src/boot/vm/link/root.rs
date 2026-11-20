@@ -6,5 +6,6 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
     crate::boot::vm::host::pathops::add(linker)?;
     crate::boot::vm::host::dir::add(linker)?;
     crate::boot::vm::host::eval::add(linker)?;
+    crate::boot::vm::host::program1::add(linker)?;
     Ok(())
 }

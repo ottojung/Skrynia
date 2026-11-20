@@ -3,5 +3,6 @@ pub mod eval;
 pub mod fd;
 pub mod mutation;
 pub mod pathops;
+pub mod program1;
 pub mod ram;
 pub mod sys;

@@ -14,6 +14,7 @@ pub struct Vm {
     pub cache: Arc<Cache>,
     pub depth: u32,
     pub mutation_held: bool,
+    pub program1: Option<wasmtime::Module>,
     pub limits: wasmtime::StoreLimits,
 }
 
@@ -23,6 +24,7 @@ impl Vm {
         fs: Arc<crate::fs::Fs>,
         ram: Arc<crate::ram::Ram>,
         cache: Arc<Cache>,
+        program1: Option<wasmtime::Module>,
     ) -> Self {
         Self {
             engine,
@@ -33,6 +35,7 @@ impl Vm {
             cache,
             depth: 0,
             mutation_held: false,
+            program1,
             limits: wasmtime::StoreLimitsBuilder::new()
                 .memory_size(64 * 1024 * 1024)
                 .table_elements(10_000)

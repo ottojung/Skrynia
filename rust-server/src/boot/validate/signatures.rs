@@ -9,6 +9,16 @@ pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
         "cas_ram_u64" => ("illli", "i"),
         "now" => ("", "l"),
         "eval" => ("iiiiiii", "i"),
+        "run_program1" => ("ii", "i"),
+        _ => return None,
+    })
+}
+
+pub fn program1(name: &str) -> Option<(&'static str, &'static str)> {
+    Some(match name {
+        "read" | "write" => ("iii", "i"),
+        "truncate" | "seek" => ("il", "i"),
+        "close" | "sync" => ("i", "i"),
         _ => return None,
     })
 }

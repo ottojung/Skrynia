@@ -4,6 +4,7 @@ use std::path::PathBuf;
 pub struct Config {
     pub root_wasm: PathBuf,
     pub data_dir: PathBuf,
+    pub program1_wasm: Option<PathBuf>,
 }
 
 impl Config {
@@ -19,9 +20,11 @@ impl Config {
         let data = get("SKRYNIA_DATA_DIR")
             .map(PathBuf::from)
             .ok_or_else(|| "SKRYNIA_DATA_DIR is required".to_string())?;
+        let p1 = get("SKRYNIA_PROGRAM1_WASM").map(PathBuf::from);
         Ok(Self {
             root_wasm: root,
             data_dir: data,
+            program1_wasm: p1,
         })
     }
 }
