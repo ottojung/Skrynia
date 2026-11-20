@@ -1,8 +1,8 @@
 # Skrynia v3 isolated integration (development only)
 
-Status: experimental, **not a release candidate**. The v2 HTTP/grant server still
-exists on this branch, and the external compatibility facade has not passed
-v2-to-v3 differential parity. Do not deploy over an existing v2 installation.
+Status: experimental, **not a release candidate**. This branch provides a generic
+VM kernel with binary `POST /` only; no v2 HTTP/grant/Web Push compatibility
+facade is included. Do not deploy over an existing v2 installation.
 
 ## Build and test
 
