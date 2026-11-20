@@ -11,7 +11,7 @@ async fn slow_consumer_streams_large_payload() {
     let raw = [0x71u8; 32];
     let (k, dir) = super::setup("slow", &super::echo_guest(), &raw);
     let app = http::router(k);
-    let payload = vec![b'Q'; 10 * 1024 * 1024 + 33];
+    let payload = vec![b'Q'; 12 * 1024 * 1024 + 33];
     let req = Request::post("/")
         .body(Body::from(super::body(&raw, &payload)))
         .unwrap();

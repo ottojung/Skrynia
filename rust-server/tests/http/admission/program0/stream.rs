@@ -12,7 +12,7 @@ async fn streams_ten_mebibytes_with_token_stripped() {
     let raw = [0x11u8; 32];
     let (k, dir) = super::setup("str", &super::echo_guest(), &raw);
     let app = http::router(k);
-    let payload = vec![b'S'; 10 * 1024 * 1024 + 17];
+    let payload = vec![b'S'; 12 * 1024 * 1024 + 17];
     let req = Request::post("/")
         .body(Body::from(super::body(&raw, &payload)))
         .unwrap();
