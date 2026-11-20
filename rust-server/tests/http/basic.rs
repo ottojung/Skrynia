@@ -5,7 +5,12 @@ use std::fs;
 use tower::ServiceExt;
 
 pub(super) fn kernel_with_wasm(name: &str, wasm: &[u8]) -> boot::Kernel {
-    let dir = std::env::temp_dir().join(name);
+    // Parallel HTTP tests must never remove another test's live root.
+    let dir = std::env::temp_dir().join(format!(
+        "{name}-{}-{}",
+        std::process::id(),
+        rand::random::<u64>()
+    ));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let wasm_path = dir.join("root.wasm");

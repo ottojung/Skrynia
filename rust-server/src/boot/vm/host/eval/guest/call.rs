@@ -32,7 +32,12 @@ pub fn invoke(
         Ok(f) => f,
         Err(_) => return crate::boot::vm::codes::ERR_INVALID,
     };
-    let n = match cb_t.call(&mut *c, (base, req.len() as u32, res_base, res_cap)) {
+    // Execute the parent's callback under parent authority, then restore
+    // the child's FD restrictions even if the callback traps or runs eval.
+    let saved = c.data_mut().guest.take();
+    let call = cb_t.call(&mut *c, (base, req.len() as u32, res_base, res_cap));
+    c.data_mut().guest = saved;
+    let n = match call {
         Ok(n) => n,
         Err(e) => return crate::boot::vm::err::trap(e),
     };

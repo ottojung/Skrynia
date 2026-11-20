@@ -79,3 +79,23 @@ full v2 HTTP/grant/quota/Web Push compatibility in `skrynia-tools`, production
 resource limits, comprehensive fault injection, independent security review,
 and reproducible migration with rollback. No production cutover is authorized
 by these tests.
+
+## Generic parent callbacks and nested descriptor authority
+
+Evaluated WASM guests can import only read/write/close on delegated descriptors
+plus the generic invoke callback. While handling invoke, the kernel temporarily
+reinstates the **parent's** descriptor authority for the operator-provided
+Program 0 callback, then **unconditionally restores the calling guest's**
+descriptor restrictions even after a nested evaluation or a callback trap.
+Without this context switch, root callbacks cannot read their own open disk
+handles (ERR_BADFD); when root callbacks do nested eval, the outer guest
+could instead lose its descriptor restrictions and gain access to root disk
+handles. Both were reproduced using actual WAT/VM tests before the fix.
+
+These permissions are scoped to generic parent/child evaluation. Neither
+Skrynia's HTTP server nor the VM kernel names or configures Program 1,
+application versions, v2 routes or any nonzero program. The parent callback
+may implement *generic* host-API forwarding, but is not application logic.
+Test fixtures under test-fixtures/callback cover parent private disk reads,
+nested unprivileged execution, and rejection of attempted descriptor theft.
+Parallel HTTP fixture roots use unique directories to prevent test races.
