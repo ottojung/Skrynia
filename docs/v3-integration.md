@@ -108,3 +108,37 @@ least-authority persistent storage/CAS service before handling application
 data or immutable code activation; that must not be implemented as
 business logic inside the dumb proxy root. Do not deploy this draft
 as a production replacement for existing v2 data.
+
+## Explicitly scoped Program 1 persistence (draft)
+
+The operator may *optionally* configure SKRYNIA_PROGRAM1_DATA_DIR as an
+existing private directory, separate from SKRYNIA_DATA_DIR and outside any
+production v2 data. This configuration grants only the operator-installed
+Program 1 WASM a bounded filesystem-root capability. By default it is
+absent and Program 1 cannot import ANY filesystem, random, mutation or
+nested-evaluation functions, only read/write/close on its two HTTP stream
+descriptors. Supplying the directory without Program 1 is a startup error.
+
+When the capability is explicitly configured, the kernel opens that
+directory once via O_DIRECTORY | O_NOFOLLOW and uses its independently
+owned root FD for **all** Program 1 path operations. The existing
+relative-path validator disallows parent traversal, and component-wise
+openat operations disallow symlinks. Program 1 may open/read/write/sync
+files, create/delete/rename entries, scan directories, acquire/release the
+kernel-owned request-scoped mutation lock, draw secure randomness, get the
+clock and execute sandboxed nested WASM. It cannot import open_ram,
+cas_ram_u64 or run_program1, nor access paths in SKRYNIA_DATA_DIR unless
+the operator explicitly places them under the chosen directory.
+Nested evaluated programs do not inherit these host capabilities: their
+only import remains skrynia.invoke, mediated by Program 1 callbacks.
+
+This is a **generic VM capability** and does not implement application
+storage protocols, code release history, authorization or deployment in
+the kernel or root Program 0. The separate user Program 1 must implement
+all such semantics and must validate untrusted client requests itself.
+The operator must choose a dedicated confined directory: this capability
+provides full read/write authority WITHIN the directory, not per-key
+quotas, revocation or resource isolation from other instances sharing
+the same directory. Per-app quotas, data migration, independent security
+review and failure-injection acceptance are still required before
+production. Root remains only the forwarding program.

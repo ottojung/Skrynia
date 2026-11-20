@@ -4,4 +4,5 @@ mod direction;
 mod imports;
 mod large;
 mod short;
+mod storage;
 mod trap;
