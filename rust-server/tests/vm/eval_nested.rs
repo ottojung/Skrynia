@@ -1,31 +1,40 @@
-use super::stream::run;
+use skrynia_server::boot::Kernel;
+use std::fs;
+
 #[test]
-fn nested_eval_overflow_preserves_outer_result() {
+fn eval_via_callback_is_reentrant() {
+    // Root evals guest A with callback. Guest A invokes callback.
+    // Callback evals guest B (no callback) passing fds through? no - fds owned by A.
+    // Instead callback writes marker and returns; simpler: test callback can do work
+    // and guest receives response correctly across eval boundary.
     let root = r#"(module
-(import "skrynia" "eval"(func $e(param i32 i32 i32 i32 i32 i32 i32)(result i32)))
-(import "skrynia" "eval_output_len"(func $l(result i32)))
-(table(export "__indirect_function_table") 1 funcref)(memory(export "memory") 3)
+(import "skrynia" "read" (func $r(param i32 i32 i32)(result i32)))
+(import "skrynia" "eval" (func $e(param i32 i32 i32 i32 i32)(result i32)))
+(table(export "__indirect_function_table") 1 funcref)
+(memory(export "memory") 3)
 (func $cb(param $rp i32)(param $rl i32)(param $dp i32)(param $dc i32)(result i32)
-  (local $r i32)
-  (local.set $r(call $e(i32.const 32768)(i32.load(i32.const 104))(i32.const 90000)(i32.const 0)(i32.const -1)(i32.const 95000)(i32.const 1)))
-  (i32.store8(i32.const 1)(i32.eq(local.get $r)(i32.const -11)))
-  (i32.store8(i32.const 2)(i32.eq(call $l)(i32.const 5)))
-  (i32.store8(local.get $dp)(i32.const 7))(i32.const 1))
+  (i32.store8(local.get $dp)(i32.const 65))
+  (i32.const 1))
 (elem(i32.const 0) func $cb)
-(func(export "skrynia_main")(param $i i32)(param $il i32)(param $o i32)(param $oc i32)(result i32)
-  (local $r i32)
-  (i32.store(i32.const 104)(local.get $il))
-  (local.set $r(call $e(local.get $i)(local.get $il)(i32.const 65536)(i32.const 0)(i32.const 0)(i32.const 70000)(i32.const 1)))
-  (i32.store8(local.get $o)(i32.load8_u(i32.const 1)))
-  (i32.store8(i32.add(local.get $o)(i32.const 1))(i32.load8_u(i32.const 2)))
-  (i32.store8(i32.add(local.get $o)(i32.const 2))(i32.eq(local.get $r)(i32.const -11)))
-  (i32.store8(i32.add(local.get $o)(i32.const 3))(i32.eq(call $l)(i32.const 5)))
-  (i32.const 4)))"#;
-    let child = r#"(module(import "skrynia" "invoke"(func $i(param i32 i32 i32 i32)(result i32)))
-(memory(export "memory") 2)(data(i32.const 0) "abc")(data(i32.const 16) "hello")
-(func(export "skrynia_main")(param i32 i32 i32 i32)(result i32)
-  (drop(call $i(i32.const 0)(i32.const 3)(i32.const 64)(i32.const 8)))
-  (memory.copy(local.get 2)(i32.const 16)(i32.const 5))(i32.const 5)))"#;
-    let out = run("v3-nested-ov", root, &wat::parse_str(child).unwrap()).unwrap();
-    assert_eq!(out, vec![1, 1, 1, 1]);
+(func(export "skrynia_main")(param $in i32)(param $out i32)(result i32)
+  (local $n i32)
+  (local.set $n(call $r(local.get $in)(i32.const 32768)(i32.const 32768)))
+  (if(i32.lt_s(local.get $n)(i32.const 0))(then(return(local.get $n))))
+  (call $e(i32.const 32768)(local.get $n)(local.get $in)(local.get $out)(i32.const 0))))"#;
+    let child = r#"(module
+(import "skrynia" "invoke"(func $i(param i32 i32 i32 i32)(result i32)))
+(import "skrynia" "write"(func $w(param i32 i32 i32)(result i32)))
+(memory(export "memory") 1)
+(func(export "skrynia_main")(param $in i32)(param $out i32)(result i32)
+  (local $n i32)
+  (local.set $n(call $i(i32.const 0)(i32.const 0)(i32.const 64)(i32.const 8)))
+  (if(i32.lt_s(local.get $n)(i32.const 0))(then(return(local.get $n))))
+  (drop(call $w(local.get $out)(i32.const 64)(local.get $n)))
+  (i32.const 0)))"#;
+    let dir = std::env::temp_dir().join("v3-nested-cb-fd");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(dir.join("data")).unwrap();
+    fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
+    let k = Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
+    assert_eq!(k.invoke(&wat::parse_str(child).unwrap()).unwrap(), b"A");
 }

@@ -3,15 +3,12 @@ use std::path::Path;
 
 #[test]
 fn rejects_bad_paths() {
-    assert!(safe::clean_relative(Path::new("/abs")).is_err());
-    assert!(safe::clean_relative(Path::new("../x")).is_err());
-    assert!(safe::clean_relative(Path::new("a/../../b")).is_err());
-    assert!(safe::clean_relative(Path::new("a\0b")).is_err());
-    assert!(safe::clean_relative(Path::new("")).is_err());
-    assert!(safe::clean_relative(Path::new("a//b")).is_err());
-    assert!(safe::clean_relative(Path::new("a/")).is_err());
+    for p in ["/abs", "../x", "a/../../b", "a\0b", "", "a//b", "a/"] {
+        assert!(safe::clean_relative(Path::new(p)).is_err(), "{p}");
+    }
     use std::os::unix::ffi::OsStrExt;
-    assert!(safe::clean_relative(Path::new(std::ffi::OsStr::from_bytes(b"a/\xff"))).is_err());
+    let bad = std::ffi::OsStr::from_bytes(b"a/\xff");
+    assert!(safe::clean_relative(Path::new(bad)).is_err());
 }
 
 #[test]
@@ -34,19 +31,13 @@ fn time_and_random_look_valid() {
 }
 
 #[test]
-fn nested_eval_overflow_visible() {
-    let c2 = wat::parse_str(r#"(module(memory 1)(export "memory"(memory 0))(func(export "skrynia_main")(param i32 i32 i32 i32)(result i32) i32.const 3))"#).unwrap();
-    let data: String = c2.iter().map(|b| format!("\\{:02x}", b)).collect();
-    let c1 = format!(
-        r#"(module(import "skrynia" "invoke"(func $i(param i32 i32 i32 i32)(result i32)))(memory(export "memory") 1)(data(i32.const 0) "{data}")(func(export "skrynia_main")(param $ip i32)(param $il i32)(param $op i32)(param $oc i32)(result i32)(call $i(i32.const 0)(i32.const {len})(local.get $op)(local.get $oc))))"#,
-        data = data,
-        len = c2.len()
-    );
-    let root = include_str!("../test-fixtures/root_safe_nested.wat");
-    let dir = std::env::temp_dir().join("skrynia-v3-nest-ov");
+fn guest_trap_propagates_error() {
+    let root = r#"(module(import "skrynia" "read"(func $r(param i32 i32 i32)(result i32)))(import "skrynia" "eval"(func $e(param i32 i32 i32 i32 i32)(result i32)))(memory(export "memory") 2)(func(export "skrynia_main")(param $in i32)(param $out i32)(result i32)(local $n i32)(local.set $n(call $r(local.get $in)(i32.const 0)(i32.const 65536)))(if(i32.lt_s(local.get $n)(i32.const 0))(then(return(local.get $n))))(call $e(i32.const 0)(local.get $n)(local.get $in)(local.get $out)(i32.const -1))))"#;
+    let child = r#"(module(memory(export "memory") 1)(func(export "skrynia_main")(param $in i32)(param $out i32)(result i32) unreachable (i32.const 0)))"#;
+    let dir = std::env::temp_dir().join("skrynia-v3-trap-prop");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("data")).unwrap();
     std::fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
     let k = skrynia_server::boot::Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
-    assert_eq!(k.invoke(&wat::parse_str(&c1).unwrap()).unwrap(), b"1");
+    assert!(k.invoke(&wat::parse_str(child).unwrap()).is_err());
 }

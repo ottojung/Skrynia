@@ -1,5 +1,6 @@
 use skrynia_server::boot;
 use std::fs;
+#[allow(dead_code)]
 pub(super) fn run(name: &str, root: &str, body: &[u8]) -> Result<Vec<u8>, i32> {
     let dir = std::env::temp_dir().join(name);
     let _ = fs::remove_dir_all(&dir);
