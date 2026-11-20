@@ -10,8 +10,10 @@ use sha2::{Digest, Sha256};
 use skrynia_server::boot::Kernel;
 use std::fs;
 pub(super) fn root_wasm() -> Vec<u8> {
-    let p = std::env::var("SKRYNIA_PROGRAM0_FD_EVAL_WASM").expect("SKRYNIA_PROGRAM0_FD_EVAL_WASM");
-    fs::read(p).expect("read compiled fd-eval-adapted Program0 wasm")
+    wat::parse_str(include_str!(
+        "../../../../test-fixtures/token_gated_proxy.wat"
+    ))
+    .unwrap()
 }
 pub(super) fn verifier(raw: &[u8; 32]) -> [u8; 32] {
     Sha256::digest(raw).into()

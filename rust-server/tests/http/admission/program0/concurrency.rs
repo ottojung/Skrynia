@@ -6,7 +6,6 @@ use http_body_util::BodyExt;
 use skrynia_server::http;
 use tower::ServiceExt;
 #[tokio::test]
-#[ignore = "requires compiled fd-eval-adapted skrynia-tools Program0 wasm (SKRYNIA_PROGRAM0_FD_EVAL_WASM)"]
 async fn concurrent_requests_with_nonzero_guest() {
     let raw = [0x61u8; 32];
     let (k, dir) = super::setup("conc", &super::echo_guest(), &raw);

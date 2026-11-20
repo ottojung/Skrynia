@@ -7,7 +7,6 @@ use skrynia_server::http;
 use tokio::time::{Duration, timeout};
 use tower::ServiceExt;
 #[tokio::test]
-#[ignore = "requires compiled fd-eval-adapted skrynia-tools Program0 wasm (SKRYNIA_PROGRAM0_FD_EVAL_WASM)"]
 async fn slow_consumer_streams_large_payload() {
     let raw = [0x71u8; 32];
     let (k, dir) = super::setup("slow", &super::echo_guest(), &raw);

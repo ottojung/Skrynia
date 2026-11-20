@@ -7,7 +7,6 @@ use skrynia_server::http;
 use std::fs;
 use tower::ServiceExt;
 #[tokio::test]
-#[ignore = "requires compiled fd-eval-adapted skrynia-tools Program0 wasm (SKRYNIA_PROGRAM0_FD_EVAL_WASM)"]
 async fn sha256_verifier_rotation_denies_old_token() {
     let raw = [0x42u8; 32];
     let (k, dir) = super::setup("rot", &super::echo_guest(), &raw);

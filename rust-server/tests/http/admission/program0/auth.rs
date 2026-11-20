@@ -6,7 +6,6 @@ use http_body_util::BodyExt;
 use skrynia_server::http;
 use tower::ServiceExt;
 #[tokio::test]
-#[ignore = "requires compiled fd-eval-adapted skrynia-tools Program0 wasm (SKRYNIA_PROGRAM0_FD_EVAL_WASM)"]
 async fn denial_and_token_stripping() {
     let raw = [0x42u8; 32];
     let (k, dir) = super::setup("auth", &super::echo_guest(), &raw);

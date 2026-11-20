@@ -12,7 +12,6 @@ fn trap_guest() -> Vec<u8> {
     wat::parse_str(r#"(module(import "skrynia" "write"(func $w(param i32 i32 i32)(result i32)))(memory(export "memory") 1)(data(i32.const 0)"part")(func(export "skrynia_main")(param $i i32)(param $o i32)(result i32)(drop(call $w(local.get $o)(i32.const 0)(i32.const 4))) unreachable (i32.const 0)))"#).unwrap()
 }
 #[tokio::test]
-#[ignore = "requires compiled fd-eval-adapted skrynia-tools Program0 wasm (SKRYNIA_PROGRAM0_FD_EVAL_WASM)"]
 async fn denied_guest_imports_and_traps() {
     let raw = [0x31u8; 32];
     let (k, dir) = super::setup("deny", &privileged_guest(), &raw);

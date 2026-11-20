@@ -8,7 +8,6 @@ use std::fs;
 use tokio::time::{Duration, timeout};
 use tower::ServiceExt;
 #[tokio::test]
-#[ignore = "requires compiled fd-eval-adapted skrynia-tools Program0 wasm (SKRYNIA_PROGRAM0_FD_EVAL_WASM)"]
 async fn streams_ten_mebibytes_with_token_stripped() {
     let raw = [0x11u8; 32];
     let (k, dir) = super::setup("str", &super::echo_guest(), &raw);

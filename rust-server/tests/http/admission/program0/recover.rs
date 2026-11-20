@@ -8,7 +8,6 @@ use std::{fs, io};
 use tokio::time::{Duration, timeout};
 use tower::ServiceExt;
 #[tokio::test]
-#[ignore = "requires compiled fd-eval-adapted skrynia-tools Program0 wasm (SKRYNIA_PROGRAM0_FD_EVAL_WASM)"]
 async fn cancellation_and_restart() {
     let raw = [0x55u8; 32];
     let (k, dir) = super::setup("rec", &super::echo_guest(), &raw);

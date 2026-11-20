@@ -7,7 +7,6 @@ use skrynia_server::{boot, http};
 use std::fs;
 use tower::ServiceExt;
 #[tokio::test]
-#[ignore = "requires compiled fd-eval-adapted skrynia-tools Program0 wasm (SKRYNIA_PROGRAM0_FD_EVAL_WASM)"]
 async fn restart_preserves_rotated_sha256_verifier() {
     let raw = [0x24u8; 32];
     let (k, dir) = super::setup("rst", &super::echo_guest(), &raw);
