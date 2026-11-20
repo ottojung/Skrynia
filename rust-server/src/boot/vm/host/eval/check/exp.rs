@@ -1,3 +1,12 @@
+fn main_sig(ft: &wasmtime::FuncType) -> bool {
+    let p: Vec<_> = ft.params().collect();
+    let r: Vec<_> = ft.results().collect();
+    matches!(
+        p.as_slice(),
+        [wasmtime::ValType::I32, wasmtime::ValType::I32]
+    ) && matches!(r.as_slice(), [wasmtime::ValType::I32])
+}
+
 pub fn ok(module: &wasmtime::Module) -> bool {
     let mut mem = false;
     let mut main = false;
@@ -14,7 +23,7 @@ pub fn ok(module: &wasmtime::Module) -> bool {
                 let Some(ft) = ty.func() else {
                     return false;
                 };
-                if !super::sig(ft) {
+                if !main_sig(ft) {
                     return false;
                 }
                 main = true;

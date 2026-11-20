@@ -1,7 +1,8 @@
-pub fn link_invoke(
+pub fn add(
     linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>,
     cb: Option<wasmtime::Func>,
 ) -> Result<(), i32> {
+    crate::boot::vm::host::fd::add_stream(linker).map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
     match cb {
         None => {
             linker
@@ -28,7 +29,7 @@ pub fn link_invoke(
                           dp: u32,
                           dc: u32|
                           -> i32 {
-                        super::inv::do_invoke(&mut c, cb_func, rp, rl, dp, dc)
+                        super::inv::call(&mut c, cb_func, rp, rl, dp, dc)
                     },
                 )
                 .map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;

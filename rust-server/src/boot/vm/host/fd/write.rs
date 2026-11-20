@@ -11,6 +11,9 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                 if len > crate::boot::limits::MAX_IO {
                     return crate::boot::vm::codes::ERR_LIMIT;
                 }
+                if let Err(e) = super::guard::check(c.data(), crate::fs::Fd(fd)) {
+                    return e;
+                }
                 let mem = match crate::boot::vm::mem::get(&mut c) {
                     Ok(x) => x,
                     Err(e) => return e,

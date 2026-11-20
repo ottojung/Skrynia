@@ -1,4 +1,4 @@
-pub fn copy_res(
+pub fn res(
     c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
     root_mem: wasmtime::Memory,
     res_base: u32,
@@ -13,11 +13,11 @@ pub fn copy_res(
         Ok(x) => x,
         Err(e) => return e,
     };
-    let child_mem = match crate::boot::vm::mem::get(c) {
+    let mem = match crate::boot::vm::mem::get(c) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    if crate::boot::vm::mem::write_buf(c, child_mem, res_ptr, &resp).is_err() {
+    if crate::boot::vm::mem::write_buf(c, mem, res_ptr, &resp).is_err() {
         return crate::boot::vm::codes::ERR_RANGE;
     }
     n as i32

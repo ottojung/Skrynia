@@ -1,6 +1,8 @@
 mod cache;
+mod cap;
 mod frame;
 pub use cache::{Cache, MAX_MODULE_BYTES};
+pub use cap::GuestCap;
 pub use frame::Frame;
 use std::sync::Arc;
 
@@ -12,6 +14,7 @@ pub struct Vm {
     pub frames: Vec<Frame>,
     pub cache: Arc<Cache>,
     pub depth: u32,
+    pub guest: Option<GuestCap>,
     pub limits: wasmtime::StoreLimits,
 }
 
@@ -30,6 +33,7 @@ impl Vm {
             frames: Vec::new(),
             cache,
             depth: 0,
+            guest: None,
             limits: wasmtime::StoreLimitsBuilder::new()
                 .memory_size(64 * 1024 * 1024)
                 .table_elements(10_000)

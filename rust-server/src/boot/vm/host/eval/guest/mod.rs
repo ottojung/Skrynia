@@ -1,27 +1,23 @@
 mod call;
 mod copy;
 mod exec;
-mod fin;
+mod fds;
+mod grow;
 mod inv;
 mod link;
-mod mem;
 
-pub fn run_child(
+pub fn run(
     c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
     module: &wasmtime::Module,
-    input: &[u8],
+    in_fd: i32,
+    out_fd: i32,
     cb: Option<wasmtime::Func>,
-    out_ptr: u32,
-    out_cap: u32,
 ) -> i32 {
     if c.data().depth >= 32 {
         return crate::boot::vm::codes::ERR_LIMIT;
     }
     c.data_mut().depth += 1;
-    let res = exec::run_inner(c, module, input, cb, out_ptr, out_cap);
+    let r = exec::run(c, module, in_fd, out_fd, cb);
     c.data_mut().depth -= 1;
-    match res {
-        Ok(n) => n,
-        Err(e) => e,
-    }
+    r
 }

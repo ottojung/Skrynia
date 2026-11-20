@@ -1,33 +1,23 @@
-pub struct Args {
-    pub code_ptr: u32,
-    pub code_len: u32,
-    pub in_ptr: u32,
-    pub in_len: u32,
-    pub cb_idx: i32,
-    pub out_ptr: u32,
-    pub out_cap: u32,
-}
-
-pub fn eval(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: Args) -> i32 {
-    if a.code_len as usize > crate::boot::vm::state::MAX_MODULE_BYTES {
+pub fn eval(
+    c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
+    cp: u32,
+    cl: u32,
+    in_fd: i32,
+    out_fd: i32,
+    cb_idx: i32,
+) -> i32 {
+    if cl as usize > crate::boot::vm::state::MAX_MODULE_BYTES {
         return crate::boot::vm::codes::ERR_LIMIT;
     }
     let mem = match crate::boot::vm::mem::get(c) {
         Ok(m) => m,
         Err(e) => return e,
     };
-    let code = match crate::boot::vm::mem::read_buf(c, mem, a.code_ptr, a.code_len) {
+    let code = match crate::boot::vm::mem::read_buf(c, mem, cp, cl) {
         Ok(x) => x,
         Err(e) => return e,
     };
-    let input = match crate::boot::vm::mem::read_buf(c, mem, a.in_ptr, a.in_len) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    if let Some(f) = c.data_mut().frames.first_mut() {
-        f.last_overflow = -1;
-    }
-    let cb = match super::cb::get_cb(c, a.cb_idx) {
+    let cb = match super::cb::get_cb(c, cb_idx) {
         Ok(x) => x,
         Err(e) => return e,
     };
@@ -38,5 +28,5 @@ pub fn eval(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: Args) -
     if !super::check::module_ok(&module) {
         return crate::boot::vm::codes::ERR_INVALID;
     }
-    super::child::run_child(c, &module, &input, cb, a.out_ptr, a.out_cap)
+    super::guest::run(c, &module, in_fd, out_fd, cb)
 }

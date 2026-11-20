@@ -1,4 +1,4 @@
-pub fn call_cb(
+pub fn invoke(
     c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
     cb: wasmtime::Func,
     req: &[u8],
@@ -22,7 +22,7 @@ pub fn call_cb(
         Some(v) => v,
         None => return crate::boot::vm::codes::ERR_LIMIT,
     };
-    if let Err(e) = super::mem::ensure(c, root_mem, need) {
+    if let Err(e) = super::grow::ensure(c, root_mem, need) {
         return e;
     }
     if crate::boot::vm::mem::write_buf(c, root_mem, base, req).is_err() {
@@ -39,5 +39,5 @@ pub fn call_cb(
     if n < 0 {
         return n;
     }
-    super::copy::copy_res(c, root_mem, res_base, res_ptr, n as u32, res_cap)
+    super::copy::res(c, root_mem, res_base, res_ptr, n as u32, res_cap)
 }

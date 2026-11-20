@@ -32,18 +32,5 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
             },
         )
         .map_err(|e| e.to_string())?;
-    linker
-        .func_wrap(
-            "skrynia",
-            "eval_output_len",
-            |c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>| -> i32 {
-                c.data()
-                    .frames
-                    .first()
-                    .map(|f| f.last_overflow)
-                    .unwrap_or(-1)
-            },
-        )
-        .map_err(|e| e.to_string())?;
     Ok(())
 }
