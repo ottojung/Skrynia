@@ -17,8 +17,7 @@ pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
 pub fn program1(name: &str) -> Option<(&'static str, &'static str)> {
     Some(match name {
         "read" | "write" => ("iii", "i"),
-        "truncate" | "seek" => ("il", "i"),
-        "close" | "sync" => ("i", "i"),
+        "close" => ("i", "i"),
         _ => return None,
     })
 }

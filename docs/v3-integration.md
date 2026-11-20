@@ -83,3 +83,28 @@ A fuel-exhausted root may fail, but it must not disable the next mutation.
 This lock serializes Program 0's mutation calls but does not turn a set
 of filesystem syscalls into a durable transaction; the operator-supplied
 Program 0 remains responsible for atomic publication and crash recovery.
+
+## Operator-supplied streaming Program 1 (draft)
+
+The optional root-only import run_program1(input_fd, output_fd) transfers two
+forward-only descriptor capabilities into a distinct operator-supplied
+Program 1 WASM VM. Program 0 may simply call this import and return its
+status; the root need not load program code, buffer application bytes,
+inspect protocol frames, or implement stateful application semantics.
+
+Operators independently provide SKRYNIA_PROGRAM1_WASM. The kernel validates
+and compiles the Program 1 module at startup, before serving requests. If
+Program 1 is missing, run_program1 fails closed. Its import allowlist is
+restricted to read, write and close; a child attempting seek, truncate,
+sync, filesystem paths, global RAM or root eval fails startup validation.
+The input FD is read-only, the output FD is write-only. Code runs with
+independent memory and finite fuel. Root may not steal back a transferred
+descriptor until Program 1 terminates. Large requests and responses
+are processed in bounded chunks rather than buffered into Program 0.
+
+This is a transport capability boundary, NOT yet a durable stateful
+program API. A nonzero user program needs a separately specified, explicit
+least-authority persistent storage/CAS service before handling application
+data or immutable code activation; that must not be implemented as
+business logic inside the dumb proxy root. Do not deploy this draft
+as a production replacement for existing v2 data.
