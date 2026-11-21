@@ -1,3 +1,4 @@
+mod dir;
 mod nested;
 mod old;
 mod reuse;
