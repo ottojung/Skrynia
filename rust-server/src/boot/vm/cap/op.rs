@@ -9,4 +9,5 @@ pub enum FsOp {
     Delete,
     Exists,
     IsDir,
+    OpenDiskWrite,
 }

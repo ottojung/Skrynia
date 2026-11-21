@@ -21,7 +21,13 @@ fn node_ops_and_rename() {
         .unwrap();
     assert!(s.is_dir(Some(U), b"d").unwrap());
     let fd = s
-        .open_disk(Some(U), &mut fds, b"d/a", fs::disk::DiskMode::read_write())
+        .open_disk(
+            Some(U),
+            &mut fds,
+            b"d/a",
+            fs::disk::DiskMode::read_write(),
+            0,
+        )
         .unwrap();
     s.write(&mut fds, fd, b"hi").unwrap();
     s.close(&mut fds, fd).unwrap();

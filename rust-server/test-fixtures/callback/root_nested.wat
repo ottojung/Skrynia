@@ -39,6 +39,6 @@
    (drop(call $close(local.get $fd)))
    (if (i32.le_s(local.get $n)(i32.const 0))
      (then(return(i32.const -5))))
-   (drop(call $scope(i32.const 0)(i32.const 0)(i32.const 0)(i32.const 127)))
+   (drop(call $scope(i32.const 0)(i32.const 0)(i32.const 0)(i32.const 255)))
    (call $eval_del(i32.const 4096)(local.get $n)
      (local.get $in)(local.get $out)(i32.const 0))))

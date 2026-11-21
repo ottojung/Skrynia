@@ -11,6 +11,7 @@ fn newly_created_disk_files_exclude_group_and_other() {
             &mut fds,
             b"private",
             skrynia_server::fs::disk::DiskMode::create_new_rw(),
+            0,
         )
         .unwrap();
     k.fs().close(&mut fds, fd).unwrap();

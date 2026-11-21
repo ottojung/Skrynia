@@ -25,7 +25,8 @@ fn rejects_bad_and_escaping_paths() {
             Some(U),
             &mut fds,
             b"../out",
-            fs::disk::DiskMode::read_write()
+            fs::disk::DiskMode::read_write(),
+            0,
         )
         .is_err()
     );
