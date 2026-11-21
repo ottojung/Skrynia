@@ -36,7 +36,8 @@ fn run() -> i32 {
     };
     match eng.precompile_module(code) {
         Ok(out) if out.len() <= MAX_PRE => {
-            if std::io::stdout().write_all(&out).is_err() {
+            let env = super::attest::wrap(&out);
+            if std::io::stdout().write_all(&env).is_err() {
                 return 3;
             }
             0
