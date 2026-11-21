@@ -49,3 +49,5 @@ mod case;
 mod exports;
 mod imports;
 mod qualify;
+mod regular;
+mod root_size;
