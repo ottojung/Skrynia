@@ -23,6 +23,9 @@ fn run(
     des: u64,
     op: u32,
 ) -> i32 {
+    if let Err(e) = super::super::fd::guard::check(c.data(), crate::fs::Fd(fd)) {
+        return e;
+    }
     let ok = matches!(
         c.data().fds.get(crate::fs::Fd(fd)),
         Some(crate::fs::store::Item::Ram(_))
