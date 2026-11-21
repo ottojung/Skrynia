@@ -1,0 +1,12 @@
+(module
+  (import "skrynia" "read" (func $rd (param i32 i32 i32) (result i32)))
+  (import "skrynia" "write" (func $wr (param i32 i32 i32) (result i32)))
+  (memory (export "memory") 2)
+  (func (export "skrynia_main")
+    (param $in i32) (param $out i32) (result i32)
+    (local $n i32)
+    (local.set $n (call $rd (local.get $in) (i32.const 0) (i32.const 65536)))
+    (if (i32.lt_s (local.get $n) (i32.const 0)) (then (return (local.get $n))))
+    (drop (call $wr (local.get $out) (i32.const 0) (local.get $n)))
+    (i32.const 0))
+)

@@ -1,6 +1,13 @@
 mod setup;
 use setup::setup;
 mod private;
+mod ram;
+mod safe_path;
+mod v3_codes;
+mod v3_eval;
+mod v3_fixtures;
+mod v3_nested;
+mod v3_ram;
 use skrynia_server::fs;
 use std::fs as stdfs;
 #[test]
