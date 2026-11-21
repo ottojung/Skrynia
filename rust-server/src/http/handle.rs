@@ -1,4 +1,4 @@
-use super::{flow, input, output, pump, respond, router::App};
+use super::{flow, input, output, pump, respond, router::App, term};
 use axum::{
     extract::{Request, State},
     http::{Method, StatusCode},
@@ -22,15 +22,16 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
         Ok(permit) => permit,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
+    let t = term::new();
     let (tx, rx) = tokio::sync::mpsc::channel(2);
     let (out_tx, out_rx) = tokio::sync::mpsc::channel(2);
-    let pump = tokio::spawn(pump::run(request.into_body(), tx, lim));
+    let pump = tokio::spawn(pump::run(request.into_body(), tx, t.clone(), lim));
     let kernel = app.kernel;
     let worker_tx = out_tx.clone();
     let worker = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         kernel.invoke_stream(
-            Box::new(input::Input::new(rx)),
+            Box::new(input::Input::new(rx, t)),
             lim.max as u64,
             Box::new(output::Output(worker_tx)),
         )
