@@ -26,7 +26,7 @@ impl Kernel {
         let engine = Engine::new(&cfg).map_err(|e| format!("engine: {e}"))?;
         let bytes = root::bytes(root_wasm)?;
         let root =
-            vm::compile::bounded(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
+            vm::compile::trusted(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
         validate::check(&root)?;
         let operator = Arc::new(crate::fs::root::Root::open(operator_dir)?);
         let user = Arc::new(crate::fs::root::Root::open(user_dir)?);
