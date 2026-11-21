@@ -4,6 +4,13 @@ on:
     branches: [main, 'release/**']
   pull_request:
     branches: [main, 'release/**']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Explicitly publish the independently qualified main image"
+        required: true
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -131,14 +138,14 @@ jobs:
             --resolve alice.apps.example.org:17443:127.0.0.1 \
             https://alice.apps.example.org:17443/cross)" != 200
       - name: Log in to registry
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish == true
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish verified image
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish == true
         run: |
           docker tag skrynia:ci ghcr.io/ottojung/skrynia:sha-${{ steps.version.outputs.commit }}
           docker push ghcr.io/ottojung/skrynia:sha-${{ steps.version.outputs.commit }}
