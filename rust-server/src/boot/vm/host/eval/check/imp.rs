@@ -11,6 +11,9 @@ fn sig_ok(name: &str, ft: &wasmtime::FuncType, eval: bool) -> bool {
         "eval" | "eval_delegate" if eval => {
             p.len() == 5 && p.iter().all(|x| matches!(x, wasmtime::ValType::I32))
         }
+        "eval_buffered" if eval => {
+            p.len() == 7 && p.iter().all(|x| matches!(x, wasmtime::ValType::I32))
+        }
         _ => false,
     }
 }

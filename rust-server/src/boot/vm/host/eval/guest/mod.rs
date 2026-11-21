@@ -1,11 +1,11 @@
 mod call;
-mod child;
+pub(super) mod child;
 mod copy;
 mod exec;
-mod fds;
+pub(super) mod fds;
 mod grow;
 mod inv;
-mod link;
+pub(super) mod link;
 mod stage;
 
 pub fn run(

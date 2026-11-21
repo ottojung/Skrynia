@@ -1,4 +1,5 @@
 mod basic;
+mod buffered;
 mod compile_bound;
 mod compile_fds;
 mod guard;
