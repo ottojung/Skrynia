@@ -72,7 +72,8 @@ jobs:
           docker rm -f skrynia-test >/dev/null 2>&1 || true
           docker run --rm -d --name skrynia-test \
             --read-only --tmpfs /tmp \
-            --tmpfs /var/lib/skrynia:uid=1000,gid=1000,mode=0700 \
+            --tmpfs /var/lib/skrynia/operator:uid=1000,gid=1000,mode=0700 \
+            --tmpfs /var/lib/skrynia/user:uid=1000,gid=1000,mode=0700 \
             -v "$PWD/ci-root.wasm:/etc/skrynia-test-root.wasm:ro" \
             -p 127.0.0.1:17380:17380 \
             -e SKRYNIA_ROOT_WASM=/etc/skrynia-test-root.wasm \
@@ -90,6 +91,10 @@ jobs:
           test "$ready" = 1
           test "$(docker exec skrynia-test id -u)" = 1000
           test "$(docker exec skrynia-test stat -c '%a' /var/lib/skrynia)" = 700
+          test "$(docker exec skrynia-test stat -c '%a' /var/lib/skrynia/operator)" = 700
+          test "$(docker exec skrynia-test stat -c '%a' /var/lib/skrynia/user)" = 700
+          test "$(docker exec skrynia-test stat -c '%d' /var/lib/skrynia/operator)" != \
+            "$(docker exec skrynia-test stat -c '%d' /var/lib/skrynia/user)"
           status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:17380/)"
           test "$status" = 404
           test "$(docker inspect --format '{{.Image}}' skrynia-test)" = \
