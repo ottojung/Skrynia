@@ -14,16 +14,17 @@ pub fn take(
     let ib = match c.data_mut().fds.remove(crate::fs::Fd(b)) {
         Some(x) => x,
         None => {
-            let _ = c.data_mut().fds.insert(ia);
+            let _ = c.data_mut().fds.insert(ia, 0);
             return Err(crate::boot::vm::codes::ERR_BADFD);
         }
     };
+    let owner = c.data().fd_scope;
     let ga = c
         .data_mut()
         .fds
-        .insert(ia)
+        .insert(ia, owner)
         .map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
-    let gb = match c.data_mut().fds.insert(ib) {
+    let gb = match c.data_mut().fds.insert(ib, owner) {
         Ok(x) => x,
         Err(_) => {
             let _ = c.data_mut().fds.remove(ga);

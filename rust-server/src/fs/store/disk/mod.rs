@@ -9,6 +9,7 @@ impl Fs {
         fds: &mut crate::fs::table::Table<Item>,
         path: &[u8],
         mode: crate::fs::disk::DiskMode,
+        owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
         let rel = crate::fs::path::clean(path)?;
         let kind = root.unwrap_or_else(|| {
@@ -19,6 +20,6 @@ impl Fs {
             }
         });
         let e = crate::fs::disk::open_disk(self.root(kind), &rel, mode)?;
-        fds.insert(Item::File(e))
+        fds.insert(Item::File(e), owner)
     }
 }

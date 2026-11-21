@@ -4,5 +4,12 @@ pub fn check(vm: &crate::boot::vm::state::Vm, fd: crate::fs::Fd) -> Result<(), i
     {
         return Err(crate::boot::vm::codes::ERR_BADFD);
     }
-    Ok(())
+    if vm.fd_scope != 0 {
+        match vm.fds.owner(fd) {
+            Some(o) if o == vm.fd_scope => Ok(()),
+            _ => Err(crate::boot::vm::codes::ERR_BADFD),
+        }
+    } else {
+        Ok(())
+    }
 }

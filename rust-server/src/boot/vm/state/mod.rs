@@ -25,6 +25,8 @@ pub struct Vm {
     pub cur: Option<wasmtime::Instance>,
     pub fs_auth: crate::boot::vm::cap::FsAuth,
     pub fs_delegate: crate::boot::vm::cap::FsAuth,
+    pub fd_scope: u32,
+    pub fd_next_scope: u32,
 }
 
 impl Vm {

@@ -31,7 +31,7 @@ pub fn scope(
     let cap = super::super::super::cap::FsCaps {
         root: rk,
         prefix,
-        ops: ops & 0x7f,
+        ops: ops & 0xff,
     };
     if !super::check::allowed(&cap, &c.data().fs_auth.clone()) {
         return crate::boot::vm::codes::ERR_PERM;

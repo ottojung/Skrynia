@@ -23,16 +23,19 @@ pub fn invoke(
     let saved_cur = c.data().cur;
     let saved_auth = c.data().fs_auth.clone();
     let saved_delegate = c.data().fs_delegate.clone();
+    let (saved_scope, scope) = (c.data().fd_scope, c.data().fd_next_scope);
+    c.data_mut().fd_next_scope = if scope == u32::MAX { 1 } else { scope + 1 };
     c.data_mut().guest = prov.guard;
     c.data_mut().cur = Some(prov.inst);
-    // Callback runs as provider instance with explicit bounded callback-provider authority.
     c.data_mut().fs_auth = prov.fs_delegate.clone();
     c.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
+    c.data_mut().fd_scope = scope;
     let call = cb_t.call(&mut *c, (base, req.len() as u32, res_base, res_cap));
     c.data_mut().cur = saved_cur;
     c.data_mut().guest = saved_guard;
     c.data_mut().fs_auth = saved_auth;
     c.data_mut().fs_delegate = saved_delegate;
+    c.data_mut().fd_scope = saved_scope;
     match call {
         Ok(n) if n < 0 => n,
         Ok(n) => super::copy::res(c, p_mem, res_base, res_ptr, n as u32, res_cap),
