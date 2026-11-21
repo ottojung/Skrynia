@@ -14,7 +14,7 @@ pub fn done(
     result: Result<i32, i32>,
 ) -> i32 {
     let _ = c.data_mut().fds.remove(x.go);
-    let _ = c.data_mut().providers.pop();
+    c.data_mut().pop_provider();
     super::super::guest::fds::cleanup(c);
     c.data_mut().guest = x.guard;
     c.data_mut().cur = x.prev;

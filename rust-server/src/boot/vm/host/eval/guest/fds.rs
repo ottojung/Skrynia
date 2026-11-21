@@ -9,15 +9,22 @@ fn writable(it: &crate::fs::store::Item) -> bool {
         || matches!(it, crate::fs::store::Item::File(e) if e.can_write)
 }
 #[rustfmt::skip]
-pub fn take(
-    c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: i32, b: i32,
-) -> Result<(crate::fs::Fd, crate::fs::Fd), i32> {
+pub fn take(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: i32, b: i32) -> Result<(crate::fs::Fd, crate::fs::Fd), i32> { take_with(c, a, b, false) }
+#[rustfmt::skip]
+pub fn take_generated(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: i32, b: i32) -> Result<(crate::fs::Fd, crate::fs::Fd), i32> { take_with(c, a, b, true) }
+#[rustfmt::skip]
+fn take_with(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: i32, b: i32, generated: bool) -> Result<(crate::fs::Fd, crate::fs::Fd), i32> {
     if a == b { return Err(crate::boot::vm::codes::ERR_BADFD); }
     let (fa, fb) = (crate::fs::Fd(a), crate::fs::Fd(b));
-    for fd in [fa, fb] { super::super::super::fd::guard::scope(c.data(), fd)?; }
+    for fd in [fa, fb] {
+        if generated { super::super::super::fd::guard::scope(c.data(), fd)?; }
+        else { super::super::super::fd::guard::check(c.data(), fd)?; }
+    }
     let ia = c.data().fds.get(fa).ok_or(crate::boot::vm::codes::ERR_BADFD)?;
     let ib = c.data().fds.get(fb).ok_or(crate::boot::vm::codes::ERR_BADFD)?;
     if !readable(ia) || !writable(ib) { return Err(crate::boot::vm::codes::ERR_BADFD); }
+    if generated && !matches!(ia, crate::fs::store::Item::Input(_)) { return Err(crate::boot::vm::codes::ERR_BADFD); }
+    if generated && !matches!(ib, crate::fs::store::Item::BufferedOutput(_)) { return Err(crate::boot::vm::codes::ERR_BADFD); }
     let ia = c.data_mut().fds.remove(fa).ok_or(crate::boot::vm::codes::ERR_BADFD)?;
     let ib = c.data_mut().fds.remove(fb).ok_or(crate::boot::vm::codes::ERR_BADFD)?;
     let owner = c.data().fd_scope;
