@@ -14,9 +14,8 @@ pub fn run(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: &Args) -
         Ok(f) => f,
         Err(_) => return crate::boot::vm::codes::ERR_LIMIT,
     };
-    let out = crate::fs::store::Item::BufferedOutput(crate::fs::store::item::BufferedOutput::new(
-        a.res_cap as usize,
-    ));
+    let buf = crate::fs::store::item::BufferedOutput::new(a.res_cap as usize);
+    let out = crate::fs::store::Item::BufferedOutput(buf.clone());
     let out_fd = match c.data_mut().fds.insert(out) {
         Ok(f) => f,
         Err(_) => {
@@ -24,5 +23,5 @@ pub fn run(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: &Args) -
             return crate::boot::vm::codes::ERR_LIMIT;
         }
     };
-    super::go::exec(c, a, in_fd, out_fd, p.cb, &p.module)
+    super::go::exec(c, a, in_fd, out_fd, buf, p.cb, &p.module)
 }

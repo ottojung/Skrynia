@@ -2,6 +2,7 @@ pub struct Ctx {
     pub prev: Option<wasmtime::Instance>,
     pub guard: Option<crate::boot::vm::state::GuestCap>,
     pub go: crate::fs::Fd,
+    pub out: crate::fs::store::item::BufferedOutput,
     pub res_ptr: u32,
     pub res_cap: u32,
 }
@@ -10,14 +11,7 @@ pub fn done(
     x: Ctx,
     result: Result<i32, i32>,
 ) -> i32 {
-    let out = match c.data_mut().fds.remove(x.go) {
-        Some(crate::fs::store::Item::BufferedOutput(b)) => Some(b.take()),
-        Some(other) => {
-            let _ = c.data_mut().fds.insert(other);
-            None
-        }
-        None => None,
-    };
+    let _ = c.data_mut().fds.remove(x.go);
     let _ = c.data_mut().providers.pop();
     super::super::guest::fds::cleanup(c);
     c.data_mut().guest = x.guard;
@@ -31,9 +25,7 @@ pub fn done(
     if status != 0 {
         return status;
     }
-    let Some(bytes) = out else {
-        return crate::boot::vm::codes::ERR_FAULT;
-    };
+    let bytes = x.out.take();
     if bytes.len() as u32 > x.res_cap {
         return crate::boot::vm::codes::ERR_OVERFLOW;
     }

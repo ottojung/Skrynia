@@ -4,6 +4,7 @@ pub fn exec(
     a: &Args,
     in_fd: crate::fs::Fd,
     out_fd: crate::fs::Fd,
+    out: crate::fs::store::item::BufferedOutput,
     cb: Option<wasmtime::Func>,
     module: &wasmtime::Module,
 ) -> i32 {
@@ -30,6 +31,7 @@ pub fn exec(
         prev,
         guard,
         go,
+        out,
         res_ptr: a.res_ptr,
         res_cap: a.res_cap,
     };

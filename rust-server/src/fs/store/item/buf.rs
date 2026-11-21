@@ -1,22 +1,34 @@
+use std::sync::{Arc, Mutex};
+
+#[derive(Clone)]
 pub struct BufferedOutput {
+    inner: Arc<Mutex<Inner>>,
+}
+struct Inner {
     data: Vec<u8>,
     cap: usize,
 }
 impl BufferedOutput {
     pub fn new(cap: usize) -> Self {
         Self {
-            data: Vec::new(),
-            cap,
+            inner: Arc::new(Mutex::new(Inner {
+                data: Vec::new(),
+                cap,
+            })),
         }
     }
     pub fn write(&mut self, src: &[u8]) -> Result<usize, &'static str> {
-        if self.data.len().saturating_add(src.len()) > self.cap {
+        let mut g = self.inner.lock().map_err(|_| "io")?;
+        if g.data.len().saturating_add(src.len()) > g.cap {
             return Err("limit");
         }
-        self.data.extend_from_slice(src);
+        g.data.extend_from_slice(src);
         Ok(src.len())
     }
-    pub fn take(self) -> Vec<u8> {
-        self.data
+    pub fn take(&self) -> Vec<u8> {
+        match self.inner.lock() {
+            Ok(mut g) => std::mem::take(&mut g.data),
+            Err(_) => Vec::new(),
+        }
     }
 }
