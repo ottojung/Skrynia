@@ -15,6 +15,7 @@ pub fn spawn() -> Result<std::process::Child, &'static str> {
         use std::os::unix::process::CommandExt;
         unsafe {
             cmd.pre_exec(|| {
+                super::fds::mark_cloexec();
                 #[cfg(target_os = "linux")]
                 if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
                     return Err(std::io::Error::last_os_error());

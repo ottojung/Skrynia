@@ -1,4 +1,6 @@
+pub mod attest;
 mod child;
+pub mod fds;
 mod io;
 mod prog;
 mod run;

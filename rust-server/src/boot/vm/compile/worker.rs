@@ -7,6 +7,7 @@ pub fn main() -> ! {
 }
 
 fn run() -> i32 {
+    super::fds::close_inherited();
     let max = crate::boot::vm::state::MAX_MODULE_BYTES;
     let mut buf = Vec::with_capacity(max.min(1024 * 1024));
     if std::io::stdin()
@@ -33,7 +34,8 @@ fn run() -> i32 {
     };
     match eng.precompile_module(&buf) {
         Ok(out) if out.len() <= MAX_PRE => {
-            if std::io::stdout().write_all(&out).is_err() {
+            let env = super::attest::wrap(&out);
+            if std::io::stdout().write_all(&env).is_err() {
                 return 3;
             }
             0
