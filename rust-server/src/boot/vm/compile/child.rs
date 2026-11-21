@@ -19,6 +19,7 @@ pub fn spawn() -> Result<std::process::Child, &'static str> {
                 if libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0 {
                     return Err(std::io::Error::last_os_error());
                 }
+                super::fds::close_inherited()?;
                 let cpu = libc::rlimit {
                     rlim_cur: 4,
                     rlim_max: 4,

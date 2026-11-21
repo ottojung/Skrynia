@@ -1,4 +1,5 @@
 mod child;
+mod fds;
 mod io;
 mod prog;
 mod run;
