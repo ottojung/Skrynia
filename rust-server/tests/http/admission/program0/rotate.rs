@@ -13,7 +13,7 @@ async fn sha256_verifier_rotation_denies_old_token() {
     let app = http::router(k);
     let raw2 = [0x24u8; 32];
     fs::write(
-        dir.join("data/security/program0.sha256"),
+        dir.join("operator/security/program0.sha256"),
         super::verifier(&raw2),
     )
     .unwrap();

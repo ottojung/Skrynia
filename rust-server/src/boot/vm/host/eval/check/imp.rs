@@ -4,16 +4,14 @@ fn sig_ok(name: &str, ft: &wasmtime::FuncType, eval: bool) -> bool {
     if !matches!(r.as_slice(), [wasmtime::ValType::I32]) {
         return false;
     }
+    let all_i32 = p.iter().all(|x| matches!(x, wasmtime::ValType::I32));
     match name {
-        "invoke" => p.len() == 4 && p.iter().all(|x| matches!(x, wasmtime::ValType::I32)),
-        "read" | "write" => p.len() == 3 && p.iter().all(|x| matches!(x, wasmtime::ValType::I32)),
+        "invoke" => p.len() == 4 && all_i32,
+        "read" | "write" => p.len() == 3 && all_i32,
         "close" => matches!(p.as_slice(), [wasmtime::ValType::I32]),
-        "eval" | "eval_delegate" if eval => {
-            p.len() == 5 && p.iter().all(|x| matches!(x, wasmtime::ValType::I32))
-        }
-        "eval_buffered" if eval => {
-            p.len() == 7 && p.iter().all(|x| matches!(x, wasmtime::ValType::I32))
-        }
+        "eval" | "eval_delegate" if eval => p.len() == 5 && all_i32,
+        "eval_buffered" if eval => p.len() == 7 && all_i32,
+        "fs_delegate_scope" if eval => p.len() == 4 && all_i32,
         _ => false,
     }
 }

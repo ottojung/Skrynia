@@ -12,7 +12,13 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                match c.data().fs.delete(&p) {
+                let root =
+                    match super::super::fs_cap::resolve(&c, crate::boot::vm::cap::FsOp::Delete, &p)
+                    {
+                        Ok(r) => r,
+                        Err(e) => return e,
+                    };
+                match c.data().fs.delete(root, &p) {
                     Ok(()) => 0,
                     Err(e) => crate::boot::vm::err::map(e),
                 }
