@@ -1,6 +1,14 @@
-use super::output::Chunk;
+use super::output::{Abort, Chunk};
 use std::io;
-use tokio::{sync::mpsc, task::JoinHandle};
+use std::sync::atomic::Ordering;
+use tokio::{sync::mpsc, task::JoinHandle, time::Duration};
+
+pub fn watchdog(abort: Abort, total: Duration) {
+    tokio::spawn(async move {
+        tokio::time::sleep(total).await;
+        abort.store(true, Ordering::Relaxed);
+    });
+}
 
 pub async fn supervise(
     mut pump: JoinHandle<io::Result<()>>,
