@@ -6,17 +6,18 @@ pub fn run(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, a: &Args) -
     };
     let input =
         crate::fs::store::item::Input::new(Box::new(std::io::Cursor::new(p.req)), a.req_len as u64);
+    let owner = c.data().fd_scope;
     let in_fd = match c
         .data_mut()
         .fds
-        .insert(crate::fs::store::Item::Input(input))
+        .insert(crate::fs::store::Item::Input(input), owner)
     {
         Ok(f) => f,
         Err(_) => return crate::boot::vm::codes::ERR_LIMIT,
     };
     let buf = crate::fs::store::item::BufferedOutput::new(a.res_cap as usize);
     let out = crate::fs::store::Item::BufferedOutput(buf.clone());
-    let out_fd = match c.data_mut().fds.insert(out) {
+    let out_fd = match c.data_mut().fds.insert(out, owner) {
         Ok(f) => f,
         Err(_) => {
             let _ = c.data_mut().fds.remove(in_fd);

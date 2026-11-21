@@ -1,5 +1,6 @@
 const FUEL: u64 = 128_000_000;
 
+#[rustfmt::skip]
 pub fn invoke(
     kernel: &crate::boot::Kernel,
     input: Box<dyn std::io::Read + Send>,
@@ -18,20 +19,10 @@ pub fn invoke(
         ),
     );
     store.limiter(|vm| &mut vm.limits);
-    let fd = store
-        .data_mut()
-        .fds
-        .insert(crate::fs::store::Item::Input(
-            crate::fs::store::item::Input::new(input, max_bytes),
-        ))
-        .map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
-    let output_fd = store
-        .data_mut()
-        .fds
-        .insert(crate::fs::store::Item::Output(
-            crate::fs::store::item::Output::new(output),
-        ))
-        .map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
+    store.data_mut().fs_auth = crate::boot::vm::cap::FsAuth::Full;
+    store.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
+    let fd = store.data_mut().fds.insert(crate::fs::store::Item::Input(crate::fs::store::item::Input::new(input, max_bytes)), 0).map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
+    let output_fd = store.data_mut().fds.insert(crate::fs::store::Item::Output(crate::fs::store::item::Output::new(output)), 0).map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
     store
         .set_fuel(FUEL)
         .map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;

@@ -4,9 +4,15 @@ use std::fs;
 fn kernel(name: &str, root: &str) -> Kernel {
     let dir = std::env::temp_dir().join(name);
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("data")).unwrap();
+    fs::create_dir_all(dir.join("operator")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
     fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap()
+    Kernel::start(
+        &dir.join("r.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap()
 }
 
 #[test]
@@ -15,9 +21,15 @@ fn streaming_eval_echoes_through_fds() {
     let child = r#"(module(import "skrynia" "write"(func $w(param i32 i32 i32)(result i32)))(memory(export "memory") 1)(data(i32.const 0) "ok")(func(export "skrynia_main")(param $in i32)(param $out i32)(result i32)(drop(call $w(local.get $out)(i32.const 0)(i32.const 2)))(i32.const 0)))"#;
     let dir = std::env::temp_dir().join("v3-fd-echo");
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("data")).unwrap();
+    fs::create_dir_all(dir.join("operator")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
     fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
+    let k = Kernel::start(
+        &dir.join("r.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap();
     let out = k.invoke(&wat::parse_str(child).unwrap()).unwrap();
     assert_eq!(out, b"ok");
 }

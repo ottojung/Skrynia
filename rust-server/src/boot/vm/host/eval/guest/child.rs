@@ -1,26 +1,31 @@
-pub fn setup(
-    c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
-    eval: bool,
-) -> Result<
-    (
-        Option<wasmtime::Instance>,
-        Option<crate::boot::vm::state::GuestCap>,
-    ),
-    i32,
-> {
+#[rustfmt::skip]
+pub fn setup(c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>, eval: bool)
+    -> Result<(Option<wasmtime::Instance>, Option<crate::boot::vm::state::GuestCap>, crate::boot::vm::cap::FsAuth, crate::boot::vm::cap::FsAuth), i32> {
     let prev = c.data().cur;
     let guard = c.data().guest;
+    let auth = c.data().fs_auth.clone();
+    let delegate = c.data().fs_delegate.clone();
     let Some(pinst) = prev else {
         return Err(crate::boot::vm::codes::ERR_FAULT);
     };
+    let callback_scope = c.data().fd_next_scope;
+    let next = callback_scope
+        .checked_add(1)
+        .ok_or(crate::boot::vm::codes::ERR_LIMIT)?;
+    c.data_mut().fd_next_scope = next;
     c.data_mut()
         .providers
         .push(crate::boot::vm::state::ProviderCtx {
             inst: pinst,
             guard,
             eval,
+            fs_auth: auth.clone(),
+            fs_delegate: delegate.clone(),
+            callback_scope,
         });
-    Ok((prev, guard))
+    c.data_mut().fs_auth = crate::boot::vm::cap::FsAuth::Empty;
+    c.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
+    Ok((prev, guard, auth, delegate))
 }
 pub fn run(
     c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,

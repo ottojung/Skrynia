@@ -8,10 +8,16 @@ fn kernel(name: &str) -> (boot::Kernel, std::path::PathBuf) {
     let root = include_str!("../../../../test-fixtures/mutation_lock_root.wat");
     let dir = std::env::temp_dir().join(format!("http-mut-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("data")).unwrap();
+    fs::create_dir_all(dir.join("operator")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
     fs::write(dir.join("root.wasm"), wat::parse_str(root).unwrap()).unwrap();
     (
-        boot::Kernel::start(&dir.join("root.wasm"), &dir.join("data")).unwrap(),
+        boot::Kernel::start_with_roots(
+            &dir.join("root.wasm"),
+            &dir.join("operator"),
+            &dir.join("user"),
+        )
+        .unwrap(),
         dir,
     )
 }

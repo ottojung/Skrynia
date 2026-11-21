@@ -26,6 +26,10 @@ impl super::Vm {
                 .build(),
             providers: Vec::new(),
             cur: None,
+            fs_auth: crate::boot::vm::cap::FsAuth::Empty,
+            fs_delegate: crate::boot::vm::cap::FsAuth::Empty,
+            fd_scope: 0,
+            fd_next_scope: 1,
         }
     }
 }

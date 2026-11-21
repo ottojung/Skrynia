@@ -9,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = conf::Config::from_env()?;
-    let kernel = boot::Kernel::start(&cfg.root_wasm, &cfg.data_dir)?;
+    let kernel = boot::Kernel::start(&cfg.root_wasm, &cfg.operator_dir, &cfg.user_dir)?;
     let addr = std::env::var("SKRYNIA_BIND").unwrap_or_else(|_| "127.0.0.1:8080".into());
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, http::router(kernel))

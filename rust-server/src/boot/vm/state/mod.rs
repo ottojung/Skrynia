@@ -23,9 +23,18 @@ pub struct Vm {
     pub limits: wasmtime::StoreLimits,
     pub providers: Vec<ProviderCtx>,
     pub cur: Option<wasmtime::Instance>,
+    pub fs_auth: crate::boot::vm::cap::FsAuth,
+    pub fs_delegate: crate::boot::vm::cap::FsAuth,
+    pub fd_scope: u32,
+    pub fd_next_scope: u32,
 }
 
 impl Vm {
+    pub fn pop_provider(&mut self) {
+        if let Some(prov) = self.providers.pop() {
+            self.fds.remove_owner(prov.callback_scope);
+        }
+    }
     pub fn root_mut(&mut self) -> &mut Frame {
         &mut self.frames[0]
     }

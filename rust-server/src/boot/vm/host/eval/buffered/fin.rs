@@ -1,6 +1,8 @@
 pub struct Ctx {
     pub prev: Option<wasmtime::Instance>,
     pub guard: Option<crate::boot::vm::state::GuestCap>,
+    pub auth: crate::boot::vm::cap::FsAuth,
+    pub delegate: crate::boot::vm::cap::FsAuth,
     pub go: crate::fs::Fd,
     pub out: crate::fs::store::item::BufferedOutput,
     pub res_ptr: u32,
@@ -12,10 +14,12 @@ pub fn done(
     result: Result<i32, i32>,
 ) -> i32 {
     let _ = c.data_mut().fds.remove(x.go);
-    let _ = c.data_mut().providers.pop();
+    c.data_mut().pop_provider();
     super::super::guest::fds::cleanup(c);
     c.data_mut().guest = x.guard;
     c.data_mut().cur = x.prev;
+    c.data_mut().fs_auth = x.auth;
+    c.data_mut().fs_delegate = x.delegate;
     let status = match result {
         Ok(0) => 0,
         Ok(n) if n < 0 => n,

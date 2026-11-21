@@ -15,8 +15,14 @@ fn oversized_eval_module_fails_before_reading_guest_memory() {
   (i32.const 0)))"#;
     let dir = std::env::temp_dir().join("v3-eval-limit-fd");
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("data")).unwrap();
+    fs::create_dir_all(dir.join("operator")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
     fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
+    let k = Kernel::start(
+        &dir.join("r.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap();
     assert_eq!(k.invoke(b"").unwrap(), vec![1]);
 }

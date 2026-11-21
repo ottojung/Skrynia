@@ -1,14 +1,17 @@
-use super::{Fs, Item};
+use super::{Fs, Item, RootKind};
 
 impl Fs {
     pub fn open_directory(
         &self,
+        root: Option<RootKind>,
         fds: &mut crate::fs::table::Table<Item>,
         p: &[u8],
+        owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
         let rel = crate::fs::path::clean(p)?;
-        let e = crate::fs::dir::open_dir(&self.root, &rel)?;
-        fds.insert(Item::Dir(e))
+        let kind = root.unwrap_or(self.pick_read_root(p));
+        let e = crate::fs::dir::open_dir(self.root(kind), &rel)?;
+        fds.insert(Item::Dir(e), owner)
     }
     pub fn next_entry(
         &self,
