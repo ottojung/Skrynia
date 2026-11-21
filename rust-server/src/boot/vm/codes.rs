@@ -1,0 +1,12 @@
+pub const ERR_INVALID: i32 = -1;
+pub const ERR_NOT_FOUND: i32 = -2;
+pub const ERR_EXISTS: i32 = -3;
+pub const ERR_PERM: i32 = -4;
+pub const ERR_IO: i32 = -5;
+pub const ERR_NOSPACE: i32 = -6;
+pub const ERR_BADFD: i32 = -7;
+pub const ERR_RANGE: i32 = -8;
+pub const ERR_FAULT: i32 = -9;
+pub const ERR_LIMIT: i32 = -10;
+pub const ERR_OVERFLOW: i32 = -11;
+pub const ERR_UNSUPPORTED: i32 = -12;
