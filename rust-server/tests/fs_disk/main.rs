@@ -9,7 +9,6 @@ mod v3_fixtures;
 mod v3_nested;
 mod v3_ram;
 use skrynia_server::fs::{self, disk::DiskMode};
-use std::fs as stdfs;
 #[test]
 fn disk_ops_modes_and_errors() {
     let (dir, k) = setup("skrynia-fs-disk");
@@ -47,5 +46,5 @@ fn disk_ops_modes_and_errors() {
         s.open_disk(u, &mut fds, b"fifo", DiskMode::read_only(), 0)
             .is_err()
     );
-    let _ = stdfs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&dir);
 }
