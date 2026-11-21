@@ -5,4 +5,5 @@ pub struct ProviderCtx {
     pub eval: bool,
     pub fs_auth: crate::boot::vm::cap::FsAuth,
     pub fs_delegate: crate::boot::vm::cap::FsAuth,
+    pub callback_scope: u32,
 }

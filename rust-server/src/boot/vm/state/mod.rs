@@ -30,6 +30,11 @@ pub struct Vm {
 }
 
 impl Vm {
+    pub fn pop_provider(&mut self) {
+        if let Some(prov) = self.providers.pop() {
+            self.fds.remove_owner(prov.callback_scope);
+        }
+    }
     pub fn root_mut(&mut self) -> &mut Frame {
         &mut self.frames[0]
     }
