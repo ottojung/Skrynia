@@ -1,6 +1,6 @@
 mod ctl;
 pub mod ctl_pub;
-mod guard;
+pub(crate) mod guard;
 mod open;
 pub mod read;
 mod seek;

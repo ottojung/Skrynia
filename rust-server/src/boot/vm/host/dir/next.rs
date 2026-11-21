@@ -8,6 +8,9 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
              dst: u32,
              cap: u32|
              -> i32 {
+                if let Err(e) = super::super::fd::guard::check(c.data(), crate::fs::Fd(fd)) {
+                    return e;
+                }
                 let m = match crate::boot::vm::mem::get(&mut c) {
                     Ok(x) => x,
                     Err(e) => return e,
