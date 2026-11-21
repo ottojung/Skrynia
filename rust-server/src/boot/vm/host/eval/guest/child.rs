@@ -5,11 +5,15 @@ pub fn setup(
     (
         Option<wasmtime::Instance>,
         Option<crate::boot::vm::state::GuestCap>,
+        crate::boot::vm::cap::FsAuth,
+        crate::boot::vm::cap::FsAuth,
     ),
     i32,
 > {
     let prev = c.data().cur;
     let guard = c.data().guest;
+    let auth = c.data().fs_auth.clone();
+    let delegate = c.data().fs_delegate.clone();
     let Some(pinst) = prev else {
         return Err(crate::boot::vm::codes::ERR_FAULT);
     };
@@ -19,8 +23,12 @@ pub fn setup(
             inst: pinst,
             guard,
             eval,
+            fs_auth: auth.clone(),
+            fs_delegate: delegate.clone(),
         });
-    Ok((prev, guard))
+    c.data_mut().fs_auth = crate::boot::vm::cap::FsAuth::Empty;
+    c.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
+    Ok((prev, guard, auth, delegate))
 }
 pub fn run(
     c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,

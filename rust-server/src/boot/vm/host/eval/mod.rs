@@ -10,5 +10,6 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
 }
 pub fn add_funcs(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
     reg::add(linker)?;
-    buffered::add(linker)
+    buffered::add(linker)?;
+    crate::boot::vm::host::fsscope::add(linker)
 }

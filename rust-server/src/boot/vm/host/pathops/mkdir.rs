@@ -16,11 +16,19 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                     Ok(x) => x,
                     Err(e) => return e,
                 };
+                let root = match super::super::fs_cap::resolve(
+                    &c,
+                    crate::boot::vm::cap::FsOp::Mkdir,
+                    &p,
+                ) {
+                    Ok(r) => r,
+                    Err(e) => return e,
+                };
                 let mode = crate::fs::node::MkdirMode {
                     create: m & 4 != 0,
                     exclusive: m & 8 != 0,
                 };
-                match c.data().fs.mkdir(&p, mode) {
+                match c.data().fs.mkdir(root, &p, mode) {
                     Ok(()) => 0,
                     Err(e) => crate::boot::vm::err::map(e),
                 }

@@ -19,13 +19,20 @@ pub fn invoke(
     let Ok(cb_t) = cb.typed::<(u32, u32, u32, u32), i32>(&*c) else {
         return crate::boot::vm::codes::ERR_INVALID;
     };
-    let saved = c.data_mut().guest.take();
-    let prev = c.data().cur;
+    let saved_guard = c.data_mut().guest.take();
+    let saved_cur = c.data().cur;
+    let saved_auth = c.data().fs_auth.clone();
+    let saved_delegate = c.data().fs_delegate.clone();
     c.data_mut().guest = prov.guard;
     c.data_mut().cur = Some(prov.inst);
+    // Callback runs as provider instance but attenuated to caller's (child's) authority.
+    c.data_mut().fs_auth = saved_auth.clone();
+    c.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
     let call = cb_t.call(&mut *c, (base, req.len() as u32, res_base, res_cap));
-    c.data_mut().cur = prev;
-    c.data_mut().guest = saved;
+    c.data_mut().cur = saved_cur;
+    c.data_mut().guest = saved_guard;
+    c.data_mut().fs_auth = saved_auth;
+    c.data_mut().fs_delegate = saved_delegate;
     match call {
         Ok(n) if n < 0 => n,
         Ok(n) => super::copy::res(c, p_mem, res_base, res_ptr, n as u32, res_cap),

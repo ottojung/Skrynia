@@ -8,7 +8,7 @@ pub fn exec(
     cb: Option<wasmtime::Func>,
     module: &wasmtime::Module,
 ) -> i32 {
-    let (prev, guard) = match super::super::guest::child::setup(c, true) {
+    let (prev, guard, auth, delegate) = match super::super::guest::child::setup(c, true) {
         Ok(x) => x,
         Err(e) => {
             let _ = c.data_mut().fds.remove(in_fd);
@@ -16,12 +16,17 @@ pub fn exec(
             return e;
         }
     };
+    // Buffered child is an untrusted leaf: no ambient fs authority, no delegated authority.
+    c.data_mut().fs_auth = crate::boot::vm::cap::FsAuth::Empty;
+    c.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
     let (gi, go) = match super::super::guest::fds::take(c, in_fd.0, out_fd.0) {
         Ok(x) => x,
         Err(e) => {
             let _ = c.data_mut().providers.pop();
             c.data_mut().cur = prev;
             c.data_mut().guest = guard;
+            c.data_mut().fs_auth = auth;
+            c.data_mut().fs_delegate = delegate;
             return e;
         }
     };
@@ -30,6 +35,8 @@ pub fn exec(
     let ctx = fin::Ctx {
         prev,
         guard,
+        auth,
+        delegate,
         go,
         out,
         res_ptr: a.res_ptr,
