@@ -1,6 +1,7 @@
 pub fn invoke(
     c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
     cb: wasmtime::Func,
+    prov: crate::boot::vm::state::ProviderCtx,
     req: &[u8],
     res_ptr: u32,
     res_cap: u32,
@@ -8,9 +9,6 @@ pub fn invoke(
     if res_cap > crate::boot::limits::MAX_IO {
         return crate::boot::vm::codes::ERR_LIMIT;
     }
-    let Some(prov) = c.data().providers.last().cloned() else {
-        return crate::boot::vm::codes::ERR_FAULT;
-    };
     let Some(p_mem) = prov.inst.get_memory(&mut *c, "memory") else {
         return crate::boot::vm::codes::ERR_FAULT;
     };

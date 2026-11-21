@@ -1,6 +1,7 @@
 pub fn call(
     c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
     cb: wasmtime::Func,
+    prov: crate::boot::vm::state::ProviderCtx,
     req_ptr: u32,
     req_len: u32,
     res_ptr: u32,
@@ -14,5 +15,5 @@ pub fn call(
         Ok(x) => x,
         Err(e) => return e,
     };
-    super::call::invoke(c, cb, &req, res_ptr, res_cap)
+    super::call::invoke(c, cb, prov, &req, res_ptr, res_cap)
 }

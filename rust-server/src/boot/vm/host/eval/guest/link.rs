@@ -2,6 +2,7 @@ pub fn add(
     linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>,
     cb: Option<wasmtime::Func>,
     eval: bool,
+    prov: Option<crate::boot::vm::state::ProviderCtx>,
 ) -> Result<(), i32> {
     crate::boot::vm::host::fd::add_stream(linker).map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
     if eval {
@@ -23,6 +24,9 @@ pub fn add(
                 .map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;
         }
         Some(cb_func) => {
+            let Some(prov) = prov else {
+                return Err(crate::boot::vm::codes::ERR_FAULT);
+            };
             linker
                 .func_wrap(
                     "skrynia",
@@ -33,7 +37,7 @@ pub fn add(
                           dp: u32,
                           dc: u32|
                           -> i32 {
-                        super::inv::call(&mut c, cb_func, rp, rl, dp, dc)
+                        super::inv::call(&mut c, cb_func, prov.clone(), rp, rl, dp, dc)
                     },
                 )
                 .map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;
