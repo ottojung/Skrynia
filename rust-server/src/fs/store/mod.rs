@@ -37,13 +37,7 @@ impl Fs {
             RootKind::User => &self.user,
         }
     }
-    pub fn pick_read_root(&self, path: &[u8]) -> RootKind {
-        if crate::fs::path::clean(path)
-            .is_ok_and(|rel| crate::fs::node::exists(&self.operator, &rel).unwrap_or(false))
-        {
-            RootKind::Operator
-        } else {
-            RootKind::User
-        }
+    pub fn pick_read_root(&self, _path: &[u8]) -> RootKind {
+        RootKind::Operator
     }
 }

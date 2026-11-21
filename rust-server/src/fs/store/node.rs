@@ -15,10 +15,7 @@ impl Fs {
         let rel = crate::fs::path::clean(p)?;
         match root {
             Some(kind) => crate::fs::node::exists(self.root(kind), &rel),
-            None => Ok(
-                crate::fs::node::exists(self.root(RootKind::Operator), &rel)?
-                    || crate::fs::node::exists(self.root(RootKind::User), &rel)?,
-            ),
+            None => crate::fs::node::exists(self.root(RootKind::Operator), &rel),
         }
     }
     pub fn delete(&self, root: Option<RootKind>, p: &[u8]) -> Result<(), &'static str> {
@@ -41,10 +38,7 @@ impl Fs {
         let rel = crate::fs::path::clean(p)?;
         match root {
             Some(kind) => crate::fs::node::is_dir(self.root(kind), &rel),
-            None => Ok(
-                crate::fs::node::is_dir(self.root(RootKind::Operator), &rel)?
-                    || crate::fs::node::is_dir(self.root(RootKind::User), &rel)?,
-            ),
+            None => crate::fs::node::is_dir(self.root(RootKind::Operator), &rel),
         }
     }
 }

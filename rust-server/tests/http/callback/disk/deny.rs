@@ -20,7 +20,7 @@ fn privileged_disk_callback_denied_without_explicit_delegation() {
     ))
     .unwrap();
     std::fs::write(dir.join("root.wasm"), root).unwrap();
-    std::fs::write(dir.join("user/guest.wasm"), guest).unwrap();
+    std::fs::write(dir.join("operator/guest.wasm"), guest).unwrap();
     std::fs::write(dir.join("user/private"), b"Z").unwrap();
     let kernel = Kernel::start(
         &dir.join("root.wasm"),

@@ -1,3 +1,4 @@
+use skrynia_server::fs::RootKind::User as U;
 use skrynia_server::{boot, fs};
 use std::fs as stdfs;
 fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
@@ -16,12 +17,17 @@ fn rejects_bad_and_escaping_paths() {
     let (dir, k) = setup("skrynia-fs-node2");
     let s = k.fs();
     for p in [b"/abs".as_slice(), b"../x", b"a/../../b", b"a\0b", b""] {
-        assert!(s.exists(None, p).is_err());
+        assert!(s.exists(Some(U), p).is_err());
     }
     let mut fds = fs::table::Table::new();
     assert!(
-        s.open_disk(None, &mut fds, b"../out", fs::disk::DiskMode::read_write())
-            .is_err()
+        s.open_disk(
+            Some(U),
+            &mut fds,
+            b"../out",
+            fs::disk::DiskMode::read_write()
+        )
+        .is_err()
     );
     let _ = stdfs::remove_dir_all(&dir);
 }
