@@ -36,8 +36,14 @@ fn guest_trap_propagates_error() {
     let child = r#"(module(memory(export "memory") 1)(func(export "skrynia_main")(param $in i32)(param $out i32)(result i32) unreachable (i32.const 0)))"#;
     let dir = std::env::temp_dir().join("skrynia-v3-trap-prop");
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("data")).unwrap();
+    std::fs::create_dir_all(dir.join("operator")).unwrap();
+    std::fs::create_dir_all(dir.join("user")).unwrap();
     std::fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = skrynia_server::boot::Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
+    let k = skrynia_server::boot::Kernel::start(
+        &dir.join("r.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap();
     assert!(k.invoke(&wat::parse_str(child).unwrap()).is_err());
 }

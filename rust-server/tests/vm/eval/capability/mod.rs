@@ -1,3 +1,4 @@
+mod buffered_cb;
 mod callback_deny;
 mod delegated;
 mod fd_guard;

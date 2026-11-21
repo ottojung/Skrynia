@@ -25,8 +25,8 @@ pub fn invoke(
     let saved_delegate = c.data().fs_delegate.clone();
     c.data_mut().guest = prov.guard;
     c.data_mut().cur = Some(prov.inst);
-    // Callback runs as provider instance but attenuated to caller's (child's) authority.
-    c.data_mut().fs_auth = saved_auth.clone();
+    // Callback runs as provider instance with explicit bounded callback-provider authority.
+    c.data_mut().fs_auth = prov.fs_delegate.clone();
     c.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
     let call = cb_t.call(&mut *c, (base, req.len() as u32, res_base, res_cap));
     c.data_mut().cur = saved_cur;

@@ -45,5 +45,5 @@ async fn cancellation_and_restart() {
         .await
         .unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
-    let _ = fs::remove_dir_all(dir);
+    let _ = std::fs::remove_dir_all(dir);
 }

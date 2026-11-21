@@ -14,10 +14,12 @@ pub(super) fn kernel_with_wasm(name: &str, wasm: &[u8]) -> boot::Kernel {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let wasm_path = dir.join("root.wasm");
-    let data = dir.join("data");
-    fs::create_dir_all(&data).unwrap();
+    let op = dir.join("operator");
+    let usr = dir.join("user");
+    fs::create_dir_all(&op).unwrap();
+    fs::create_dir_all(&usr).unwrap();
     fs::write(&wasm_path, wasm).unwrap();
-    boot::Kernel::start(&wasm_path, &data).unwrap()
+    boot::Kernel::start(&wasm_path, &op, &usr).unwrap()
 }
 
 fn stub_kernel(name: &str) -> boot::Kernel {

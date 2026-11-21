@@ -3,10 +3,11 @@ use std::fs as stdfs;
 fn setup(n: &str) -> (std::path::PathBuf, boot::Kernel) {
     let d = std::env::temp_dir().join(n);
     let _ = stdfs::remove_dir_all(&d);
-    stdfs::create_dir_all(d.join("data")).unwrap();
+    stdfs::create_dir_all(d.join("operator")).unwrap();
+    stdfs::create_dir_all(d.join("user")).unwrap();
     let code = wat::parse_str(include_str!("../test-fixtures/root_stub.wat")).unwrap();
     stdfs::write(d.join("r.wasm"), code).unwrap();
-    let k = boot::Kernel::start(&d.join("r.wasm"), &d.join("data")).unwrap();
+    let k = boot::Kernel::start(&d.join("r.wasm"), &d.join("operator"), &d.join("user")).unwrap();
     (d, k)
 }
 #[test]
