@@ -19,10 +19,10 @@ pub fn exec(
     // Buffered child is an untrusted leaf: no ambient fs authority, no delegated authority.
     c.data_mut().fs_auth = crate::boot::vm::cap::FsAuth::Empty;
     c.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
-    let (gi, go) = match super::super::guest::fds::take(c, in_fd.0, out_fd.0) {
+    let (gi, go) = match super::super::guest::fds::take_generated(c, in_fd.0, out_fd.0) {
         Ok(x) => x,
         Err(e) => {
-            let _ = c.data_mut().providers.pop();
+            c.data_mut().pop_provider();
             c.data_mut().cur = prev;
             c.data_mut().guest = guard;
             c.data_mut().fs_auth = auth;

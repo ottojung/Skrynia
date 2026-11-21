@@ -6,7 +6,7 @@ fn finish(
     delegate: crate::boot::vm::cap::FsAuth,
     ret: i32,
 ) -> i32 {
-    let _ = c.data_mut().providers.pop();
+    c.data_mut().pop_provider();
     super::fds::cleanup(c);
     c.data_mut().guest = guard;
     c.data_mut().cur = prev;
