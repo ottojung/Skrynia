@@ -1,3 +1,4 @@
+mod attest_proof;
 mod basic;
 mod compile_bound;
 mod compile_fds;
