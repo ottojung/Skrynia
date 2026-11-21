@@ -3,7 +3,8 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub struct Config {
     pub root_wasm: PathBuf,
-    pub data_dir: PathBuf,
+    pub operator_dir: PathBuf,
+    pub user_dir: PathBuf,
 }
 
 impl Config {
@@ -16,12 +17,16 @@ impl Config {
         let root = get("SKRYNIA_ROOT_WASM")
             .map(PathBuf::from)
             .ok_or_else(|| "SKRYNIA_ROOT_WASM is required".to_string())?;
-        let data = get("SKRYNIA_DATA_DIR")
+        let operator_dir = get("SKRYNIA_OPERATOR_DIR")
             .map(PathBuf::from)
-            .ok_or_else(|| "SKRYNIA_DATA_DIR is required".to_string())?;
+            .ok_or_else(|| "SKRYNIA_OPERATOR_DIR is required".to_string())?;
+        let user_dir = get("SKRYNIA_USER_DIR")
+            .map(PathBuf::from)
+            .ok_or_else(|| "SKRYNIA_USER_DIR is required".to_string())?;
         Ok(Self {
             root_wasm: root,
-            data_dir: data,
+            operator_dir,
+            user_dir,
         })
     }
 }

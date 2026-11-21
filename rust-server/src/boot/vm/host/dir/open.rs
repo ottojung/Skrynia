@@ -12,8 +12,16 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                     Ok(x) => x,
                     Err(e) => return e,
                 };
+                let root = match super::super::fs_cap::resolve(
+                    &c,
+                    crate::boot::vm::cap::FsOp::OpenDir,
+                    &p,
+                ) {
+                    Ok(r) => r,
+                    Err(e) => return e,
+                };
                 let fs = c.data().fs.clone();
-                match fs.open_directory(&mut c.data_mut().fds, &p) {
+                match fs.open_directory(root, &mut c.data_mut().fds, &p) {
                     Ok(fd) => fd.0,
                     Err(e) => crate::boot::vm::err::map(e),
                 }

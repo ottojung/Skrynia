@@ -21,7 +21,25 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                match c.data().fs.rename(&a, &b) {
+                let ra =
+                    match super::super::fs_cap::resolve(&c, crate::boot::vm::cap::FsOp::Rename, &a)
+                    {
+                        Ok(r) => r,
+                        Err(e) => return e,
+                    };
+                let rb =
+                    match super::super::fs_cap::resolve(&c, crate::boot::vm::cap::FsOp::Rename, &b)
+                    {
+                        Ok(r) => r,
+                        Err(e) => return e,
+                    };
+                let root = match (ra, rb) {
+                    (Some(x), Some(y)) if x == y => Some(x),
+                    (Some(_), Some(_)) => return crate::boot::vm::codes::ERR_PERM,
+                    (Some(x), None) | (None, Some(x)) => Some(x),
+                    (None, None) => None,
+                };
+                match c.data().fs.rename(root, &a, &b) {
                     Ok(()) => 0,
                     Err(e) => crate::boot::vm::err::map(e),
                 }

@@ -18,6 +18,8 @@ pub fn invoke(
         ),
     );
     store.limiter(|vm| &mut vm.limits);
+    store.data_mut().fs_auth = crate::boot::vm::cap::FsAuth::Full;
+    store.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
     let fd = store
         .data_mut()
         .fds

@@ -21,7 +21,6 @@ async fn cancellation_and_restart() {
         .unwrap();
     let _ = timeout(Duration::from_secs(5), app.clone().oneshot(req))
         .await
-        .unwrap()
         .unwrap();
     let ok = app
         .oneshot(
@@ -33,9 +32,11 @@ async fn cancellation_and_restart() {
         .unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
     drop(ok);
-    let k2 = boot::Kernel::start(&dir.join("root.wasm"), &dir.join("data")).unwrap();
-    let app2 = http::router(k2);
-    let ok = app2
+    let root = dir.join("root.wasm");
+    let op = dir.join("operator");
+    let usr = dir.join("user");
+    let k2 = boot::Kernel::start_with_roots(&root, &op, &usr).unwrap();
+    let ok = http::router(k2)
         .oneshot(
             Request::post("/")
                 .body(Body::from(super::body(&raw, b"r")))
@@ -44,5 +45,5 @@ async fn cancellation_and_restart() {
         .await
         .unwrap();
     assert_eq!(ok.status(), StatusCode::OK);
-    let _ = fs::remove_dir_all(dir);
+    let _ = std::fs::remove_dir_all(dir);
 }

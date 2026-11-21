@@ -7,13 +7,43 @@ mod ram;
 pub use item::Item;
 use std::sync::Arc;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RootKind {
+    Operator,
+    User,
+}
+
 pub struct Fs {
-    pub root: Arc<crate::fs::root::Root>,
+    pub operator: Arc<crate::fs::root::Root>,
+    pub user: Arc<crate::fs::root::Root>,
     pub ram: Arc<crate::ram::Ram>,
 }
 
 impl Fs {
-    pub fn new(root: Arc<crate::fs::root::Root>, ram: Arc<crate::ram::Ram>) -> Self {
-        Self { root, ram }
+    pub fn new(
+        operator: Arc<crate::fs::root::Root>,
+        user: Arc<crate::fs::root::Root>,
+        ram: Arc<crate::ram::Ram>,
+    ) -> Self {
+        Self {
+            operator,
+            user,
+            ram,
+        }
+    }
+    pub fn root(&self, kind: RootKind) -> &crate::fs::root::Root {
+        match kind {
+            RootKind::Operator => &self.operator,
+            RootKind::User => &self.user,
+        }
+    }
+    pub fn pick_read_root(&self, path: &[u8]) -> RootKind {
+        if crate::fs::path::clean(path)
+            .is_ok_and(|rel| crate::fs::node::exists(&self.operator, &rel).unwrap_or(false))
+        {
+            RootKind::Operator
+        } else {
+            RootKind::User
+        }
     }
 }

@@ -23,6 +23,8 @@ pub struct Vm {
     pub limits: wasmtime::StoreLimits,
     pub providers: Vec<ProviderCtx>,
     pub cur: Option<wasmtime::Instance>,
+    pub fs_auth: crate::boot::vm::cap::FsAuth,
+    pub fs_delegate: crate::boot::vm::cap::FsAuth,
 }
 
 impl Vm {

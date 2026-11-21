@@ -22,13 +22,17 @@ pub(super) fn verifier(raw: &[u8; 32]) -> [u8; 32] {
 pub(super) fn setup(name: &str, guest: &[u8], raw: &[u8; 32]) -> (Kernel, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!("skrynia-p0-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("data/programs")).unwrap();
-    fs::create_dir_all(dir.join("data/security")).unwrap();
-    fs::write(dir.join("data/security/program0.sha256"), verifier(raw)).unwrap();
-    fs::write(dir.join("data/programs/root.wasm"), guest).unwrap();
+    fs::create_dir_all(dir.join("operator/programs")).unwrap();
+    fs::create_dir_all(dir.join("operator/security")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
+    fs::write(dir.join("operator/security/program0.sha256"), verifier(raw)).unwrap();
+    fs::write(dir.join("operator/programs/root.wasm"), guest).unwrap();
     let root = dir.join("root.wasm");
     fs::write(&root, root_wasm()).unwrap();
-    (Kernel::start(&root, &dir.join("data")).unwrap(), dir)
+    (
+        Kernel::start_with_roots(&root, &dir.join("operator"), &dir.join("user")).unwrap(),
+        dir,
+    )
 }
 pub(super) fn body(raw: &[u8; 32], payload: &[u8]) -> Vec<u8> {
     let mut b = vec![1u8];

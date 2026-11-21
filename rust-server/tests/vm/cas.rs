@@ -3,9 +3,15 @@ use std::fs;
 fn run(name: &str, root: &str) -> Vec<u8> {
     let dir = std::env::temp_dir().join(name);
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("data")).unwrap();
+    fs::create_dir_all(dir.join("operator")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
     fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = boot::Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
+    let k = boot::Kernel::start(
+        &dir.join("r.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap();
     let out = k.invoke(&[]).unwrap();
     let _ = fs::remove_dir_all(&dir);
     out

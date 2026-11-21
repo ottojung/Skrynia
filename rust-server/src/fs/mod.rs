@@ -5,5 +5,5 @@ pub mod path;
 pub mod root;
 pub mod store;
 pub mod table;
-pub use store::Fs;
+pub use store::{Fs, RootKind};
 pub use table::Fd;

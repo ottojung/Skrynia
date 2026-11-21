@@ -12,11 +12,16 @@ async fn restart_preserves_rotated_sha256_verifier() {
     let (k, dir) = super::setup("rst", &super::echo_guest(), &raw);
     drop(k);
     fs::write(
-        dir.join("data/security/program0.sha256"),
+        dir.join("operator/security/program0.sha256"),
         super::verifier(&raw),
     )
     .unwrap();
-    let k2 = boot::Kernel::start(&dir.join("root.wasm"), &dir.join("data")).unwrap();
+    let k2 = boot::Kernel::start_with_roots(
+        &dir.join("root.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap();
     let ok = http::router(k2)
         .oneshot(
             Request::post("/")

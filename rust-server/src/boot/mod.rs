@@ -1,3 +1,5 @@
+mod ancestry;
+mod distinct;
 mod exec;
 mod kernel_api;
 mod limits;
@@ -19,16 +21,18 @@ pub struct Kernel {
 }
 
 impl Kernel {
-    pub fn start(root_wasm: &Path, data_dir: &Path) -> Result<Self, String> {
+    pub fn start(root_wasm: &Path, operator_dir: &Path, user_dir: &Path) -> Result<Self, String> {
         let cfg = limits::engine_config()?;
         let engine = Engine::new(&cfg).map_err(|e| format!("engine: {e}"))?;
         let bytes = root::bytes(root_wasm)?;
         let root =
-            vm::compile::bounded(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
+            vm::compile::trusted(&engine, &bytes).map_err(|e| format!("compile root: {e}"))?;
         validate::check(&root)?;
-        let data = Arc::new(crate::fs::root::Root::open(data_dir)?);
+        let operator = Arc::new(crate::fs::root::Root::open(operator_dir)?);
+        let user = Arc::new(crate::fs::root::Root::open(user_dir)?);
+        distinct::ensure_distinct(&operator, &user, operator_dir, user_dir)?;
         let ram = Arc::new(crate::ram::Ram::new());
-        let fs = Arc::new(crate::fs::Fs::new(data, ram.clone()));
+        let fs = Arc::new(crate::fs::Fs::new(operator, user, ram.clone()));
         let cache = Arc::new(vm::state::Cache::new());
         Ok(Self {
             engine,
@@ -37,5 +41,12 @@ impl Kernel {
             fs,
             cache,
         })
+    }
+    pub fn start_with_roots(
+        root_wasm: &Path,
+        operator_dir: &Path,
+        user_dir: &Path,
+    ) -> Result<Self, String> {
+        Self::start(root_wasm, operator_dir, user_dir)
     }
 }

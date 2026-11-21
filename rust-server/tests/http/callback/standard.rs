@@ -1,3 +1,4 @@
+use std::fs;
 #[test]
 fn nested_eval_callback() {
     let root = r#"(module
@@ -25,8 +26,14 @@ fn nested_eval_callback() {
   (i32.const 0)))"#;
     let dir = std::env::temp_dir().join("skrynia-v3-nested");
     let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("data")).unwrap();
+    std::fs::create_dir_all(dir.join("operator")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
     std::fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = skrynia_server::boot::Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
+    let k = skrynia_server::boot::Kernel::start(
+        &dir.join("r.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap();
     assert_eq!(k.invoke(&wat::parse_str(child).unwrap()).unwrap(), b"K");
 }
