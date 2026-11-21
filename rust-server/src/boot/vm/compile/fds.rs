@@ -4,7 +4,7 @@ pub fn close_inherited() -> Result<(), std::io::Error> {
     {
         // Close all non-stdio fds in the child after fork/exec setup.
         // Prefer close_range (async-signal-safe). Fall back to bounded loop.
-        let ret = libc::syscall(libc::SYS_close_range, 3u32, !0u32, 0u32);
+        let ret = unsafe { libc::syscall(libc::SYS_close_range, 3u32, !0u32, 0u32) };
         if ret == 0 {
             return Ok(());
         }
