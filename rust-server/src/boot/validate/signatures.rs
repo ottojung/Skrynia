@@ -9,6 +9,7 @@ pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
         "cas_ram_u64" => ("illli", "i"),
         "now" => ("", "l"),
         "eval" | "eval_delegate" => ("iiiii", "i"),
+        "eval_buffered" => ("iiiiiii", "i"),
         _ => return None,
     })
 }

@@ -21,7 +21,7 @@ impl Fs {
                 if rc == 0 { Ok(()) } else { Err("io") }
             }
             Some(Item::Ram(_)) => Ok(()),
-            Some(Item::Input(_) | Item::Output(_)) => Err("perm"),
+            Some(Item::Input(_) | Item::Output(_) | Item::BufferedOutput(_)) => Err("perm"),
             None => Err("badfd"),
         }
     }
