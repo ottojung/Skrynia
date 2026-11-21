@@ -1,8 +1,12 @@
 pub fn add(
     linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>,
     cb: Option<wasmtime::Func>,
+    eval: bool,
 ) -> Result<(), i32> {
     crate::boot::vm::host::fd::add_stream(linker).map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
+    if eval {
+        super::super::add_funcs(linker).map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
+    }
     match cb {
         None => {
             linker
