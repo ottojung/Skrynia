@@ -84,7 +84,7 @@ jobs:
           test "$(docker exec skrynia-test id -u)" = 1000
           test "$(docker exec skrynia-test stat -c '%a' /var/lib/skrynia)" = 700
           status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:17380/)"
-          test "$status" = 405
+          test "$status" = 404
           test "$(docker inspect --format '{{.Image}}' skrynia-test)" = \
             "$(docker image inspect --format '{{.Id}}' skrynia:ci)"
       - name: Verify isolated public publisher origins
