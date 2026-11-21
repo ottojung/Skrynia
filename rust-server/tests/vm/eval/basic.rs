@@ -4,9 +4,15 @@ use std::fs;
 fn kernel(name: &str, root: &str) -> Kernel {
     let dir = std::env::temp_dir().join(name);
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("data")).unwrap();
+    fs::create_dir_all(dir.join("operator")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
     fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap()
+    Kernel::start(
+        &dir.join("r.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap()
 }
 
 #[test]

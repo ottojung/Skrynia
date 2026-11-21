@@ -4,10 +4,11 @@ use std::fs as stdfs;
 fn setup(n: &str) -> (std::path::PathBuf, boot::Kernel) {
     let d = std::env::temp_dir().join(n);
     let _ = stdfs::remove_dir_all(&d);
-    stdfs::create_dir_all(d.join("data")).unwrap();
+    stdfs::create_dir_all(d.join("operator")).unwrap();
+    stdfs::create_dir_all(d.join("user")).unwrap();
     let code = wat::parse_str(include_str!("../test-fixtures/root_stub.wat")).unwrap();
     stdfs::write(d.join("r.wasm"), code).unwrap();
-    let k = boot::Kernel::start(&d.join("r.wasm"), &d.join("data")).unwrap();
+    let k = boot::Kernel::start(&d.join("r.wasm"), &d.join("operator"), &d.join("user")).unwrap();
     (d, k)
 }
 #[test]
@@ -25,13 +26,13 @@ fn guard_ops() {
     assert!(s.read(&mut fds, fd, &mut [0u8; 1]).is_err());
     s.close(&mut fds, fd2).unwrap();
     stdfs::write(d.join("outside"), b"x").unwrap();
-    std::os::unix::fs::symlink(d.join("outside"), d.join("data/link")).unwrap();
+    std::os::unix::fs::symlink(d.join("outside"), d.join("user/link")).unwrap();
     assert!(
         s.open_disk(None, &mut fds, b"link", M::read_only())
             .is_err()
     );
-    stdfs::create_dir(d.join("data/reald")).unwrap();
-    std::os::unix::fs::symlink("../outside", d.join("data/reald/esc")).unwrap();
+    stdfs::create_dir(d.join("user/reald")).unwrap();
+    std::os::unix::fs::symlink("../outside", d.join("user/reald/esc")).unwrap();
     assert!(
         s.open_disk(None, &mut fds, b"reald/esc", M::read_only())
             .is_err()
@@ -40,7 +41,7 @@ fn guard_ops() {
     assert!(s.mkdir(None, b"reald", mode).is_ok());
     assert!(s.mkdir(None, b"a", mode).is_err());
     assert!(s.mkdir(None, b"link", mode).is_err());
-    stdfs::write(d.join("data/plain"), b"file").unwrap();
+    stdfs::write(d.join("user/plain"), b"file").unwrap();
     assert!(s.mkdir(None, b"plain", mode).is_err());
     let new = skrynia_server::fs::node::MkdirMode::create_new();
     assert_eq!(s.mkdir(None, b"reald", new).err(), Some("exists"));

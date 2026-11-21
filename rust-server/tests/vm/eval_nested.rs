@@ -33,8 +33,14 @@ fn eval_via_callback_is_reentrant() {
   (i32.const 0)))"#;
     let dir = std::env::temp_dir().join("v3-nested-cb-fd");
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("data")).unwrap();
+    fs::create_dir_all(dir.join("operator")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
     fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = Kernel::start(&dir.join("r.wasm"), &dir.join("data")).unwrap();
+    let k = Kernel::start(
+        &dir.join("r.wasm"),
+        &dir.join("operator"),
+        &dir.join("user"),
+    )
+    .unwrap();
     assert_eq!(k.invoke(&wat::parse_str(child).unwrap()).unwrap(), b"A");
 }

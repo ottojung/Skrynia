@@ -40,7 +40,7 @@ fn disk_ops_modes_and_errors() {
         s.open_disk(None, &mut fds, b"subdir", fs::disk::DiskMode::read_only())
             .is_err()
     );
-    let fifo = std::ffi::CString::new(dir.join("data/fifo").to_str().unwrap()).unwrap();
+    let fifo = std::ffi::CString::new(dir.join("user/fifo").to_str().unwrap()).unwrap();
     assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
     assert!(
         s.open_disk(None, &mut fds, b"fifo", fs::disk::DiskMode::read_only())

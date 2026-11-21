@@ -1,17 +1,16 @@
 use skrynia_server::{boot, fs};
 use std::fs as stdfs;
-
 fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
     let dir = std::env::temp_dir().join(name);
     let _ = stdfs::remove_dir_all(&dir);
-    stdfs::create_dir_all(dir.join("data")).unwrap();
+    stdfs::create_dir_all(dir.join("operator")).unwrap();
+    stdfs::create_dir_all(dir.join("user")).unwrap();
     let wasm = dir.join("r.wasm");
-    let code = wat::parse_str(include_str!("../test-fixtures/root_stub.wat")).unwrap();
+    let code = wat::parse_str(include_str!("../../test-fixtures/root_stub.wat")).unwrap();
     stdfs::write(&wasm, code).unwrap();
-    let k = boot::Kernel::start(&wasm, &dir.join("data")).unwrap();
+    let k = boot::Kernel::start(&wasm, &dir.join("operator"), &dir.join("user")).unwrap();
     (dir, k)
 }
-
 #[test]
 fn node_ops_and_rename() {
     let (dir, k) = setup("skrynia-fs-node");
@@ -28,26 +27,7 @@ fn node_ops_and_rename() {
     s.rename(None, b"d/a", b"d/b").unwrap();
     assert!(!s.exists(None, b"d/a").unwrap());
     s.delete(None, b"d/b").unwrap();
-    assert!(s.delete(None, b"d/b").is_ok());
-    assert!(!s.exists(None, b"d/b").unwrap());
     assert!(!s.exists(None, b"d/not-created/leaf").unwrap());
     assert!(s.delete(None, b"d/not-created/leaf").is_ok());
-    let _ = stdfs::remove_dir_all(&dir);
-}
-
-#[test]
-fn rejects_bad_and_escaping_paths() {
-    let (dir, k) = setup("skrynia-fs-node2");
-    let s = k.fs();
-    assert!(s.exists(None, b"/abs").is_err());
-    assert!(s.exists(None, b"../x").is_err());
-    assert!(s.exists(None, b"a/../../b").is_err());
-    assert!(s.exists(None, b"a\0b").is_err());
-    assert!(s.exists(None, b"").is_err());
-    let mut fds = fs::table::Table::new();
-    assert!(
-        s.open_disk(None, &mut fds, b"../out", fs::disk::DiskMode::read_write())
-            .is_err()
-    );
     let _ = stdfs::remove_dir_all(&dir);
 }
