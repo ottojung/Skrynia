@@ -1,109 +1,79 @@
-# Skrynia
+# Skrynia v3
 
-Skrynia is a durable public object store with delegable, resource-bounded
-authority, implemented entirely in Rust.
+Skrynia is a small Rust WebAssembly kernel, not a built-in database or grant
+server. It executes **operator-supplied Program 0 WASM** in response to
+opaque binary HTTP requests. All application protocols, storage keys,
+authorization, grants, quotas and application semantics belong in Program 0
+or the programs it evaluates—not in the native kernel.
 
-Objects are opaque byte strings addressed by flat keys. Reads are public;
-authenticated, scoped grants independently authorize creation, modification,
-deletion, listing, delegation, and Web Push subscriptions. Skrynia implements no
-application-specific schemas, business logic, or privileged deployment API.
+The native HTTP API has exactly one endpoint:
 
-## Build and run
+- `POST /` with arbitrary `application/octet-stream` bytes.
+- Each request runs a fresh logical Program 0 instance, exporting
+  `skrynia_main(input_fd: i32, output_fd: i32) -> i32`.
+- The input descriptor can only be read and closed; the output descriptor
+  can only be written and closed. Neither can seek or truncate. Short
+  reads/writes are normal. Responses stream with bounded backpressure.
+- A successful Program 0 return means HTTP 200 with uninterpreted response
+  bytes. Other methods and paths are not application routing surfaces.
 
-Install Rust 1.93 or newer, an OpenSSL development package, and pkg-config.
+Program 0 has privileged imports for confined disk files/directories,
+explicit shared volatile RAM with sequentially consistent 64-bit CAS,
+clock, secure randomness, and nested WASM evaluation. Evaluated children
+cannot access these privileges directly: their sole import is
+`skrynia.invoke`, mediated by the caller. Each guest has private WASM
+linear memory, distinct from kernel staging and explicitly opened global RAM.
+
+## Development
+
+Use Rust 1.93, OpenSSL development headers and pkg-config:
 
 ```sh
 make test
-cargo build --locked --release --package skrynia-server
-export SKRYNIA_DATA_DIR="$HOME/.local/share/skrynia"
-export SKRYNIA_URL="http://127.0.0.1:17380"
+make build
+```
+
+The kernel does not build, install, select or bundle a default Program 0.
+Operators compile their own conforming WebAssembly module separately.
+[skrynia-tools](https://github.com/ottojung/skrynia-tools) contains one
+**experimental, optional** userland Program 0 and v2 compatibility work.
+Its draft code has not passed the complete v2 release gates.
+
+## Running an isolated v3 kernel
+
+Supply an existing private storage directory and a separately built root WASM:
+
+```sh
+export SKRYNIA_ROOT_WASM=/absolute/path/to/root.wasm
+export SKRYNIA_DATA_DIR=/absolute/path/to/private/data
+export SKRYNIA_BIND=127.0.0.1:17380
 target/release/skrynia-server
 ```
 
-The server creates an unrestricted root grant if none exists. To inspect
-the root ID and issuer credential **on the authorized host**, run:
+`SKRYNIA_ROOT_WASM` and `SKRYNIA_DATA_DIR` are required. The kernel
+compiles the root and validates its imports/exports on **every startup**;
+an invalid ABI fails startup rather than the first request. It never
+interprets Program 0's request or response body.
 
-```sh
-SKRYNIA_DATA_DIR="$HOME/.local/share/skrynia" \
-    target/release/skrynia-server root-credentials
-```
+A container image can be built with podman or docker (`make docker-build`).
+It contains **only the kernel** and listens on port 17380. Mount the root
+WASM read-only, set `SKRYNIA_ROOT_WASM` explicitly, and mount a private,
+UID 1000-owned, mode 0700 `SKRYNIA_DATA_DIR`. No default WASM, application grant,
+admin CLI, credential, or native health endpoint is provided. Use an
+orchestrator TCP liveness check; application health is a Program 0 protocol.
 
-The output is a secret JSON object with `id` and `issuerToken`.
-Never publish it or embed it in untrusted content. Root credentials remain
-in the private data directory, not in an HTTP endpoint.
+## Specifications and release boundaries
 
-## Basic HTTP operations
+[The v3 VM specification](docs/v3-vm-spec.md) defines every host import,
+memory domain, return code and sandboxing constraint.
+[ABI decisions](docs/v3/abi.md) refine ownership and callback behavior.
+[Integration notes](docs/v3-integration.md) list unfinished gates.
 
-Use the root issuer credential to obtain a separate user token:
+The older v2 HTTP/grants/Web Push documentation describes the compatibility
+**target**, not functionality implemented by the native v3 kernel.
+Full delegated grant/quota/revocation/subscription parity, differential
+testing, migration, rollback and independent security reviews must pass
+before any production replacement. Do not point an existing deployed v2
+data directory at an unfinished v3 build.
 
-```sh
-curl -fsS -X POST "$SKRYNIA_URL/grants/$ROOT_GRANT_ID/users" \
-  -H "Authorization: Bearer $ROOT_ISSUER_TOKEN"
-```
-
-With the resulting user token:
-
-```sh
-curl -fsS -X POST "$SKRYNIA_URL/store/alice.index.html" \
-  -H "Authorization: Bearer $ROOT_USER_TOKEN" \
-  --data-binary '<h1>Hello from Skrynia</h1>'
-
-curl -i "$SKRYNIA_URL/store/alice.index.html"
-```
-
-`POST` creates only if absent; `PUT` updates existing keys; `DELETE`
-removes them. `PUT` and `DELETE` optionally accept
-`X-Skrynia-If-SHA256` with the current lowercase SHA-256 of the bytes.
-A mismatch returns HTTP 412. The HTTP reader provides a quoted SHA-256
-ETag and supports conditional requests, HEAD, and single byte ranges.
-
-To delegate a limited key prefix:
-
-```sh
-curl -fsS -X POST "$SKRYNIA_URL/grants" \
-  -H "Authorization: Bearer $ROOT_USER_TOKEN" \
-  -H 'Content-Type: application/json' \
-  --data '{"locations":"alice.*","operations":["create","modify","delete","list"],"maxBytes":1048576,"maxObjects":100}'
-```
-
-Child grants can narrow scope and operations but never extend them. Creating
-a child returns its issuer credential, which separately issues user tokens.
-Revoking a grant invalidates descendants and subscriptions, but preserves
-public object bytes. Each grant's quotas include its scoped storage and
-delegated metadata. Prefix quotas are derived from a bounded in-memory
-delta trie and rebuildable private sorted disk runs; new grant scopes do not
-require a full object-directory scan.
-
-## Hosting and notifications
-
-Objects are ordinary files under `SKRYNIA_DATA_DIR/store/`. A static
-server can serve them directly; never publish `state/`. Independent,
-mutually untrusted publishers require **separate HTTPS browser origins**.
-See [the nginx example](examples/nginx-origins.conf).
-
-Web Push subscriptions are grant-scoped and use a separate update capability.
-Notifications carry a generic `changed` wake-up; recipients fetch current
-values. Delivery state persists across restarts and duplicate wake-ups are
-possible. The server validates public HTTPS endpoints and pins DNS resolution.
-
-The container image runs as UID 1000. Build and check it with:
-
-```sh
-make docker-build
-```
-
-## Documentation
-
-The [HTTP API](docs/api-spec.md), [grant semantics](docs/intent-location-authority.md),
-[Skrynia Cookbook](docs/cookbook.md),
-[application feasibility examples](docs/application-feasibility.md),
-[operations](docs/operations.md), and [verification](docs/verification.md)
-describe the current system and its boundaries.
-The [complexity model](docs/complexity.md) separates CPU, RAM, disk
-space, filesystem I/O, durability, and implementation-specific bounds.
-The [indexed-store design](docs/indexed-store-design.md) and
-[sparse-grant workload study](docs/sparse-grant-workload.md) explore
-unimplemented alternatives without empirical measurements.
-Intent Records in `docs/intent-records/` capture the live requirements.
-
-Skrynia is Free Software under **AGPL-3.0-or-later**.
+Skrynia is Free Software under AGPL-3.0-or-later.
