@@ -1,6 +1,7 @@
 mod child;
 mod fds;
 mod io;
+mod probe;
 mod prog;
 mod run;
 mod slots;

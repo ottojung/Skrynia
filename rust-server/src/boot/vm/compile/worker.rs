@@ -23,6 +23,9 @@ fn run() -> i32 {
         std::thread::sleep(std::time::Duration::from_secs(5));
         return 3;
     }
+    let Some(code) = super::probe::code(&buf) else {
+        return 3;
+    };
     let cfg = match crate::boot::limits::engine_config() {
         Ok(c) => c,
         Err(_) => return 3,
@@ -31,7 +34,7 @@ fn run() -> i32 {
         Ok(e) => e,
         Err(_) => return 3,
     };
-    match eng.precompile_module(&buf) {
+    match eng.precompile_module(code) {
         Ok(out) if out.len() <= MAX_PRE => {
             if std::io::stdout().write_all(&out).is_err() {
                 return 3;
