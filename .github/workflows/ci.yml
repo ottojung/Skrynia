@@ -48,24 +48,45 @@ jobs:
             SKRYNIA_COMMIT=${{ steps.version.outputs.commit }}
           cache-from: type=gha,scope=skrynia
           cache-to: type=gha,mode=max,scope=skrynia
-      - name: Verify startup, credentials and build identity
+      # Test a disposable operator-supplied WASM fixture, not a built-in
+      # Program0 or any production token. The generic kernel has POST / only.
+      - name: Verify external root startup and POST-only VM
         run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq wabt
+          wat2wasm rust-server/test-fixtures/stream_early_output.wat -o ci-root.wasm
+          set +e
+          docker run --rm skrynia:ci > /tmp/skrynia-no-root.log 2>&1
+          status=$?
+          set -e
+          test "$status" -ne 0
+          grep -F 'SKRYNIA_ROOT_WASM is required' /tmp/skrynia-no-root.log
           docker rm -f skrynia-test >/dev/null 2>&1 || true
           docker run --rm -d --name skrynia-test \
             --read-only --tmpfs /tmp \
             --tmpfs /var/lib/skrynia:uid=1000,gid=1000,mode=0700 \
+            -v "$PWD/ci-root.wasm:/etc/skrynia-test-root.wasm:ro" \
             -p 127.0.0.1:17380:17380 \
-            -e SKRYNIA_URL=http://127.0.0.1:17380/platform skrynia:ci
+            -e SKRYNIA_ROOT_WASM=/etc/skrynia-test-root.wasm \
+            skrynia:ci
           trap 'docker stop -t 5 skrynia-test >/dev/null 2>&1 || true' EXIT
           ready=0
           for i in $(seq 1 50); do
-            if curl -fsS http://127.0.0.1:17380/platform/health >/dev/null; then ready=1; break; fi
+            if test "$(curl -fsS --max-time 1 -X POST \
+              --data-binary 'ping' http://127.0.0.1:17380/ 2>/dev/null || true)" = AB; then
+              ready=1
+              break
+            fi
             sleep 0.2
           done
           test "$ready" = 1
           test "$(docker exec skrynia-test id -u)" = 1000
-          docker exec skrynia-test skrynia-server root-credentials >/dev/null
-          curl -fsS http://127.0.0.1:17380/platform/version | grep -F '"commit":"${{ steps.version.outputs.commit }}"'
+          test "$(docker exec skrynia-test stat -c '%a' /var/lib/skrynia)" = 700
+          status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:17380/)"
+          test "$status" = 405
+          test "$(docker inspect --format '{{.Image}}' skrynia-test)" = \
+            "$(docker image inspect --format '{{.Id}}' skrynia:ci)"
       - name: Verify isolated public publisher origins
         run: |
           set -eu
