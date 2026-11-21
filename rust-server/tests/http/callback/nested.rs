@@ -23,7 +23,11 @@ fn nested_guest_cannot_steal_root_disk_fd_after_callback() {
         .replace("@@LEN@@", &nested.len().to_string());
     let guest = include_str!("../../../test-fixtures/callback/guest_nested.wat");
     std::fs::write(dir.join("root.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    std::fs::write(user.join("guest.wasm"), wat::parse_str(guest).unwrap()).unwrap();
+    std::fs::write(
+        dir.join("operator/guest.wasm"),
+        wat::parse_str(guest).unwrap(),
+    )
+    .unwrap();
     for name in ["private", "nested.in", "nested.out"] {
         std::fs::write(user.join(name), b"Z").unwrap();
     }

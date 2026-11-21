@@ -1,3 +1,4 @@
+use skrynia_server::fs::RootKind::User as U;
 use skrynia_server::{boot, fs};
 use std::fs as stdfs;
 fn setup(n: &str) -> (std::path::PathBuf, boot::Kernel) {
@@ -15,15 +16,15 @@ fn dir_ops() {
     let (d, k) = setup("skrynia-fs-dir");
     let s = k.fs();
     let mut fds = fs::table::Table::new();
-    s.mkdir(None, b"x", fs::node::MkdirMode::create_if_absent())
+    s.mkdir(Some(U), b"x", fs::node::MkdirMode::create_if_absent())
         .unwrap();
     for n in [b"x/a".as_slice(), b"x/bb".as_slice()] {
         let fd = s
-            .open_disk(None, &mut fds, n, fs::disk::DiskMode::read_write())
+            .open_disk(Some(U), &mut fds, n, fs::disk::DiskMode::read_write())
             .unwrap();
         s.close(&mut fds, fd).unwrap();
     }
-    let fd = s.open_directory(None, &mut fds, b"x").unwrap();
+    let fd = s.open_directory(Some(U), &mut fds, b"x").unwrap();
     let mut seen = Vec::new();
     loop {
         let mut b = [0u8; 16];
@@ -36,7 +37,7 @@ fn dir_ops() {
     seen.sort();
     assert_eq!(seen, vec![b"a".to_vec(), b"bb".to_vec()]);
     s.sync(&mut fds, fd).unwrap();
-    let fd = s.open_directory(None, &mut fds, b"x").unwrap();
+    let fd = s.open_directory(Some(U), &mut fds, b"x").unwrap();
     for _ in 0..2 {
         let got = s.next_entry(&mut fds, fd, &mut []).unwrap();
         assert!(matches!(got, fs::dir::Next::Small));

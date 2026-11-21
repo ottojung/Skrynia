@@ -4,9 +4,9 @@ fn next_entry_reads_long_name() {
     let n = "a".repeat(255);
     let dir = std::env::temp_dir().join("v3-next-long");
     let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(dir.join("operator")).unwrap();
-    fs::create_dir_all(dir.join("user/d")).unwrap();
-    fs::write(dir.join("user/d").join(&n), b"x").unwrap();
+    fs::create_dir_all(dir.join("operator/d")).unwrap();
+    fs::create_dir_all(dir.join("user")).unwrap();
+    fs::write(dir.join("operator/d").join(&n), b"x").unwrap();
     let root = r#"(module
 (import "skrynia" "open_directory"(func $od(param i32 i32)(result i32)))
 (import "skrynia" "next_entry"(func $ne(param i32 i32 i32)(result i32)))
