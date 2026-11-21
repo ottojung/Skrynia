@@ -29,6 +29,15 @@ fn secs(name: &str, def: u64) -> Duration {
             .unwrap_or(def),
     )
 }
+pub(super) fn response_total() -> Duration {
+    Duration::from_secs(
+        std::env::var("SKRYNIA_RESPONSE_TOTAL_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(300),
+    )
+}
+
 pub(super) fn limits() -> super::pump::Limits {
     super::pump::Limits {
         max: max_req(),
