@@ -8,7 +8,7 @@ pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
         "open_ram" | "try_mutation_lock" | "release_mutation_lock" => ("", "i"),
         "cas_ram_u64" => ("illli", "i"),
         "now" => ("", "l"),
-        "eval" => ("iiiii", "i"),
+        "eval" | "eval_delegate" => ("iiiii", "i"),
         _ => return None,
     })
 }
