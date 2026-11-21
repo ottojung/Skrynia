@@ -29,8 +29,9 @@ pub fn run(
             return e;
         }
     };
+    let prov = c.data().providers.last().cloned();
     let mut linker = wasmtime::Linker::new(&c.data().engine);
-    if let Err(e) = super::link::add(&mut linker, cb, eval) {
+    if let Err(e) = super::link::add(&mut linker, cb, eval, prov) {
         finish(c, prev, guard);
         return e;
     }
