@@ -5,4 +5,5 @@ mod output;
 mod pump;
 mod respond;
 mod router;
+mod term;
 pub use router::router;

@@ -1,3 +1,4 @@
+use super::term;
 use axum::body::Bytes;
 use std::io::{self, Read};
 use tokio::sync::mpsc;
@@ -5,14 +6,14 @@ use tokio::sync::mpsc;
 pub struct Input {
     receiver: mpsc::Receiver<io::Result<Bytes>>,
     pending: Bytes,
-    error: Option<io::ErrorKind>,
+    term: term::Term,
 }
 impl Input {
-    pub fn new(receiver: mpsc::Receiver<io::Result<Bytes>>) -> Self {
+    pub fn new(receiver: mpsc::Receiver<io::Result<Bytes>>, term: term::Term) -> Self {
         Self {
             receiver,
             pending: Bytes::new(),
-            error: None,
+            term,
         }
     }
 }
@@ -21,17 +22,17 @@ impl Read for Input {
         if dst.is_empty() {
             return Ok(0);
         }
-        if let Some(kind) = self.error {
-            return Err(io::Error::from(kind));
+        if let Some(e) = term::get(&self.term) {
+            return Err(e);
         }
         while self.pending.is_empty() {
             match self.receiver.blocking_recv() {
                 Some(Ok(chunk)) => self.pending = chunk,
                 Some(Err(e)) => {
-                    self.error = Some(e.kind());
+                    term::set(&self.term, &e);
                     return Err(e);
                 }
-                None => return Ok(0),
+                None => return term::get(&self.term).map_or(Ok(0), Err),
             }
         }
         let n = dst.len().min(self.pending.len());
