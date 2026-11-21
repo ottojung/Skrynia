@@ -1,16 +1,15 @@
-use super::{Limits, stalled};
+use super::{Limits, send, stalled};
 use axum::body::{Body, Bytes};
 use futures_util::StreamExt;
 use std::io;
 use tokio::sync::mpsc;
 
-async fn fail(tx: &mpsc::Sender<io::Result<Bytes>>, on: bool, e: io::Error) -> io::Error {
-    if on {
-        let _ = tx.send(Err(io::Error::new(e.kind(), e.to_string()))).await;
-    }
-    e
-}
-pub async fn run(body: Body, tx: mpsc::Sender<io::Result<Bytes>>, lim: Limits) -> io::Result<()> {
+pub async fn run(
+    body: Body,
+    tx: mpsc::Sender<io::Result<Bytes>>,
+    t: super::super::term::Term,
+    lim: Limits,
+) -> io::Result<()> {
     let mut stream = body.into_data_stream();
     let end = tokio::time::Instant::now() + lim.total;
     let mut count = 0usize;
@@ -19,24 +18,30 @@ pub async fn run(body: Body, tx: mpsc::Sender<io::Result<Bytes>>, lim: Limits) -
         let idle = tokio::time::sleep(lim.inactivity);
         let chunk = tokio::select! {
             biased;
-            _ = tokio::time::sleep_until(end) => return Err(fail(&tx, on, stalled()).await),
-            _ = idle => return Err(fail(&tx, on, stalled()).await),
+            _ = tokio::time::sleep_until(end) => return Err(send::stop(&t, stalled())),
+            _ = idle => return Err(send::stop(&t, stalled())),
             c = stream.next() => c,
         };
         let Some(chunk) = chunk else { return Ok(()) };
         let b = match chunk {
             Ok(b) => b,
-            Err(_) => return Err(fail(&tx, on, io::ErrorKind::BrokenPipe.into()).await),
+            Err(_) => return Err(send::stop(&t, io::Error::from(io::ErrorKind::BrokenPipe))),
         };
-        count = count
-            .checked_add(b.len())
-            .ok_or(io::ErrorKind::InvalidData)?;
+        count = match count.checked_add(b.len()) {
+            Some(n) => n,
+            None => return Err(send::stop(&t, io::Error::from(io::ErrorKind::InvalidData))),
+        };
         if count > lim.max {
-            return Err(fail(&tx, on, io::ErrorKind::InvalidData.into()).await);
+            return Err(send::stop(&t, io::Error::from(io::ErrorKind::InvalidData)));
         }
         for part in b.chunks(64 * 1024) {
-            if on && tx.send(Ok(Bytes::copy_from_slice(part))).await.is_err() {
-                on = false;
+            if !on {
+                continue;
+            }
+            match send::part(&tx, end, Bytes::copy_from_slice(part)).await {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::BrokenPipe => on = false,
+                Err(e) => return Err(send::stop(&t, e)),
             }
         }
     }
