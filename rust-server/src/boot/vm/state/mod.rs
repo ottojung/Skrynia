@@ -1,9 +1,12 @@
 mod cache;
 mod cap;
+mod ctx;
 mod frame;
 mod mutation;
+mod vm;
 pub use cache::{Cache, MAX_MODULE_BYTES};
 pub use cap::GuestCap;
+pub use ctx::ProviderCtx;
 pub use frame::Frame;
 use std::sync::Arc;
 
@@ -18,34 +21,11 @@ pub struct Vm {
     pub guest: Option<GuestCap>,
     pub mutation_held: bool,
     pub limits: wasmtime::StoreLimits,
+    pub providers: Vec<ProviderCtx>,
+    pub cur: Option<wasmtime::Instance>,
 }
 
 impl Vm {
-    pub fn new(
-        engine: wasmtime::Engine,
-        fs: Arc<crate::fs::Fs>,
-        ram: Arc<crate::ram::Ram>,
-        cache: Arc<Cache>,
-    ) -> Self {
-        Self {
-            engine,
-            fs,
-            ram,
-            fds: crate::fs::table::Table::new(),
-            frames: Vec::new(),
-            cache,
-            depth: 0,
-            guest: None,
-            mutation_held: false,
-            limits: wasmtime::StoreLimitsBuilder::new()
-                .memory_size(64 * 1024 * 1024)
-                .table_elements(10_000)
-                .instances(16)
-                .tables(16)
-                .memories(16)
-                .build(),
-        }
-    }
     pub fn root_mut(&mut self) -> &mut Frame {
         &mut self.frames[0]
     }

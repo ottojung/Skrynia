@@ -5,6 +5,7 @@ pub fn eval(
     in_fd: i32,
     out_fd: i32,
     cb_idx: i32,
+    child_eval: bool,
 ) -> i32 {
     if cl as usize > crate::boot::vm::state::MAX_MODULE_BYTES {
         return crate::boot::vm::codes::ERR_LIMIT;
@@ -25,8 +26,8 @@ pub fn eval(
         Ok(m) => m,
         Err(e) => return e,
     };
-    if !super::check::module_ok(&module) {
+    if !super::check::module_ok(&module, child_eval) {
         return crate::boot::vm::codes::ERR_INVALID;
     }
-    super::guest::run(c, &module, in_fd, out_fd, cb)
+    super::guest::run(c, &module, in_fd, out_fd, cb, child_eval)
 }

@@ -44,5 +44,6 @@ pub fn invoke(
         .data_mut()
         .frames
         .push(crate::boot::vm::state::Frame::root(inst));
+    store.data_mut().cur = Some(inst);
     super::root::call_root(&mut store, fd.0, output_fd.0)
 }

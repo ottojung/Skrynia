@@ -1,34 +1,45 @@
+fn finish(
+    c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
+    prev: Option<wasmtime::Instance>,
+    guard: Option<crate::boot::vm::state::GuestCap>,
+) {
+    let _ = c.data_mut().providers.pop();
+    super::fds::cleanup(c);
+    c.data_mut().guest = guard;
+    c.data_mut().cur = prev;
+}
 pub fn run(
     c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
     module: &wasmtime::Module,
     in_fd: i32,
     out_fd: i32,
     cb: Option<wasmtime::Func>,
+    eval: bool,
 ) -> i32 {
-    let (gi, go) = match super::fds::take(c, in_fd, out_fd) {
+    let (prev, guard) = match super::child::setup(c, eval) {
         Ok(x) => x,
         Err(e) => return e,
     };
+    let (gi, go) = match super::fds::take(c, in_fd, out_fd) {
+        Ok(x) => x,
+        Err(e) => {
+            let _ = c.data_mut().providers.pop();
+            c.data_mut().cur = prev;
+            c.data_mut().guest = guard;
+            return e;
+        }
+    };
     let mut linker = wasmtime::Linker::new(&c.data().engine);
-    if let Err(e) = super::link::add(&mut linker, cb) {
-        super::fds::cleanup(c);
+    if let Err(e) = super::link::add(&mut linker, cb, eval) {
+        finish(c, prev, guard);
         return e;
     }
-    let result = (|| {
-        let inst = linker
-            .instantiate(&mut *c, module)
-            .map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;
-        let main: wasmtime::TypedFunc<(i32, i32), i32> = inst
-            .get_typed_func(&mut *c, "skrynia_main")
-            .map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;
-        let status = main
-            .call(&mut *c, (gi.0, go.0))
-            .map_err(crate::boot::vm::err::trap)?;
-        if status == 0 { Ok(()) } else { Err(status) }
-    })();
-    super::fds::cleanup(c);
+    let result = super::child::run(c, module, &linker, gi, go);
+    finish(c, prev, guard);
     match result {
-        Ok(()) => 0,
+        Ok(0) => 0,
+        Ok(n) if n < 0 => n,
+        Ok(_) => crate::boot::vm::codes::ERR_INVALID,
         Err(e) => e,
     }
 }

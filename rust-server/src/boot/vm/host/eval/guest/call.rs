@@ -8,41 +8,29 @@ pub fn invoke(
     if res_cap > crate::boot::limits::MAX_IO {
         return crate::boot::vm::codes::ERR_LIMIT;
     }
-    let root_inst = c.data().frames[0].instance;
-    let root_mem = match root_inst.get_memory(&mut *c, "memory") {
-        Some(m) => m,
-        None => return crate::boot::vm::codes::ERR_FAULT,
+    let Some(prov) = c.data().providers.last().cloned() else {
+        return crate::boot::vm::codes::ERR_FAULT;
     };
-    let base = root_mem.data_size(&*c) as u32;
-    let res_base = match base.checked_add(req.len() as u32) {
-        Some(v) => v,
-        None => return crate::boot::vm::codes::ERR_LIMIT,
+    let Some(p_mem) = prov.inst.get_memory(&mut *c, "memory") else {
+        return crate::boot::vm::codes::ERR_FAULT;
     };
-    let need = match (res_base as u64).checked_add(res_cap as u64) {
-        Some(v) => v,
-        None => return crate::boot::vm::codes::ERR_LIMIT,
+    let (base, res_base) = match super::stage::buf(c, p_mem, req, res_cap) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    if let Err(e) = super::grow::ensure(c, root_mem, need) {
-        return e;
-    }
-    if crate::boot::vm::mem::write_buf(c, root_mem, base, req).is_err() {
-        return crate::boot::vm::codes::ERR_RANGE;
-    }
-    let cb_t: wasmtime::TypedFunc<(u32, u32, u32, u32), i32> = match cb.typed(&*c) {
-        Ok(f) => f,
-        Err(_) => return crate::boot::vm::codes::ERR_INVALID,
+    let Ok(cb_t) = cb.typed::<(u32, u32, u32, u32), i32>(&*c) else {
+        return crate::boot::vm::codes::ERR_INVALID;
     };
-    // Execute the parent's callback under parent authority, then restore
-    // the child's FD restrictions even if the callback traps or runs eval.
     let saved = c.data_mut().guest.take();
+    let prev = c.data().cur;
+    c.data_mut().guest = prov.guard;
+    c.data_mut().cur = Some(prov.inst);
     let call = cb_t.call(&mut *c, (base, req.len() as u32, res_base, res_cap));
+    c.data_mut().cur = prev;
     c.data_mut().guest = saved;
-    let n = match call {
-        Ok(n) => n,
-        Err(e) => return crate::boot::vm::err::trap(e),
-    };
-    if n < 0 {
-        return n;
+    match call {
+        Ok(n) if n < 0 => n,
+        Ok(n) => super::copy::res(c, p_mem, res_base, res_ptr, n as u32, res_cap),
+        Err(e) => crate::boot::vm::err::trap(e),
     }
-    super::copy::res(c, root_mem, res_base, res_ptr, n as u32, res_cap)
 }
