@@ -18,7 +18,7 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
     }
     let permit = match app.permits.try_acquire_owned() {
         Ok(permit) => permit,
-        Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(_) => return respond::error(std::io::ErrorKind::WouldBlock),
     };
     let chunked = gate::chunked(&request);
     let t = term::new();
