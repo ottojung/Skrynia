@@ -1,3 +1,5 @@
+mod classified_permit;
+mod classified_vm;
 mod d1_permit;
 mod d2_oversize;
 mod d2_stream_control;
