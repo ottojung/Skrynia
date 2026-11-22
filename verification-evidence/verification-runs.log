@@ -1,0 +1,778 @@
+MY_KERNEL_HASH=202c97fe827efa03c096d86198e42cfd4ac49c8663db0d4d6680369e2b0004b2
+CLAIM_KERNEL_HASH=91cd9b8a179a1db5dfcc2c2630746a3744cfc8e785d2c476542d0c1703e1e3e4
+HEAD=249ba3421dfe930e4e59445c803ab38808f69d71
+=== VM reentrancy tests (exact head) ===
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling cfg-if v1.0.5
+   Compiling libc v0.2.191
+   Compiling syn v3.0.10
+   Compiling serde_core v1.0.229
+   Compiling typenum v1.20.1
+   Compiling zeroize v1.9.2
+   Compiling version_check v0.9.5
+   Compiling serde v1.0.229
+   Compiling subtle v2.6.1
+   Compiling once_cell v1.21.4
+   Compiling generic-array v0.14.7
+   Compiling serde_derive v1.0.229
+   Compiling const-oid v0.9.6
+   Compiling getrandom v0.2.17
+   Compiling zerocopy v0.8.63
+   Compiling cmov v0.5.4
+   Compiling ctutils v0.4.8
+   Compiling smallvec v1.16.6
+   Compiling hybrid-array v0.4.15
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.15
+   Compiling getrandom v0.4.3
+   Compiling cc v1.11.2
+   Compiling digest v0.10.7
+   Compiling rand_core v0.10.1
+   Compiling synstructure v0.14.0
+   Compiling rand_core v0.6.4
+   Compiling zerofrom-derive v0.1.8
+   Compiling crypto-common v0.2.2
+   Compiling bytes v1.12.2
+   Compiling log v0.4.35
+   Compiling itoa v1.0.19
+   Compiling base64ct v1.8.3
+   Compiling zerofrom v0.1.8
+   Compiling yoke-derive v0.8.4
+   Compiling pem-rfc7468 v0.7.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling der v0.7.10
+   Compiling yoke v0.8.4
+   Compiling libm v0.2.16
+   Compiling pin-project-lite v0.2.17
+   Compiling zerovec-derive v0.11.7
+   Compiling spki v0.7.3
+   Compiling autocfg v1.5.1
+   Compiling bitflags v2.13.2
+   Compiling parking_lot_core v0.9.12
+   Compiling futures-core v0.3.34
+   Compiling num-traits v0.2.19
+   Compiling zerovec v0.11.9
+   Compiling pkcs8 v0.10.2
+   Compiling displaydoc v0.2.7
+   Compiling ahash v0.8.12
+   Compiling syn v2.0.119
+   Compiling scopeguard v1.2.0
+   Compiling lock_api v0.4.14
+   Compiling hmac v0.12.1
+   Compiling errno v0.3.15
+   Compiling memchr v2.8.3
+   Compiling equivalent v1.0.3
+   Compiling hashbrown v0.17.1
+   Compiling indexmap v2.14.2
+   Compiling signal-hook-registry v1.4.8
+   Compiling parking_lot v0.12.5
+   Compiling tokio-macros v2.7.2
+   Compiling mio v1.2.5
+   Compiling socket2 v0.6.5
+   Compiling thiserror v2.0.21
+   Compiling tokio v1.54.1
+   Compiling hashbrown v0.14.5
+   Compiling hkdf v0.12.4
+   Compiling tinystr v0.8.5
+   Compiling http v1.5.0
+   Compiling ff v0.13.1
+   Compiling ppv-lite86 v0.2.21
+   Compiling inout v0.2.6
+   Compiling thiserror-impl v2.0.21
+   Compiling base16ct v0.2.0
+   Compiling writeable v0.6.4
+   Compiling cpufeatures v0.2.17
+   Compiling cranelift-isle v0.114.0
+   Compiling anyhow v1.0.104
+   Compiling utf_types v1.0.0
+   Compiling litemap v0.8.3
+   Compiling icu_locale_core v2.4.0
+   Compiling utf8_iter v1.1.0
+   Compiling sha2 v0.10.9
+   Compiling sec1 v0.7.3
+   Compiling group v0.13.0
+   Compiling http-body v1.1.0
+   Compiling zerotrie v0.2.5
+   Compiling potential_utf v0.1.6
+   Compiling ring v0.17.14
+   Compiling crypto-bigint v0.5.5
+   Compiling signature v2.2.0
+   Compiling block-buffer v0.12.1
+   Compiling cranelift-bitset v0.114.0
+   Compiling tracing-core v0.1.36
+   Compiling target-lexicon v0.12.16
+   Compiling cranelift-codegen-shared v0.114.0
+   Compiling cpufeatures v0.3.1
+   Compiling icu_normalizer_data v2.4.0
+   Compiling icu_properties_data v2.4.0
+   Compiling cpubits v0.1.1
+   Compiling percent-encoding v2.3.2
+   Compiling cranelift-codegen-meta v0.114.0
+   Compiling tracing v0.1.44
+   Compiling elliptic-curve v0.13.8
+   Compiling cranelift-entity v0.114.0
+   Compiling cipher v0.5.2
+   Compiling icu_provider v2.4.0
+   Compiling icu_collections v2.4.0
+   Compiling futures-macro v0.3.34
+   Compiling vcpkg v0.2.15
+   Compiling spin v0.9.9
+   Compiling const-oid v0.10.3
+   Compiling slab v0.4.12
+   Compiling syn v1.0.109
+   Compiling zmij v1.0.23
+   Compiling pkg-config v0.3.34
+   Compiling httparse v1.10.1
+   Compiling tower-service v0.3.3
+   Compiling bumpalo v3.20.4
+   Compiling futures-task v0.3.34
+   Compiling futures-util v0.3.34
+   Compiling der v0.8.3
+   Compiling openssl-sys v0.9.118
+   Compiling cranelift-codegen v0.114.0
+   Compiling lazy_static v1.5.1
+   Compiling rand_chacha v0.3.1
+   Compiling num-integer v0.1.47
+   Compiling gimli v0.31.1
+   Compiling rfc6979 v0.4.0
+   Compiling universal-hash v0.6.1
+   Compiling digest v0.11.3
+   Compiling rustls-pki-types v1.16.0
+   Compiling crc32fast v1.5.5
+   Compiling arbitrary v1.5.0
+   Compiling slice-group-by v0.3.1
+   Compiling serde_json v1.0.154
+   Compiling rustc-hash v2.1.3
+   Compiling num-bigint-dig v0.8.6
+   Compiling try-lock v0.2.5
+   Compiling untrusted v0.9.0
+   Compiling thiserror v1.0.69
+   Compiling want v0.3.2
+   Compiling regalloc2 v0.10.2
+   Compiling cranelift-control v0.114.0
+   Compiling polyval v0.7.3
+   Compiling ecdsa v0.16.9
+   Compiling num-iter v0.1.46
+   Compiling rand v0.8.8
+   Compiling icu_properties v2.4.0
+   Compiling icu_normalizer v2.4.0
+   Compiling spki v0.8.1
+   Compiling aes v0.9.4
+   Compiling cranelift-bforest v0.114.0
+   Compiling form_urlencoded v1.2.2
+   Compiling thiserror-impl v1.0.69
+   Compiling sync_wrapper v1.0.2
+   Compiling keccak v0.2.2
+   Compiling object v0.36.7
+   Compiling rustls v0.23.46
+   Compiling semver v1.0.28
+   Compiling sponge-cursor v0.1.0
+   Compiling getrandom v0.3.4
+   Compiling regex-syntax v0.8.12
+   Compiling httpdate v1.0.3
+   Compiling tower-layer v0.3.3
+   Compiling foldhash v0.1.5
+   Compiling atomic-waker v1.1.2
+   Compiling unicode-xid v0.2.6
+   Compiling byteorder v1.5.0
+   Compiling synstructure v0.12.6
+   Compiling regex-automata v0.4.19
+   Compiling hyper v1.12.0
+   Compiling hashbrown v0.15.5
+   Compiling shake v0.1.0
+   Compiling wasmparser v0.219.2
+   Compiling pkcs8 v0.11.0
+   Compiling idna_adapter v1.2.2
+   Compiling ghash v0.6.0
+   Compiling rustls-webpki v0.103.17
+   Compiling signature v3.0.0
+   Compiling ctr v0.10.1
+   Compiling primeorder v0.13.6
+   Compiling cobs v0.3.0
+   Compiling aead v0.6.1
+   Compiling module-lattice v0.2.4
+   Compiling wasmtime-versioned-export-macros v27.0.0
+   Compiling pkcs1 v0.7.5
+   Compiling futures-channel v0.3.34
+   Compiling termcolor v1.4.1
+   Compiling base64 v0.23.1
+   Compiling ipnet v2.12.2
+   Compiling openssl v0.10.82
+   Compiling foreign-types-shared v0.1.1
+   Compiling leb128 v0.2.7
+   Compiling rustix v1.1.6
+   Compiling base64 v0.22.1
+   Compiling wasm-encoder v0.219.2
+   Compiling foreign-types v0.3.2
+   Compiling hyper-util v0.1.21
+   Compiling wasmprinter v0.219.2
+   Compiling rsa v0.9.10
+   Compiling ml-dsa v0.1.2
+   Compiling aes-gcm v0.11.1
+   Compiling postcard v1.1.3
+   Compiling idna v1.1.0
+   Compiling regex v1.13.2
+   Compiling der_derive v0.4.1
+   Compiling aes-keywrap v0.9.1
+   Compiling tower v0.5.3
+   Compiling http-body-util v0.1.5
+   Compiling openssl-macros v0.1.1
+   Compiling hmac-sha512 v1.1.13
+   Compiling hmac-sha256 v1.1.15
+   Compiling hmac-sha1-compact v1.1.9
+   Compiling base64 v0.13.1
+   Compiling rustix v0.38.44
+   Compiling ryu v1.0.23
+   Compiling const-oid v0.6.2
+   Compiling constant_time_eq v0.4.2
+   Compiling either v1.19.0
+   Compiling ct-codecs v1.1.8
+   Compiling linux-raw-sys v0.12.1
+   Compiling paste v1.0.15
+   Compiling arrayvec v0.7.8
+   Compiling blake2b_simd v1.0.5
+   Compiling ed25519-compact v2.6.1
+   Compiling itertools v0.12.1
+   Compiling der v0.4.5
+   Compiling serde_urlencoded v0.7.1
+   Compiling pem v0.8.3
+   Compiling superboring v0.1.17
+   Compiling rand_core v0.9.5
+   Compiling url v2.5.8
+   Compiling wasmtime-environ v27.0.0
+   Compiling tokio-rustls v0.26.6
+   Compiling wasmtime v27.0.0
+   Compiling p384 v0.13.1
+   Compiling p256 v0.13.2
+   Compiling cranelift-frontend v0.114.0
+   Compiling cranelift-native v0.114.0
+   Compiling k256 v0.13.4
+   Compiling webpki-roots v1.0.12
+   Compiling coarsetime v0.1.38
+   Compiling binstring v0.1.8
+   Compiling linux-raw-sys v0.4.15
+   Compiling mime v0.3.18
+   Compiling fnv v1.0.7
+   Compiling iana-time-zone v0.1.65
+   Compiling hex v0.4.3
+   Compiling futures-sink v0.3.34
+   Compiling ece v2.4.2
+   Compiling tokio-util v0.7.20
+   Compiling chrono v0.4.45
+   Compiling http v0.2.12
+   Compiling axum-core v0.5.6
+   Compiling jwt-simple v0.12.17
+   Compiling hyper-rustls v0.27.10
+   Compiling wasmtime-cranelift v27.0.0
+   Compiling tower-http v0.6.11
+   Compiling rand_chacha v0.9.0
+   Compiling sec1_decode v0.1.0
+   Compiling memfd v0.6.6
+   Compiling pem v3.0.6
+   Compiling wasmtime-jit-icache-coherence v27.0.0
+   Compiling serde_path_to_error v0.1.20
+   Compiling async-trait v0.1.92
+   Compiling wasmtime-asm-macros v27.0.0
+   Compiling wasmtime-slab v27.0.0
+   Compiling sptr v0.3.2
+   Compiling matchit v0.8.4
+   Compiling axum v0.8.9
+   Compiling web-push v0.11.0
+   Compiling rand v0.9.5
+   Compiling reqwest v0.12.28
+   Compiling leb128fmt v0.1.0
+   Compiling wasm-encoder v0.263.0
+   Compiling skrynia-server v0.1.0 (/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/skrynia/rust-server)
+warning: variable does not need to be mutable
+ --> rust-server/src/boot/root.rs:9:9
+  |
+9 |     let mut file = options.open(path).map_err(|e| format!("open root: {e}"))?;
+  |         ----^^^^
+  |         |
+  |         help: remove this `mut`
+  |
+  = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling unicode-width v0.2.3
+   Compiling wast v263.0.0
+warning: `skrynia-server` (lib) generated 1 warning (run `cargo fix --lib -p skrynia-server` to apply 1 suggestion)
+   Compiling wat v1.263.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 10s
+     Running tests/vm/mod.rs (/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/target-kernel/debug/deps/vm-77c8b9a8e0556106)
+
+running 2 tests
+test eval::buffered::reentrant::buffered_eval_reentrant_uses_immediate_parent_provider ... ok
+test eval::nested::reentrant::case::reentrant_p1_to_p0_callback_uses_p0_provider_context ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 0.06s
+
+REENTRANT_RC=0
+warning: variable does not need to be mutable
+ --> rust-server/src/boot/root.rs:9:9
+  |
+9 |     let mut file = options.open(path).map_err(|e| format!("open root: {e}"))?;
+  |         ----^^^^
+  |         |
+  |         help: remove this `mut`
+  |
+  = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `skrynia-server` (lib) generated 1 warning (run `cargo fix --lib -p skrynia-server` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s
+     Running tests/vm/mod.rs (/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/target-kernel/debug/deps/vm-77c8b9a8e0556106)
+
+running 1 test
+test eval::buffered::fault::buffered_eval_reentrant_callback_trap_revive ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out; finished in 0.05s
+
+TRAP_REVIVE_RC=0
+HARNESS_MODE=hash-adjusted copy (my rebuild hash differs from claim)
+--- /tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/evidence/run_mediated_http.py	2026-11-22 00:14:57.836578301 +0000
++++ /tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/run_mediated_http_myhash.py	2026-11-22 00:20:37.584205944 +0000
+@@ -21,7 +21,7 @@
+ ATTACK = pathlib.Path(os.environ.get('MEDIATED_ATTACK', str(KIT / 'wasm-target/wasm32-unknown-unknown/release/callback_abuse.wasm')))
+ 
+ SHA = {
+-    'kernel': ('91cd9b8a179a1db5dfcc2c2630746a3744cfc8e785d2c476542d0c1703e1e3e4', KERNEL),
++    'kernel': ('202c97fe827efa03c096d86198e42cfd4ac49c8663db0d4d6680369e2b0004b2', KERNEL),
+     'p0': ('6e4f41e280df56ec7feb5a91e618add2b1d24c934561b4c56767de5c40a936f7', P0),
+     'p1': ('6b5f793b64a044fb0ca4cb483c0af0cedfa4c3a846ac102a16eb74884a67c9aa', P1),
+     'echo': ('dc28e490b107084224562cc02a185e99c64727d6dd185eab5645989aa9c17ec5', ECHO),
+=== Real HTTP harness runs (fresh disposable dirs each run) ===
+----- RUN 1 (MEDIATED_WD=/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/run-1, kernel=/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/target-kernel/release/skrynia-server) -----
+ARTIFACT kernel 202c97fe827efa03c096d86198e42cfd4ac49c8663db0d4d6680369e2b0004b2 OK
+ARTIFACT p0 6e4f41e280df56ec7feb5a91e618add2b1d24c934561b4c56767de5c40a936f7 OK
+ARTIFACT p1 6b5f793b64a044fb0ca4cb483c0af0cedfa4c3a846ac102a16eb74884a67c9aa OK
+ARTIFACT echo dc28e490b107084224562cc02a185e99c64727d6dd185eab5645989aa9c17ec5 OK
+ARTIFACT attack f9eaa6438c96ef000085e30b61ca49a43a174786a10ac9a19dae128f92a3d52b OK
+
+=== POSITIVE: real HTTP P0 -> P1 -> P2 mediated callback ===
+  register: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+PASS positive-register {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+  lookup: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-p1-p2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+PASS positive-invoke-p1-p2-echo {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+  put1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b';\xfc&\x95\x94\xefd\x92(\xe9\xa7K\xab\x00\xf0B\xef\xc9\x1dZ\xcco\xbe\xe3\x1a8.\x80\xd4#\x88\xfe', 'body_hex': '3bfc269594ef649228e9a74bab00f042efc91d5acc6fbee31a382e80d42388fe'}
+  get1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+PASS positive-appdata-put-get {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+  cas-ok: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xfb\x04\xdc\xb6\x97\x0eL=\x18s\xdeQ\xfdZP\xd7\xbbF\xb381\x13`&e\xc3P\xec@\xb5\xf9\x90', 'body_hex': 'fb04dcb6970e4c3d1873de51fd5a50d7bb46b3383113602665c350ec40b5f990'}
+  get2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-cas {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  cas-wrong: HTTP/1.1 200 OK {'kind': 'err', 'code': 10, 'extra': '00'}
+  get3: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-cas-wrong-precond-rejected {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  lookup-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup-after-restart {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+PASS positive-invoke-after-restart {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+  get-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-after-restart {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+
+=== NEGATIVE: malicious P2 reentrant cross-app / sibling denial ===
+  reg-victim-A: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+PASS neg-register-victim-A {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+  reg-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+PASS neg-register-attacker-P2 {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+  victim-A-sanity: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+PASS neg-victim-A-sanity-invoke {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+  seed-A-secret: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b"'\r\x90\x91\x8bF\x9a\xecL\xeeB_\xdf\x08]I\x17\x04uW\xf0\xcb\x16$\xeb\xb3\n\xca8\x85l\xc5", 'body_hex': '270d90918b469aec4cee425fdf085d4917047557f0cb1624ebb30aca38856cc5'}
+  invoke-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+PASS neg-attacker-P2-invoke-via-P1-callback {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+  --- attacker report ---
+  get_own_read_cap=8
+  get_sib_read_cap=13
+  get_own_iid_as_readcap=8
+  get_sib_iid_as_readcap=13
+  put_sib_write_cap=13
+  put_own_write_cap=13
+  put_own_iid_as_writecap=0
+  del_sib_iid=-1
+  lookup_via_invoke=12
+  register_via_invoke=12
+  raw_opendisk_via_invoke=-1
+  garbage_invoke=-1
+  get_zero_cap=13
+  read_fd3=-7
+  read_fd4=-7
+  read_fd99=-7
+  write_fd3=-7
+  write_fd99=-7
+  --- end report ---
+PASS neg-reentrant-self-read-returns-absent-not-fault 8
+PASS neg-reentrant-self-write-own-namespace-ok 0
+PASS neg-sibling-read-cap-denied-13 13
+PASS neg-sibling-iid-as-readcap-denied-13 13
+PASS neg-sibling-write-cap-denied-13 13
+PASS neg-zero-cap-denied-13 13
+PASS neg-lookup-via-callback-denied-12 12
+PASS neg-register-via-callback-denied-12 12
+PASS neg-private-path-raw-opendisk-rejected -1
+PASS neg-garbage-invoke-rejected -1
+PASS neg-read_fd3-denied -7
+PASS neg-read_fd4-denied -7
+PASS neg-read_fd99-denied -7
+PASS neg-write_fd3-denied -7
+PASS neg-write_fd99-denied -7
+  victim-A-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+PASS neg-victim-A-still-works-after-attack {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+  victim-secret-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+PASS neg-victim-secret-unchanged {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+  victim-evil-absent: HTTP/1.1 200 OK {'kind': 'err', 'code': 8, 'extra': ''}
+PASS neg-no-sibling-write-contamination {'kind': 'err', 'code': 8, 'extra': ''}
+
+=== SUMMARY ===
+TOTAL=31 PASS=31 FAIL=0
+ALL_OK=True
+RUN_1_RC=0
+----- RUN 2 (MEDIATED_WD=/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/run-2, kernel=/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/target-kernel/release/skrynia-server) -----
+ARTIFACT kernel 202c97fe827efa03c096d86198e42cfd4ac49c8663db0d4d6680369e2b0004b2 OK
+ARTIFACT p0 6e4f41e280df56ec7feb5a91e618add2b1d24c934561b4c56767de5c40a936f7 OK
+ARTIFACT p1 6b5f793b64a044fb0ca4cb483c0af0cedfa4c3a846ac102a16eb74884a67c9aa OK
+ARTIFACT echo dc28e490b107084224562cc02a185e99c64727d6dd185eab5645989aa9c17ec5 OK
+ARTIFACT attack f9eaa6438c96ef000085e30b61ca49a43a174786a10ac9a19dae128f92a3d52b OK
+
+=== POSITIVE: real HTTP P0 -> P1 -> P2 mediated callback ===
+  register: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+PASS positive-register {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+  lookup: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-p1-p2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+PASS positive-invoke-p1-p2-echo {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+  put1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b';\xfc&\x95\x94\xefd\x92(\xe9\xa7K\xab\x00\xf0B\xef\xc9\x1dZ\xcco\xbe\xe3\x1a8.\x80\xd4#\x88\xfe', 'body_hex': '3bfc269594ef649228e9a74bab00f042efc91d5acc6fbee31a382e80d42388fe'}
+  get1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+PASS positive-appdata-put-get {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+  cas-ok: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xfb\x04\xdc\xb6\x97\x0eL=\x18s\xdeQ\xfdZP\xd7\xbbF\xb381\x13`&e\xc3P\xec@\xb5\xf9\x90', 'body_hex': 'fb04dcb6970e4c3d1873de51fd5a50d7bb46b3383113602665c350ec40b5f990'}
+  get2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-cas {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  cas-wrong: HTTP/1.1 200 OK {'kind': 'err', 'code': 10, 'extra': '00'}
+  get3: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-cas-wrong-precond-rejected {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  lookup-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup-after-restart {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+PASS positive-invoke-after-restart {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+  get-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-after-restart {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+
+=== NEGATIVE: malicious P2 reentrant cross-app / sibling denial ===
+  reg-victim-A: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+PASS neg-register-victim-A {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+  reg-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+PASS neg-register-attacker-P2 {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+  victim-A-sanity: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+PASS neg-victim-A-sanity-invoke {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+  seed-A-secret: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b"'\r\x90\x91\x8bF\x9a\xecL\xeeB_\xdf\x08]I\x17\x04uW\xf0\xcb\x16$\xeb\xb3\n\xca8\x85l\xc5", 'body_hex': '270d90918b469aec4cee425fdf085d4917047557f0cb1624ebb30aca38856cc5'}
+  invoke-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+PASS neg-attacker-P2-invoke-via-P1-callback {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+  --- attacker report ---
+  get_own_read_cap=8
+  get_sib_read_cap=13
+  get_own_iid_as_readcap=8
+  get_sib_iid_as_readcap=13
+  put_sib_write_cap=13
+  put_own_write_cap=13
+  put_own_iid_as_writecap=0
+  del_sib_iid=-1
+  lookup_via_invoke=12
+  register_via_invoke=12
+  raw_opendisk_via_invoke=-1
+  garbage_invoke=-1
+  get_zero_cap=13
+  read_fd3=-7
+  read_fd4=-7
+  read_fd99=-7
+  write_fd3=-7
+  write_fd99=-7
+  --- end report ---
+PASS neg-reentrant-self-read-returns-absent-not-fault 8
+PASS neg-reentrant-self-write-own-namespace-ok 0
+PASS neg-sibling-read-cap-denied-13 13
+PASS neg-sibling-iid-as-readcap-denied-13 13
+PASS neg-sibling-write-cap-denied-13 13
+PASS neg-zero-cap-denied-13 13
+PASS neg-lookup-via-callback-denied-12 12
+PASS neg-register-via-callback-denied-12 12
+PASS neg-private-path-raw-opendisk-rejected -1
+PASS neg-garbage-invoke-rejected -1
+PASS neg-read_fd3-denied -7
+PASS neg-read_fd4-denied -7
+PASS neg-read_fd99-denied -7
+PASS neg-write_fd3-denied -7
+PASS neg-write_fd99-denied -7
+  victim-A-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+PASS neg-victim-A-still-works-after-attack {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+  victim-secret-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+PASS neg-victim-secret-unchanged {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+  victim-evil-absent: HTTP/1.1 200 OK {'kind': 'err', 'code': 8, 'extra': ''}
+PASS neg-no-sibling-write-contamination {'kind': 'err', 'code': 8, 'extra': ''}
+
+=== SUMMARY ===
+TOTAL=31 PASS=31 FAIL=0
+ALL_OK=True
+RUN_2_RC=0
+----- RUN 3 (MEDIATED_WD=/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/run-3, kernel=/tmp/opencode/p1p2-verify-zMczRnB18uNgQ5FOxRGg89-20261122/target-kernel/release/skrynia-server) -----
+ARTIFACT kernel 202c97fe827efa03c096d86198e42cfd4ac49c8663db0d4d6680369e2b0004b2 OK
+ARTIFACT p0 6e4f41e280df56ec7feb5a91e618add2b1d24c934561b4c56767de5c40a936f7 OK
+ARTIFACT p1 6b5f793b64a044fb0ca4cb483c0af0cedfa4c3a846ac102a16eb74884a67c9aa OK
+ARTIFACT echo dc28e490b107084224562cc02a185e99c64727d6dd185eab5645989aa9c17ec5 OK
+ARTIFACT attack f9eaa6438c96ef000085e30b61ca49a43a174786a10ac9a19dae128f92a3d52b OK
+
+=== POSITIVE: real HTTP P0 -> P1 -> P2 mediated callback ===
+  register: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+PASS positive-register {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+  lookup: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-p1-p2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+PASS positive-invoke-p1-p2-echo {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+  put1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b';\xfc&\x95\x94\xefd\x92(\xe9\xa7K\xab\x00\xf0B\xef\xc9\x1dZ\xcco\xbe\xe3\x1a8.\x80\xd4#\x88\xfe', 'body_hex': '3bfc269594ef649228e9a74bab00f042efc91d5acc6fbee31a382e80d42388fe'}
+  get1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+PASS positive-appdata-put-get {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+  cas-ok: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xfb\x04\xdc\xb6\x97\x0eL=\x18s\xdeQ\xfdZP\xd7\xbbF\xb381\x13`&e\xc3P\xec@\xb5\xf9\x90', 'body_hex': 'fb04dcb6970e4c3d1873de51fd5a50d7bb46b3383113602665c350ec40b5f990'}
+  get2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-cas {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  cas-wrong: HTTP/1.1 200 OK {'kind': 'err', 'code': 10, 'extra': '00'}
+  get3: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-cas-wrong-precond-rejected {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  lookup-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup-after-restart {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+PASS positive-invoke-after-restart {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+  get-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-after-restart {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+
+=== NEGATIVE: malicious P2 reentrant cross-app / sibling denial ===
+  reg-victim-A: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+PASS neg-register-victim-A {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+  reg-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+PASS neg-register-attacker-P2 {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+  victim-A-sanity: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+PASS neg-victim-A-sanity-invoke {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+  seed-A-secret: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b"'\r\x90\x91\x8bF\x9a\xecL\xeeB_\xdf\x08]I\x17\x04uW\xf0\xcb\x16$\xeb\xb3\n\xca8\x85l\xc5", 'body_hex': '270d90918b469aec4cee425fdf085d4917047557f0cb1624ebb30aca38856cc5'}
+  invoke-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+PASS neg-attacker-P2-invoke-via-P1-callback {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+  --- attacker report ---
+  get_own_read_cap=8
+  get_sib_read_cap=13
+  get_own_iid_as_readcap=8
+  get_sib_iid_as_readcap=13
+  put_sib_write_cap=13
+  put_own_write_cap=13
+  put_own_iid_as_writecap=0
+  del_sib_iid=-1
+  lookup_via_invoke=12
+  register_via_invoke=12
+  raw_opendisk_via_invoke=-1
+  garbage_invoke=-1
+  get_zero_cap=13
+  read_fd3=-7
+  read_fd4=-7
+  read_fd99=-7
+  write_fd3=-7
+  write_fd99=-7
+  --- end report ---
+PASS neg-reentrant-self-read-returns-absent-not-fault 8
+PASS neg-reentrant-self-write-own-namespace-ok 0
+PASS neg-sibling-read-cap-denied-13 13
+PASS neg-sibling-iid-as-readcap-denied-13 13
+PASS neg-sibling-write-cap-denied-13 13
+PASS neg-zero-cap-denied-13 13
+PASS neg-lookup-via-callback-denied-12 12
+PASS neg-register-via-callback-denied-12 12
+PASS neg-private-path-raw-opendisk-rejected -1
+PASS neg-garbage-invoke-rejected -1
+PASS neg-read_fd3-denied -7
+PASS neg-read_fd4-denied -7
+PASS neg-read_fd99-denied -7
+PASS neg-write_fd3-denied -7
+PASS neg-write_fd99-denied -7
+  victim-A-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+PASS neg-victim-A-still-works-after-attack {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+  victim-secret-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+PASS neg-victim-secret-unchanged {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+  victim-evil-absent: HTTP/1.1 200 OK {'kind': 'err', 'code': 8, 'extra': ''}
+PASS neg-no-sibling-write-contamination {'kind': 'err', 'code': 8, 'extra': ''}
+
+=== SUMMARY ===
+TOTAL=31 PASS=31 FAIL=0
+ALL_OK=True
+RUN_3_RC=0
+=== Control: unmodified harness against znh5 pinned binary (exact claim artifact) ===
+----- CONTROL RUN 1 (kernel=/tmp/opencode/p1p2-http-8TasxocIctWh2VHtJ7e4EX-znh5RvkLAxPWER7dQJAcsq-20261121/target-kernel/release/skrynia-server) -----
+ARTIFACT kernel 91cd9b8a179a1db5dfcc2c2630746a3744cfc8e785d2c476542d0c1703e1e3e4 OK
+ARTIFACT p0 6e4f41e280df56ec7feb5a91e618add2b1d24c934561b4c56767de5c40a936f7 OK
+ARTIFACT p1 6b5f793b64a044fb0ca4cb483c0af0cedfa4c3a846ac102a16eb74884a67c9aa OK
+ARTIFACT echo dc28e490b107084224562cc02a185e99c64727d6dd185eab5645989aa9c17ec5 OK
+ARTIFACT attack f9eaa6438c96ef000085e30b61ca49a43a174786a10ac9a19dae128f92a3d52b OK
+
+=== POSITIVE: real HTTP P0 -> P1 -> P2 mediated callback ===
+  register: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+PASS positive-register {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+  lookup: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-p1-p2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+PASS positive-invoke-p1-p2-echo {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+  put1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b';\xfc&\x95\x94\xefd\x92(\xe9\xa7K\xab\x00\xf0B\xef\xc9\x1dZ\xcco\xbe\xe3\x1a8.\x80\xd4#\x88\xfe', 'body_hex': '3bfc269594ef649228e9a74bab00f042efc91d5acc6fbee31a382e80d42388fe'}
+  get1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+PASS positive-appdata-put-get {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+  cas-ok: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xfb\x04\xdc\xb6\x97\x0eL=\x18s\xdeQ\xfdZP\xd7\xbbF\xb381\x13`&e\xc3P\xec@\xb5\xf9\x90', 'body_hex': 'fb04dcb6970e4c3d1873de51fd5a50d7bb46b3383113602665c350ec40b5f990'}
+  get2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-cas {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  cas-wrong: HTTP/1.1 200 OK {'kind': 'err', 'code': 10, 'extra': '00'}
+  get3: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-cas-wrong-precond-rejected {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  lookup-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup-after-restart {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+PASS positive-invoke-after-restart {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+  get-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-after-restart {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+
+=== NEGATIVE: malicious P2 reentrant cross-app / sibling denial ===
+  reg-victim-A: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+PASS neg-register-victim-A {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+  reg-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+PASS neg-register-attacker-P2 {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+  victim-A-sanity: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+PASS neg-victim-A-sanity-invoke {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+  seed-A-secret: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b"'\r\x90\x91\x8bF\x9a\xecL\xeeB_\xdf\x08]I\x17\x04uW\xf0\xcb\x16$\xeb\xb3\n\xca8\x85l\xc5", 'body_hex': '270d90918b469aec4cee425fdf085d4917047557f0cb1624ebb30aca38856cc5'}
+  invoke-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+PASS neg-attacker-P2-invoke-via-P1-callback {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+  --- attacker report ---
+  get_own_read_cap=8
+  get_sib_read_cap=13
+  get_own_iid_as_readcap=8
+  get_sib_iid_as_readcap=13
+  put_sib_write_cap=13
+  put_own_write_cap=13
+  put_own_iid_as_writecap=0
+  del_sib_iid=-1
+  lookup_via_invoke=12
+  register_via_invoke=12
+  raw_opendisk_via_invoke=-1
+  garbage_invoke=-1
+  get_zero_cap=13
+  read_fd3=-7
+  read_fd4=-7
+  read_fd99=-7
+  write_fd3=-7
+  write_fd99=-7
+  --- end report ---
+PASS neg-reentrant-self-read-returns-absent-not-fault 8
+PASS neg-reentrant-self-write-own-namespace-ok 0
+PASS neg-sibling-read-cap-denied-13 13
+PASS neg-sibling-iid-as-readcap-denied-13 13
+PASS neg-sibling-write-cap-denied-13 13
+PASS neg-zero-cap-denied-13 13
+PASS neg-lookup-via-callback-denied-12 12
+PASS neg-register-via-callback-denied-12 12
+PASS neg-private-path-raw-opendisk-rejected -1
+PASS neg-garbage-invoke-rejected -1
+PASS neg-read_fd3-denied -7
+PASS neg-read_fd4-denied -7
+PASS neg-read_fd99-denied -7
+PASS neg-write_fd3-denied -7
+PASS neg-write_fd99-denied -7
+  victim-A-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+PASS neg-victim-A-still-works-after-attack {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+  victim-secret-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+PASS neg-victim-secret-unchanged {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+  victim-evil-absent: HTTP/1.1 200 OK {'kind': 'err', 'code': 8, 'extra': ''}
+PASS neg-no-sibling-write-contamination {'kind': 'err', 'code': 8, 'extra': ''}
+
+=== SUMMARY ===
+TOTAL=31 PASS=31 FAIL=0
+ALL_OK=True
+CONTROL_1_RC=0
+----- CONTROL RUN 2 (kernel=/tmp/opencode/p1p2-http-8TasxocIctWh2VHtJ7e4EX-znh5RvkLAxPWER7dQJAcsq-20261121/target-kernel/release/skrynia-server) -----
+ARTIFACT kernel 91cd9b8a179a1db5dfcc2c2630746a3744cfc8e785d2c476542d0c1703e1e3e4 OK
+ARTIFACT p0 6e4f41e280df56ec7feb5a91e618add2b1d24c934561b4c56767de5c40a936f7 OK
+ARTIFACT p1 6b5f793b64a044fb0ca4cb483c0af0cedfa4c3a846ac102a16eb74884a67c9aa OK
+ARTIFACT echo dc28e490b107084224562cc02a185e99c64727d6dd185eab5645989aa9c17ec5 OK
+ARTIFACT attack f9eaa6438c96ef000085e30b61ca49a43a174786a10ac9a19dae128f92a3d52b OK
+
+=== POSITIVE: real HTTP P0 -> P1 -> P2 mediated callback ===
+  register: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+PASS positive-register {'kind': 'ok', 'blen': 32, 'body': b'\x97\x17\n\x1aT\xbc\x0e8{\x8eN\x17\x0f\x82\xbb\xe3\\_\xd5z\xb6l(*\x0f\x00\xbaz\xb0\xa9\xba\xcc', 'body_hex': '97170a1a54bc0e387b8e4e170f82bbe35c5fd57ab66c282a0f00ba7ab0a9bacc'}
+  lookup: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-p1-p2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+PASS positive-invoke-p1-p2-echo {'kind': 'ok', 'blen': 11, 'body': b'hello-p1-p2', 'body_hex': '68656c6c6f2d70312d7032'}
+  put1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b';\xfc&\x95\x94\xefd\x92(\xe9\xa7K\xab\x00\xf0B\xef\xc9\x1dZ\xcco\xbe\xe3\x1a8.\x80\xd4#\x88\xfe', 'body_hex': '3bfc269594ef649228e9a74bab00f042efc91d5acc6fbee31a382e80d42388fe'}
+  get1: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+PASS positive-appdata-put-get {'kind': 'ok', 'blen': 2, 'body': b'v1', 'body_hex': '7631'}
+  cas-ok: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xfb\x04\xdc\xb6\x97\x0eL=\x18s\xdeQ\xfdZP\xd7\xbbF\xb381\x13`&e\xc3P\xec@\xb5\xf9\x90', 'body_hex': 'fb04dcb6970e4c3d1873de51fd5a50d7bb46b3383113602665c350ec40b5f990'}
+  get2: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-cas {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  cas-wrong: HTTP/1.1 200 OK {'kind': 'err', 'code': 10, 'extra': '00'}
+  get3: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-cas-wrong-precond-rejected {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+  lookup-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+PASS positive-lookup-after-restart {'kind': 'ok', 'blen': 170, 'body': b'\x00asm\x01\x00\x00\x00\x01\x0e\x02`\x03\x7f\x7f\x7f\x01\x7f`\x02\x7f\x7f\x01\x7f\x02 \x02\x07skrynia\x04read\x00\x00\x07skrynia\x05write\x00\x00\x03\x02\x01\x01\x05\x03\x01\x00\x01\x07\x19\x02\x06memory\x02\x00\x0cskrynia_main\x00\x02\nJ\x01H\x01\x02\x7f\x02@\x03@ \x00A\x80\x08A\x80 \x10\x00!\x02 \x02A\x00L\r\x01A\x00!\x03\x02@\x03@ \x03 \x02N\r\x01 \x03 \x01A\x80\x08 \x03j \x02 \x03k\x10\x01j!\x03\x0c\x00\x0b\x0b\x0c\x00\x0b\x0bA\x00\x0b', 'body_hex': '0061736d01000000010e0260037f7f7f017f60027f7f017f02200207736b72796e69610472656164000007736b72796e69610577726974650000030201010503010001071902066d656d6f727902000c736b72796e69615f6d61696e00020a4a014801027f02400340200041800841802010002102200241004c0d014100210302400340200320024e0d012003200141800820036a200220036b10016a21030c000b0b0c000b0b41000b'}
+  invoke-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+PASS positive-invoke-after-restart {'kind': 'ok', 'blen': 13, 'body': b'after-restart', 'body_hex': '61667465722d72657374617274'}
+  get-restart: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+PASS positive-appdata-after-restart {'kind': 'ok', 'blen': 2, 'body': b'v2', 'body_hex': '7632'}
+
+=== NEGATIVE: malicious P2 reentrant cross-app / sibling denial ===
+  reg-victim-A: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+PASS neg-register-victim-A {'kind': 'ok', 'blen': 32, 'body': b'\xaf\x05\xf449\xd4NG\xef2\xc3\x92\xac3F\xee\xc2\xd3\xd1Va\x85.\x89\x1aC/\x95\x92\xa4\xcb<', 'body_hex': 'af05f43439d44e47ef32c392ac3346eec2d3d15661852e891a432f9592a4cb3c'}
+  reg-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+PASS neg-register-attacker-P2 {'kind': 'ok', 'blen': 32, 'body': b'\x92J&\n\x97\xbed\x85\x00\xc0p)\xd9\x11\xdd%p\xe6\xc3t\xcbQ\x97i\xb4\xd9^Tq\xb5\xf7x', 'body_hex': '924a260a97be648500c07029d911dd2570e6c374cb519769b4d95e5471b5f778'}
+  victim-A-sanity: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+PASS neg-victim-A-sanity-invoke {'kind': 'ok', 'blen': 4, 'body': b'ping', 'body_hex': '70696e67'}
+  seed-A-secret: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 32, 'body': b"'\r\x90\x91\x8bF\x9a\xecL\xeeB_\xdf\x08]I\x17\x04uW\xf0\xcb\x16$\xeb\xb3\n\xca8\x85l\xc5", 'body_hex': '270d90918b469aec4cee425fdf085d4917047557f0cb1624ebb30aca38856cc5'}
+  invoke-attacker-B: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+PASS neg-attacker-P2-invoke-via-P1-callback {'kind': 'ok', 'blen': 342, 'body': b'get_own_read_cap=8\nget_sib_read_cap=13\nget_own_iid_as_readcap=8\nget_sib_iid_as_readcap=13\nput_sib_write_cap=13\nput_own_write_cap=13\nput_own_iid_as_writecap=0\ndel_sib_iid=-1\nlookup_via_invoke=12\nregister_via_invoke=12\nraw_opendisk_via_invoke=-1\ngarbage_invoke=-1\nget_zero_cap=13\nread_fd3=-7\nread_fd4=-7\nread_fd99=-7\nwrite_fd3=-7\nwrite_fd99=-7\n', 'body_hex': '6765745f6f776e5f726561645f6361703d380a6765745f7369625f726561645f6361703d31330a6765745f6f776e5f6969645f61735f726561646361703d380a6765745f7369625f6969645f61735f726561646361703d31330a7075745f7369625f77726974655f6361703d31330a7075745f6f776e5f77726974655f6361703d31330a7075745f6f776e5f6969645f61735f77726974656361703d300a64656c5f7369625f6969643d2d310a6c6f6f6b75705f7669615f696e766f6b653d31320a72656769737465725f7669615f696e766f6b653d31320a7261775f6f70656e6469736b5f7669615f696e766f6b653d2d310a676172626167655f696e766f6b653d2d310a6765745f7a65726f5f6361703d31330a726561645f6664333d2d370a726561645f6664343d2d370a726561645f666439393d2d370a77726974655f6664333d2d370a77726974655f666439393d2d370a'}
+  --- attacker report ---
+  get_own_read_cap=8
+  get_sib_read_cap=13
+  get_own_iid_as_readcap=8
+  get_sib_iid_as_readcap=13
+  put_sib_write_cap=13
+  put_own_write_cap=13
+  put_own_iid_as_writecap=0
+  del_sib_iid=-1
+  lookup_via_invoke=12
+  register_via_invoke=12
+  raw_opendisk_via_invoke=-1
+  garbage_invoke=-1
+  get_zero_cap=13
+  read_fd3=-7
+  read_fd4=-7
+  read_fd99=-7
+  write_fd3=-7
+  write_fd99=-7
+  --- end report ---
+PASS neg-reentrant-self-read-returns-absent-not-fault 8
+PASS neg-reentrant-self-write-own-namespace-ok 0
+PASS neg-sibling-read-cap-denied-13 13
+PASS neg-sibling-iid-as-readcap-denied-13 13
+PASS neg-sibling-write-cap-denied-13 13
+PASS neg-zero-cap-denied-13 13
+PASS neg-lookup-via-callback-denied-12 12
+PASS neg-register-via-callback-denied-12 12
+PASS neg-private-path-raw-opendisk-rejected -1
+PASS neg-garbage-invoke-rejected -1
+PASS neg-read_fd3-denied -7
+PASS neg-read_fd4-denied -7
+PASS neg-read_fd99-denied -7
+PASS neg-write_fd3-denied -7
+PASS neg-write_fd99-denied -7
+  victim-A-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+PASS neg-victim-A-still-works-after-attack {'kind': 'ok', 'blen': 8, 'body': b'still-ok', 'body_hex': '7374696c6c2d6f6b'}
+  victim-secret-after-attack: HTTP/1.1 200 OK {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+PASS neg-victim-secret-unchanged {'kind': 'ok', 'blen': 11, 'body': b'TOPSECRET-A', 'body_hex': '544f505345435245542d41'}
+  victim-evil-absent: HTTP/1.1 200 OK {'kind': 'err', 'code': 8, 'extra': ''}
+PASS neg-no-sibling-write-contamination {'kind': 'err', 'code': 8, 'extra': ''}
+
+=== SUMMARY ===
+TOTAL=31 PASS=31 FAIL=0
+ALL_OK=True
+CONTROL_2_RC=0
+=== DONE ===
