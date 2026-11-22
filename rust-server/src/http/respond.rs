@@ -28,7 +28,12 @@ pub async fn response(mut receiver: mpsc::Receiver<Chunk>) -> Response {
         Some(Err(e)) if e.kind() == io::ErrorKind::InvalidData => {
             StatusCode::PAYLOAD_TOO_LARGE.into_response()
         }
-        Some(Err(e)) if e.kind() == io::ErrorKind::BrokenPipe => {
+        Some(Err(e))
+            if matches!(
+                e.kind(),
+                io::ErrorKind::BrokenPipe | io::ErrorKind::TimedOut
+            ) =>
+        {
             StatusCode::BAD_REQUEST.into_response()
         }
         Some(Err(_)) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
