@@ -2,12 +2,23 @@ use super::output::Chunk;
 use std::io;
 use tokio::{sync::mpsc, task::JoinHandle};
 
+// Mirrors boot::vm::codes::ERR_LIMIT; a nested import is forbidden by the
+// source linter. No limit is changed: this only classifies the fail-closed
+// result so the HTTP layer can answer 503 instead of a catch-all 500.
+const LIMIT: i32 = -10;
+
+fn fail(code: i32) -> io::Error {
+    match code {
+        LIMIT => io::ErrorKind::WouldBlock.into(),
+        _ => io::Error::other("VM guest fault"),
+    }
+}
+
 pub async fn supervise(
     mut pump: JoinHandle<io::Result<()>>,
     mut worker: JoinHandle<Result<(), i32>>,
     tx: mpsc::Sender<Chunk>,
 ) {
-    let fail = |code: i32| io::Error::other(format!("VM error {code}"));
     tokio::select! {
         biased;
         result = &mut pump => {

@@ -29,7 +29,8 @@ async fn active_vm_execution_cannot_exceed_admission_limit() {
     .await
     .unwrap()
     .unwrap();
-    assert_eq!(denied.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    // Exhausted admission pool is a transient overload, not a server fault.
+    assert_eq!(denied.status(), StatusCode::SERVICE_UNAVAILABLE);
     drop(senders);
     for response in responses {
         response.into_body().collect().await.unwrap();

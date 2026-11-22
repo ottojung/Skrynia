@@ -20,7 +20,7 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
     }
     let permit = match app.permits.try_acquire_owned() {
         Ok(permit) => permit,
-        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+        Err(_) => return respond::error(std::io::ErrorKind::WouldBlock),
     };
     let t = term::new();
     let (tx, rx) = tokio::sync::mpsc::channel(2);
