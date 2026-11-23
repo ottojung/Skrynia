@@ -20,7 +20,7 @@ board comment `2026-11-23T07:34:55.780Z`.
   for an intent that is no longer current.
 - Trims delete v2 clauses only. No new claim was added to any user-sourced record;
   the surviving sentences remain verbatim @ottojung text.
-- This file and `check-intent-supersession.py` are agent-authored, sourced to the
+- This file and `check_intent_supersession.rs` are agent-authored, sourced to the
   board issue and F1 review — **not** to @ottojung. Do not cite them as user intent.
 
 ## Kernel promises vs optional external behavior
@@ -46,9 +46,9 @@ board comment `2026-11-23T07:34:55.780Z`.
 | `$id-3575263406896832` | `public-reads.md` — public object reads by key | `docs/v3-vm-spec.md` "Kernel boundary" + "HTTP and response contract" (no public object keyspace; kernel does not inspect output meaning) |
 | `$id-0950561916992512` | `quotas.md` — grant byte/object budgets | `docs/v3-vm-spec.md` "Kernel boundary" (no quotas/accounting) + "Safety, limits, and determinism boundaries" (physical ceilings only, `ERR_LIMIT`) |
 | `$id-2651223578750229` | `scope-delta-index.md` — log-structured quota index over object names | `docs/v3-vm-spec.md` "Kernel boundary" (no lookup/accounting) + "Disk, paths, and descriptors" / "Global RAM semantics" (raw byte primitives; indexes are userland) |
-| `$id-4070814447118336` | `atomic-operations.md` — object CRUD + split grant mutation ops | `docs/v3-vm-spec.md` "Global RAM semantics" (linearizable CAS), "Disk, paths, and descriptors" (atomic rename), "Root imports (Program 0 only)"; generic single-writer retained at `docs/intent-records/exclusive-writer.md` (`$id-4248198621776748`) |
+| `$id-4070814447118336` | `atomic-operations.md` — object CRUD + split grant mutation ops | `docs/v3-vm-spec.md` "Global RAM semantics" (linearizable CAS), "Disk, paths, and descriptors" (atomic rename), "Root imports (Program 0 only)"; generic single-writer retained at `docs/intent-records/exclusive-writer.md` |
 | `$id-7458341334509459` | `content-sha256-conditional-mutation.md` — PUT/DELETE `/store/{key}`, `X-Skrynia-If-SHA256`, ETags | `docs/v3-vm-spec.md` "HTTP and response contract" (only `POST /`; no route/header interpretation; app errors in output bytes); optional v2 HTTP protocol is userland WASM in `skrynia-tools` |
-| `$id-7318492056174302` | `direct-static-serving.md` — nginx serves `GET /store/{key}` | `docs/v3-vm-spec.md` "HTTP and response contract"; retained `docs/intent-records/origin-isolation.md` (`$id-6947136701570090`) is external-hosting guidance, not a kernel promise |
+| `$id-7318492056174302` | `direct-static-serving.md` — nginx serves `GET /store/{key}` | `docs/v3-vm-spec.md` "HTTP and response contract"; retained `docs/intent-records/origin-isolation.md` is external-hosting guidance, not a kernel promise |
 | `$id-5943420546985984` | `filesystem-storage.md` — public object files under `STORE_DIR` + private grants | `docs/v3-vm-spec.md` "Kernel boundary" (confined `SKRYNIA_DATA_DIR` subtree) + "Disk, paths, and descriptors"; no public/private object split in the kernel |
 | `$id-0203518065789149` | `hierarchical-object-keys.md` — object keys + matchers/quota/listing/GET | `docs/v3-vm-spec.md` "Disk, paths, and descriptors" (confined UTF-8 relative paths, no `..`, <= 4096) + "HTTP and response contract" |
 | `$id-5170459438610461` | `large-objects.md` — 10 GB objects, quota, SHA CAS, durable recovery | `docs/v3-vm-spec.md` "HTTP and response contract" (`SKRYNIA_MAX_REQUEST_BYTES` default 16 MiB, `413`, bounded streaming/backpressure); large-object protocols are userland WASM |
@@ -76,9 +76,24 @@ board comment `2026-11-23T07:34:55.780Z`.
 
 ## Verification
 
-From the repository root run `python3 docs/v3/check-intent-supersession.py`.
-It is source-only (file reads/diff): no Cargo, Rust, WASM or container build,
-no network, no test-suite claim. It checks that retired IDs are absent from live
-records, that all mappings resolve to existing headings, and that the v3 kernel
-security text is still present unchanged. Green CI at the base head is *not* a
-release qualification; PR stays DRAFT, no main/production merge.
+Std-only Rust checker (Rust per AGENTS.md; no Python, no Cargo/Podman build).
+From the repository root:
+
+```sh
+rustfmt --edition 2024 --check docs/v3/check_intent_supersession.rs
+rustc --edition=2024 --test docs/v3/check_intent_supersession.rs -o /tmp/opencode/f1-check
+/tmp/opencode/f1-check --nocapture
+```
+
+Executed at this exact head: rustfmt check PASS, 1 test passed. The checker uses
+only `std` (`fs` and `process::Command` for read-only `git grep` against the
+pinned PR120 base SHA `8c0c14655584a7dead3c7df5ce490d23e59f9242`), stays within
+AGENTS.md's 50-nonblank-noncomment-line cap, and derives every ID from the
+supersession tables and that exact base commit instead of hardcoding counts. It asserts that every
+base ID is either retired-and-absent from live records or retained, that trimmed
+IDs stay live, that no v2-only token remains in live records, that each mapped
+section heading exists in its named file, and that the v3 kernel invariants
+(`MUST NOT implement grants`, `POST /` only, `SKRYNIA_ROOT_WASM`, `ERR_PERM`) and
+the v2-target relabel are intact. No build, no network, no production access.
+Green CI at the base head is *not* a release qualification; PR stays DRAFT,
+no main/production merge.
