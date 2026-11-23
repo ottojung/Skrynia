@@ -45,24 +45,27 @@ in this repository.
 
 ## Running an isolated v3 kernel
 
-Supply an existing private storage directory and a separately built root WASM:
+Supply two existing private, disjoint storage directories and a separately built root WASM:
 
 ```sh
 export SKRYNIA_ROOT_WASM=/absolute/path/to/root.wasm
-export SKRYNIA_DATA_DIR=/absolute/path/to/private/data
+export SKRYNIA_OPERATOR_DIR=/absolute/private/operator
+export SKRYNIA_USER_DIR=/absolute/private/user
 export SKRYNIA_BIND=127.0.0.1:17380
 target/release/skrynia-server
 ```
 
-`SKRYNIA_ROOT_WASM` and `SKRYNIA_DATA_DIR` are required. The kernel
-compiles the root and validates its imports/exports on **every startup**;
+`SKRYNIA_ROOT_WASM`, `SKRYNIA_OPERATOR_DIR` and `SKRYNIA_USER_DIR` are
+required. Both directory roots must exist, be disjoint and private; the
+kernel never creates or infers them. The kernel compiles the root and validates its imports/exports on **every startup**;
 an invalid ABI fails startup rather than the first request. It never
 interprets Program 0's request or response body.
 
 A container image can be built with podman or docker (`make docker-build`).
 It contains **only the kernel** and listens on port 17380. Mount the root
-WASM read-only, set `SKRYNIA_ROOT_WASM` explicitly, and mount a private,
-UID 1000-owned, mode 0700 `SKRYNIA_DATA_DIR`. No default WASM, application grant,
+WASM read-only and set `SKRYNIA_ROOT_WASM` explicitly. Supply disjoint,
+private UID 1000-owned, mode 0700 mounts at `SKRYNIA_OPERATOR_DIR` and
+`SKRYNIA_USER_DIR`. No default WASM, application grant,
 admin CLI, credential, or native health endpoint is provided. Use an
 orchestrator TCP liveness check; application health is a Program 0 protocol.
 
