@@ -1,3 +1,9 @@
+> **Legacy v2 compatibility/research context.** This page describes an
+> object-storage protocol or proposed algorithms, not the merged native v3
+> kernel. Current v3 provides only generic `POST /` and operator-supplied
+> WASM. See the [current v3 specification](v3-vm-spec.md) and
+> [verification](verification.md) before implementing or deploying anything.
+
 # Skrynia HTTP API
 
 The paths below are relative to `SKRYNIA_URL`, including its optional URL

@@ -1,3 +1,9 @@
+> **Legacy v2 compatibility/research context.** This page describes an
+> object-storage protocol or proposed algorithms, not the merged native v3
+> kernel. Current v3 provides only generic `POST /` and operator-supplied
+> WASM. See the [current v3 specification](v3-vm-spec.md) and
+> [verification](verification.md) before implementing or deploying anything.
+
 # Skrynia complexity model
 
 Status: normative **as a method of analyzing complexity**, not as a claim that
@@ -394,6 +400,6 @@ fsync/rename counts, p50/p95/p99 latency, throughput and failure
 behavior. Measurements are **not a prerequisite for the present
 mathematical design comparison**.
 
-See [verification](verification.md) for the current test and performance
+See [historical v2 verification](verification-v2-history.md) for the v2 test and performance
 evidence. This model does not weaken the production durability, exclusive
 writer, object-layout, authority, or recovery requirements.

@@ -3,8 +3,9 @@
 Skrynia is a small Rust WebAssembly kernel, not a built-in database or grant
 server. It executes **operator-supplied Program 0 WASM** in response to
 opaque binary HTTP requests. All application protocols, storage keys,
-authorization, grants, quotas and application semantics belong in Program 0
-or the programs it evaluates—not in the native kernel.
+authorization, grants, quotas and application semantics belong in ordinary
+userland WASM—not in the native kernel. The optional example Program 0 in
+`skrynia-tools` only checks its private bearer and forwards opaque calls.
 
 The native HTTP API has exactly one endpoint:
 
@@ -41,24 +42,28 @@ Its draft code has not passed the complete v2 release gates.
 
 ## Running an isolated v3 kernel
 
-Supply an existing private storage directory and a separately built root WASM:
+Supply two existing disjoint private storage directories and a separately built root WASM:
 
 ```sh
 export SKRYNIA_ROOT_WASM=/absolute/path/to/root.wasm
-export SKRYNIA_DATA_DIR=/absolute/path/to/private/data
+export SKRYNIA_OPERATOR_DIR=/absolute/private/operator
+export SKRYNIA_USER_DIR=/absolute/private/user
 export SKRYNIA_BIND=127.0.0.1:17380
 target/release/skrynia-server
 ```
 
-`SKRYNIA_ROOT_WASM` and `SKRYNIA_DATA_DIR` are required. The kernel
+`SKRYNIA_ROOT_WASM`, `SKRYNIA_OPERATOR_DIR`, and `SKRYNIA_USER_DIR`
+are required. Both root directories must already exist, be disjoint and
+private; the kernel never creates or infers them. The kernel
 compiles the root and validates its imports/exports on **every startup**;
 an invalid ABI fails startup rather than the first request. It never
 interprets Program 0's request or response body.
 
 A container image can be built with podman or docker (`make docker-build`).
 It contains **only the kernel** and listens on port 17380. Mount the root
-WASM read-only, set `SKRYNIA_ROOT_WASM` explicitly, and mount a private,
-UID 1000-owned, mode 0700 `SKRYNIA_DATA_DIR`. No default WASM, application grant,
+WASM read-only and set `SKRYNIA_ROOT_WASM` explicitly. Mount disjoint,
+private, UID 1000-owned, mode 0700 directories at
+`SKRYNIA_OPERATOR_DIR` and `SKRYNIA_USER_DIR`. No default WASM, application grant,
 admin CLI, credential, or native health endpoint is provided. Use an
 orchestrator TCP liveness check; application health is a Program 0 protocol.
 
@@ -67,7 +72,8 @@ orchestrator TCP liveness check; application health is a Program 0 protocol.
 [The v3 VM specification](docs/v3-vm-spec.md) defines every host import,
 memory domain, return code and sandboxing constraint.
 [ABI decisions](docs/v3/abi.md) refine ownership and callback behavior.
-[Integration notes](docs/v3-integration.md) list unfinished gates.
+[Current verification and release gates](docs/verification.md) list unfinished
+runtime and production qualifications.
 
 The older v2 HTTP/grants/Web Push documentation describes the compatibility
 **target**, not functionality implemented by the native v3 kernel.

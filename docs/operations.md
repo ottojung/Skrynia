@@ -1,3 +1,8 @@
+> **Legacy v2 operations reference, not the current kernel deployment
+> procedure.** Current v3 requires an operator-supplied root WASM and both
+> private root directories. See [README.md](../README.md) and
+> [v3 verification](verification.md). Do not run the commands below against v3.
+
 # Operating Skrynia
 
 Skrynia runs one Rust HTTP server over one authoritative filesystem directory.
@@ -129,4 +134,5 @@ file or attempt to manually complete an interrupted journal.
 `make test` runs default Rust formatting verification, structural linting,
 strict Clippy, unit tests, and independent HTTP integration tests.
 `make docker-build` produces the unprivileged release container.
-See [verification](verification.md) for qualification evidence and limits.
+See [historical v2 verification](verification-v2-history.md) for v2 evidence.
+The current v3 qualifications are in [verification](verification.md).

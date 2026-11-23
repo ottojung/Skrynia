@@ -1,3 +1,8 @@
+> **Historical v2-only record (archived).** All URLs, grant semantics and
+> measurements below describe the retired v2 HTTP/storage server, **not** the
+> merged v3 kernel. They are retained for historical provenance only. For
+> current v3 acceptance and performance testing, see [verification.md](verification.md).
+
 # Verification
 
 The Rust test suite checks the actual server and persistent state through
