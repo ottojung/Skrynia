@@ -7,10 +7,8 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .map_or(Ok(100), |s| s.parse())?;
     assert!((1..=10_000).contains(&samples));
     let target = fixture::Target::start().await?;
-    let token = target.user().await?;
-    let (reads, writes, plain) = workload::run(&target, &token, samples).await?;
-    report::print("GET 4 KiB", &reads);
-    report::print("CAS PUT 4 KiB", &writes);
-    report::print("Plain PUT 4 KiB", &plain);
+    let (no_op, disk) = workload::run(&target, samples).await?;
+    report::print("VM POST / no-op", &no_op);
+    report::print("VM POST / disk write+file sync 4 KiB", &disk);
     Ok(())
 }
