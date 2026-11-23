@@ -4,7 +4,7 @@ date: 2026/11/12
 source: @ottojung
 kind: requirement
 
-Skrynia's authoritative HTTP and persistence server shall be implemented exclusively in Rust. Preserve storage, grant, quota, conditional byte-hash mutation, crash recovery, public static serving, Web Push, and privilege-boundary semantics. Unsupported persistent state must fail closed, never be ignored or discarded. The server must pass HTTP, persistent-state, notification, crash and concurrency qualification. All application meaning stays exclusively in clients.
+Skrynia's authoritative HTTP and persistence server shall be implemented exclusively in Rust. Preserve crash recovery, and privilege-boundary semantics. Unsupported persistent state must fail closed, never be ignored or discarded. The server must pass HTTP, persistent-state, crash and concurrency qualification.
 
 $id-0381283944881954
 title: Rust source quality and verified throughput
@@ -20,4 +20,4 @@ date: 2026/11/16
 source: @ottojung
 kind: requirement
 
-Use docs/complexity.md as the normative framework for analyzing Skrynia's complexity. Parametrize filesystem lookup, read, write, namespace mutation, enumeration, and synchronization costs instead of assuming universal O(k) lookup or O(b) disk I/O. Count server CPU, RAM, live/peak persistent space, filesystem-operation traces, concurrency, and recovery separately. Permit disk-backed indexes, temporary files, and durable private metadata, with their costs and consistency obligations explicitly charged. Distinguish current implementation bounds, proved conditional bounds, measurements, and unimplemented optimization goals; do not weaken object, authority, notification, or production durability semantics.
+Use docs/complexity.md as the normative framework for analyzing Skrynia's complexity. Parametrize filesystem lookup, read, write, namespace mutation, enumeration, and synchronization costs instead of assuming universal O(k) lookup or O(b) disk I/O. Count server CPU, RAM, live/peak persistent space, filesystem-operation traces, concurrency, and recovery separately. Permit disk-backed indexes, temporary files, and durable private metadata, with their costs and consistency obligations explicitly charged. Distinguish current implementation bounds, proved conditional bounds, measurements, and unimplemented optimization goals; do not weaken production durability semantics.

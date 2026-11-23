@@ -1,0 +1,10 @@
+(module
+      (import "skrynia" "eval" (func $e (param i32 i32 i32 i32 i32)(result i32)))
+      (import "skrynia" "read" (func $r (param i32 i32 i32)(result i32)))
+      (memory (export "memory") 4) (data (i32.const 0) "@@P2_BYTES@@")
+      (func (export "skrynia_main") (param $i i32)(param $o i32)(result i32)
+        (local $direct i32)
+        (local.set $direct (call $r (i32.const 65538)(i32.const 4096)(i32.const 9)))
+        (if (i32.ne (local.get $direct)(i32.const -7)) (then (return (i32.const -5))))
+        (drop (call $e (i32.const 0)(i32.const @@P2_LEN@@)(i32.const 65538)(local.get $o)(i32.const -1)))
+        (i32.const 0)))

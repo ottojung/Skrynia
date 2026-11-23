@@ -1,0 +1,10 @@
+(module
+ (import "skrynia" "invoke" (func $invoke(param i32 i32 i32 i32)(result i32)))
+ (import "skrynia" "write" (func $write(param i32 i32 i32)(result i32)))
+ (memory(export "memory") 1)
+ (func(export "skrynia_main")(param $in i32)(param $out i32)(result i32)
+  (local $n i32)
+  (local.set $n(call $invoke(i32.const 0)(i32.const 0)(i32.const 128)(i32.const 16)))
+  (i32.store(i32.const 64)(local.get $n))
+  (drop(call $write(local.get $out)(i32.const 64)(i32.const 4)))
+  (i32.const 0)))
