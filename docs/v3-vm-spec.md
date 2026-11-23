@@ -20,8 +20,10 @@ loaded/validated/compiled at every process initialization and restart.
 The Skrynia repository and server MUST NOT include any built-in Program 0,
 build one, select one automatically, or depend on a specific Program 0 protocol.
 An optional Program 0 implementation belongs in the separate `skrynia-tools`
-repository; users may provide arbitrary conforming alternatives. `SKRYNIA_DATA_DIR` is the confined
-filesystem subtree for privileged disk access. Initialization fails closed.
+repository; users may provide arbitrary conforming alternatives.
+`SKRYNIA_OPERATOR_DIR` and `SKRYNIA_USER_DIR` are independent, preexisting,
+confined, non-overlapping filesystem roots. Initialization fails closed if
+either is missing, invalid or aliased.
 
 ## HTTP and response contract
 
@@ -291,8 +293,9 @@ iff `WRITE`.
 
 Path rules: UTF-8 bytes, no NUL, no absolute path, no empty segment, no `..`
 segment after normalization, total path length <= 4096, confined below
-`SKRYNIA_DATA_DIR`. Kernel resolves paths using race-resistant confined opens
-(e.g. openat-style traversal from the data-dir root, rejecting symlink escape);
+`SKRYNIA_OPERATOR_DIR` or `SKRYNIA_USER_DIR`, depending on the resolved
+generic filesystem capability. Kernel resolves paths using race-resistant
+confined opens from the selected root, rejecting symlink escape;
 lexical checks are necessary but not sufficient.
 
 `mkdir(path,mode)`: `CREATE` creates leaf directory; `EXCL` fails if exists.
