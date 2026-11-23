@@ -6,7 +6,8 @@ kind: requirement
 
 The container runs the Skrynia process without root privileges, with a
 writable persistent data directory and support for a read-only root
-filesystem. The server acquires the required kernel lock directly. Registry publication
-runs only after the Rust test, structural lint, security checks and the
-built image's container smoke test succeed.
+filesystem. The kernel requires separately supplied root WASM, confines its
+filesystem access and runs without a default userland protocol. Registry
+publication runs only after the Rust test, structural lint, security checks and
+the built image's container smoke test succeed.
 Published images include a source-commit-specific tag.

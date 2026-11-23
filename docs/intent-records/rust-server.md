@@ -4,7 +4,7 @@ date: 2026/11/12
 source: @ottojung
 kind: requirement
 
-Skrynia's authoritative HTTP and persistence server shall be implemented exclusively in Rust. Preserve crash recovery, and privilege-boundary semantics. Unsupported persistent state must fail closed, never be ignored or discarded. The server must pass HTTP, persistent-state, crash and concurrency qualification.
+Skrynia's generic HTTP transport and WASM execution kernel shall be implemented exclusively in Rust. Preserve filesystem durability and privilege-boundary semantics. An invalid root WASM, unsafe path or host I/O failure must fail closed. Application-level persistent schemas, journals and recovery belong to userland programs, not the native kernel. The kernel must pass transport, filesystem, sandbox, crash and concurrency qualification.
 
 $id-0381283944881954
 title: Rust source quality and verified throughput

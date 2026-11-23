@@ -113,7 +113,7 @@ and descriptors are lost on process restart.
 - **Program 0:** must treat `cas_ram_u64` status separately from observed
   values, provide valid observed/result buffers, and not assume kernel I/O
   buffers persist across turns. Application protocol behavior is out of scope
-  for this v3 contract except compatibility boundaries stated in the spec.
+  for this v3 contract except the trust boundary between root and children.
 
 ## Qualification boundary
 
