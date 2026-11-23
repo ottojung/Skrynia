@@ -3,10 +3,14 @@
 Skrynia is a small Rust WebAssembly kernel, not a built-in database or grant
 server. It executes **operator-supplied Program 0 WASM** in response to
 opaque binary HTTP requests. All application protocols, storage keys,
-authorization, grants, quotas and application semantics belong in Program 0
-or the programs it evaluates—not in the native kernel.
+authentication, grants, quotas, subscriptions and application semantics belong
+**only in independently supplied userland WASM**, not in the native kernel.
+Program 0 is an operator-supplied opaque token-checking proxy; the example is
+maintained in [skrynia-tools](https://github.com/ottojung/skrynia-tools).
+The kernel neither builds nor selects a Program 0 and knows nothing about the
+proxied application protocol.
 
-The native HTTP API has exactly one endpoint:
+The kernel transport has exactly one endpoint; HTTP verbs are not application operations:
 
 - `POST /` with arbitrary `application/octet-stream` bytes.
 - Each request runs a fresh logical Program 0 instance, exporting
@@ -34,10 +38,10 @@ make build
 ```
 
 The kernel does not build, install, select or bundle a default Program 0.
-Operators compile their own conforming WebAssembly module separately.
-[skrynia-tools](https://github.com/ottojung/skrynia-tools) contains one
-**experimental, optional** userland Program 0 and v2 compatibility work.
-Its draft code has not passed the complete v2 release gates.
+All optional application servers, exact-key subscriptions, admin pages and
+compatibility layers are **userland programs** maintained in separate
+repositories. No application service or v2 object-store operation is present
+in this repository.
 
 ## Running an isolated v3 kernel
 
@@ -62,18 +66,20 @@ UID 1000-owned, mode 0700 `SKRYNIA_DATA_DIR`. No default WASM, application grant
 admin CLI, credential, or native health endpoint is provided. Use an
 orchestrator TCP liveness check; application health is a Program 0 protocol.
 
-## Specifications and release boundaries
+## Specifications and verification
 
-[The v3 VM specification](docs/v3-vm-spec.md) defines every host import,
-memory domain, return code and sandboxing constraint.
-[ABI decisions](docs/v3/abi.md) refine ownership and callback behavior.
-[Integration notes](docs/v3-integration.md) list unfinished gates.
+- [Kernel VM contract](docs/v3-vm-spec.md) defines the host imports,
+  memory domains, return codes and sandbox boundary.
+- [ABI details](docs/v3/abi.md) specify descriptor ownership, callback
+  isolation and other VM boundary decisions.
+- `make test` runs v3 kernel tests and structural/format/lint checks.
+  CI additionally builds an isolated container and exercises a separately
+  supplied disposable root WASM. These tests do not imply production release.
 
-The older v2 HTTP/grants/Web Push documentation describes the compatibility
-**target**, not functionality implemented by the native v3 kernel.
-Full delegated grant/quota/revocation/subscription parity, differential
-testing, migration, rollback and independent security reviews must pass
-before any production replacement. Do not point an existing deployed v2
-data directory at an unfinished v3 build.
+The root program, applications, data migrations, deployment origins, TLS,
+application access control and Web Push belong outside this kernel.
+Never point existing production data at an unqualified userland program.
+The kernel does not ship a release image or deploy automatically; publishing
+requires an explicit CI dispatch.
 
 Skrynia is Free Software under AGPL-3.0-or-later.

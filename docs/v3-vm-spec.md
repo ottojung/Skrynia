@@ -1,8 +1,8 @@
 # Skrynia v3 virtual machine — executable contract
 
-Status: **draft, phase-1 contract with prototype conformance checks**.
+Status: **native v3 kernel contract**, with additional userland release qualification required.
 Milestone: Antonina `dgKBALkpO7M7oKBHrZUzCT-shortly`.
-This document defines the v3 replacement kernel contract, not v2.
+This document defines only the native VM kernel and its transport boundary.
 All ABI types are for WebAssembly 1.0 MVP linear memory on wasm32.
 Pointers/lengths/offsets/capacities/counts are `u32` unless stated.
 
@@ -13,7 +13,7 @@ HTTP transport, module validation/instantiation, sandboxed execution,
 filesystem operations, global RAM primitives, time, randomness, and physical
 safety limits. The kernel MUST NOT implement grants, quotas, accounting,
 authentication, registration, lookup, mutable `set`, routing, program IDs,
-v2 object-store semantics, or any implicit capability distribution.
+application object-store semantics, or any implicit capability distribution.
 
 Program 0 is **entirely user-supplied**, configured by `SKRYNIA_ROOT_WASM`,
 loaded/validated/compiled at every process initialization and restart.
@@ -77,7 +77,7 @@ Transport/VM failures are distinct from application failures:
 
 Application-level errors are encoded by Program 0 in its output bytes and are
 returned as HTTP `200` unless Program 0 fails at the VM level. The kernel does
-not inspect output meaning. Legacy v2 HTTP behavior belongs in `skrynia-tools`.
+not inspect output meaning. Any application-level protocol belongs in independently supplied userland programs.
 
 ## Memory domains and ownership
 
@@ -391,13 +391,16 @@ Guest traps, invalid memories, out-of-bounds guest accesses, stack overflow,
 and exhausted fuel terminate the active instance/failure path without crashing
 the host process or leaking private memory/RAM contents across requests.
 
-## Conformance artifacts (phase 1)
+## Kernel conformance artifacts
 
-This repository carries executable phase-1 contract artifacts:
-- `docs/v3/abi.md` — resolved ABI decisions and rationale.
-- `docs/v3/fixtures/*.wat` — minimal canonical modules for import/ABI cases.
-- `rust-server/tests/v3_*.rs` and helpers — runnable prototype checks over the
-  documented ABI/status/buffer/invoke semantics, executed by `make test`.
+The current Rust kernel implements this v3 boundary. Its conformance
+fixtures and tests live in `rust-server/test-fixtures/` and
+`rust-server/tests/`, including startup/ABI validation, private memory and
+descriptor isolation, nested evaluation, output streaming, request admission,
+disk confinement and fault handling.
 
-These artifacts are contract/prototype evidence, not a claim that the full v3
-kernel is implemented in the current v2 server.
+`docs/v3/abi.md` records additional normative ABI decisions. Tests of the
+native transport use only `POST /`; program-level operations, storage schemas,
+grants, authentication, subscriptions and notifications are not native APIs.
+The separately deployed root WASM and other programs must be qualified
+independently of the kernel.

@@ -1,7 +1,8 @@
-# Skrynia v3 ABI decisions (phase 1)
+# Skrynia v3 ABI decisions
 
-This note records explicit resolutions for the OPEN items in the phase-1 VM
-contract. It is normative for prototype conformance artifacts in this branch.
+These ABI decisions accompany the native v3 kernel VM contract. The kernel
+has no knowledge of the application protocol spoken by an operator-supplied
+root program.
 
 ## Nested eval callbacks
 
@@ -111,19 +112,16 @@ and descriptors are lost on process restart.
   without implicit RAM access.
 - **Program 0:** must treat `cas_ram_u64` status separately from observed
   values, provide valid observed/result buffers, and not assume kernel I/O
-  buffers persist across turns. Existing v2 Program 0 behavior is out of scope
+  buffers persist across turns. Application protocol behavior is out of scope
   for this v3 contract except compatibility boundaries stated in the spec.
 
-## Remaining blockers
+## Qualification boundary
 
-- Full WASM runtime, compiler, fuel metering, and host import implementation
-  are not present in the current v2 server; phase-1 artifacts here are
-  contract/prototype checks and fixtures.
-- Exact memory-limit policy for host-allocated Program 0 output windows and
-  per-turn transient scratch growth needs implementation calibration.
-- Filesystem-portable directory-sync/rename corner cases require Linux-focused
-  conformance execution and documentation.
-
+These VM behavior rules are implemented in the Rust v3 kernel. Test fixtures
+exercise ABI validation, callback isolation, memory limits, physical resource
+limits, filesystem confinement and streaming. Compliance of an independently
+supplied root WASM, its child programs and their application-level protocols
+is a separate userland qualification; it is not implied by kernel tests.
 
 ## Root request/response descriptors
 

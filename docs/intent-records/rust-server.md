@@ -20,4 +20,10 @@ date: 2026/11/16
 source: @ottojung
 kind: requirement
 
-Use docs/complexity.md as the normative framework for analyzing Skrynia's complexity. Parametrize filesystem lookup, read, write, namespace mutation, enumeration, and synchronization costs instead of assuming universal O(k) lookup or O(b) disk I/O. Count server CPU, RAM, live/peak persistent space, filesystem-operation traces, concurrency, and recovery separately. Permit disk-backed indexes, temporary files, and durable private metadata, with their costs and consistency obligations explicitly charged. Distinguish current implementation bounds, proved conditional bounds, measurements, and unimplemented optimization goals; do not weaken production durability semantics.
+Analyze the actual generic WASM kernel using a filesystem-aware resource
+model. Count CPU, peak RAM, live/peak disk, file operations, kernel VM work,
+concurrency and crash recovery separately. State the assumptions under which
+complexity bounds hold and distinguish measured results from targets. Avoid
+silently equating filesystem operations with constant-time access. Do not add
+application object, grant, notification, or quota semantics to the native
+kernel in pursuit of an optimization. Preserve durability and sandbox safety.

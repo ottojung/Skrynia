@@ -7,6 +7,15 @@ The implementation must fit in a maintainer's head. Prefer small explicit module
 ## Development Rules
 
 - Keep implementation, administration, tests and benchmarks in Rust. Documentation describes only the current system.
+- This repository is exclusively the generic v3 kernel. The kernel transports opaque
+  binary requests at `POST /`, but it knows no application HTTP CRUD methods,
+  grants, keys, subscriptions, authentication, quota schemes, or programs by name.
+  Program 0 is provided by the operator and must not be bundled or selected
+  by the kernel. Application and compatibility protocols live in userland,
+  outside this repository.
+- Do not keep superseded native API documents, benchmarks, nginx publisher
+  configurations, transition notes or their tests as CURRENT. Git history is
+  the archive. `make source-check` rejects known obsolete paths and API claims.
 - Every Rust source (including lint/test code) must have at most 50 nonblank, noncomment code lines. Every directory under Rust source/lint/test trees may have at most 10 direct entries, files and directories combined. Local Rust imports must stay within sibling modules. Apply unmodified default `rustfmt`, and enforce the rules mechanically with Ivanka's source linter, `cargo fmt --all -- --check`, and strict Clippy checks.
 - Test changes against isolated temporary data. Never modify deployed data as part of development or CI. Use reversible releases and explicit operational review.
 - Keep dependencies minimal. Prefer standard-library facilities.
