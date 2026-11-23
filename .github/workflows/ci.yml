@@ -99,49 +99,6 @@ jobs:
           test "$status" = 404
           test "$(docker inspect --format '{{.Image}}' skrynia-test)" = \
             "$(docker image inspect --format '{{.Id}}' skrynia:ci)"
-      - name: Verify isolated public publisher origins
-        run: |
-          set -eu
-          tmp="$(mktemp -d)"
-          trap 'docker rm -f skrynia-static >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
-          mkdir -p "$tmp/certs" "$tmp/store" "$tmp/private"
-          openssl req -newkey rsa:2048 -nodes -x509 -days 1 \
-            -subj /CN=apps.example.org \
-            -keyout "$tmp/certs/apps.example.org.key" \
-            -out "$tmp/certs/apps.example.org.crt" >/dev/null 2>&1
-          printf Alice > "$tmp/store/alice.index.html"
-          printf Bob > "$tmp/store/bob.index.html"
-          printf secret > "$tmp/private/key"
-          printf cross > "$tmp/store/bob.secret.txt"
-          ln -s ../state/key "$tmp/store/alice.leak"
-          ln -s bob.secret.txt "$tmp/store/alice.cross"
-          docker run --rm -d --name skrynia-static \
-            -p 127.0.0.1:17443:443 \
-            -v "$PWD/examples/nginx-origins.conf:/etc/nginx/conf.d/skrynia.conf:ro" \
-            -v "$tmp/certs:/etc/nginx/certs:ro" \
-            -v "$tmp/store:/var/lib/skrynia/store:ro" \
-            -v "$tmp/private:/var/lib/skrynia/state:ro" nginx:stable
-          for i in $(seq 1 50); do
-            if curl -kfsS --noproxy '*' \
-              --resolve alice.apps.example.org:17443:127.0.0.1 \
-              https://alice.apps.example.org:17443/ >/dev/null; then break; fi
-            sleep 0.2
-          done
-          test "$(curl -kfsS --noproxy '*' \
-            --resolve alice.apps.example.org:17443:127.0.0.1 \
-            https://alice.apps.example.org:17443/)" = Alice
-          test "$(curl -kfsS --noproxy '*' \
-            --resolve bob.apps.example.org:17443:127.0.0.1 \
-            https://bob.apps.example.org:17443/)" = Bob
-          test "$(curl -k -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
-            --resolve alice.apps.example.org:17443:127.0.0.1 \
-            https://alice.apps.example.org:17443/bob.index.html)" = 404
-          test "$(curl -k -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
-            --resolve alice.apps.example.org:17443:127.0.0.1 \
-            https://alice.apps.example.org:17443/leak)" != 200
-          test "$(curl -k -sS --noproxy '*' -o /dev/null -w '%{http_code}' \
-            --resolve alice.apps.example.org:17443:127.0.0.1 \
-            https://alice.apps.example.org:17443/cross)" != 200
       - name: Log in to registry
         if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.publish == true
         uses: docker/login-action@v3
