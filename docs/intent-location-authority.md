@@ -1,6 +1,6 @@
 # Grant authority and resource accounting
 
-Status: normative.
+Status: **v2 compatibility target for optional userland WASM in `skrynia-tools`; not implemented by the native v3 kernel.** The current kernel contract is `docs/v3-vm-spec.md`.
 
 ## One root and one keyspace
 
