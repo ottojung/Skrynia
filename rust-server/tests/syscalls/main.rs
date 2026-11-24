@@ -1,5 +1,7 @@
+mod discovery;
 mod native;
 mod provider;
+mod provider_serve;
 mod remote;
 mod version;
 

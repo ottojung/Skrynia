@@ -1,19 +1,25 @@
 #[test]
 fn http_roundtrip_and_exact_result_length() {
-    for (body, expected) in [
-        (&[0xff, 0, 0, 0][..], Some(255u32)),
-        (&[0; 5][..], None),
-        (&[0; 3][..], None),
+    for (reply, valid) in [
+        (255u32.to_le_bytes().to_vec(), true),
+        (vec![0; 5], false),
+        (vec![0; 3], false),
     ] {
-        let (url, thread) = super::provider::provider(body);
+        let discovery = super::provider::Discovery {
+            status: 200,
+            body: r#"{"syscalls":["double"]}"#.into(),
+            reply,
+        };
+        let provider = super::provider::start(discovery, 2);
         let mut calls = libskrynia::Syscalls::new();
-        calls.http_fallback(&url, &["double"]).unwrap();
+        calls.http_provider(&provider.url).unwrap();
         let k = super::kernel(super::ROOT, calls).unwrap();
         let result = k.invoke(b"");
-        thread.join().unwrap();
-        match expected {
-            Some(n) => assert_eq!(result.unwrap(), n.to_le_bytes()),
-            None => assert!(result.is_err()),
+        provider.join();
+        if valid {
+            assert_eq!(result.unwrap(), 255u32.to_le_bytes());
+        } else {
+            assert!(result.is_err());
         }
     }
 }
