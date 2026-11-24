@@ -38,7 +38,7 @@ The workspace package `libskrynia` provides the same kernel as a Rust library.
 Program 0 can import operator-configured functions from the `syscall` WASM
 namespace, each with signature `(i32) -> i32`. Native implementations take
 precedence over an optional HTTP provider whose names are discovered at
-startup from `POST <base>/version`, with import targets resolved once during
+startup from `GET <base>/syscalls_list`, with import targets resolved once during
 startup. Child programs cannot import these functions directly.
 See [custom syscalls](docs/v3/syscalls.md) for the library API, wire format,
 configuration and memory contract.

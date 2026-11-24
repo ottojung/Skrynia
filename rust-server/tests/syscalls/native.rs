@@ -2,7 +2,7 @@
 fn native_wins_and_accesses_ram() {
     let discovery = super::provider::Discovery {
         status: 200,
-        body: r#"{"syscalls":["double"]}"#.into(),
+        body: r#"["double"]"#.into(),
         reply: 0u32.to_le_bytes().to_vec(),
     };
     let provider = super::provider::start(discovery, 1);

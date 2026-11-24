@@ -55,14 +55,13 @@ Set the single environment variable `SKRYNIA_SYSCALL_URL` to the provider base
 URL. There is no `SKRYNIA_SYSCALLS` variable and no operator-supplied name list.
 Custom kernels can call `Syscalls::http_provider(base)` instead.
 
-At startup the kernel sends `POST <base>/version` with an empty
-`application/octet-stream` body. The provider must answer HTTP 200 with a JSON
-object whose `syscalls` key holds an array of strings; extra fields are
-ignored. Each name must follow the name rule above and `version` is reserved
-because it collides with the discovery route. The kernel rejects non-200
-responses, redirects, malformed JSON, wrong types, malformed names, the
-reserved name and responses over 8 KiB; the request times out after 30
-seconds. Advertised names are validated, sorted, deduplicated and merged with
+At startup the kernel sends `GET <base>/syscalls_list` without a request body.
+The provider must answer HTTP 200 with a JSON array of strings, for example
+`["publish","unpublish"]`. Each name must follow the name rule above. Discovery
+and syscall calls use different HTTP methods, so neither `version` nor
+`syscalls_list` is a reserved syscall name. The kernel rejects non-200
+responses, redirects, malformed JSON, wrong types, malformed names and
+responses over 8 KiB; the request times out after 30 seconds. Advertised names are validated, sorted, deduplicated and merged with
 native registrations (native wins) before imports are resolved and the names
 are published through the kernel's own `POST /version`. With no URL set the
 kernel is native-only and sends no discovery request.

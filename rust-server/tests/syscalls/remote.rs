@@ -7,7 +7,7 @@ fn http_roundtrip_and_exact_result_length() {
     ] {
         let discovery = super::provider::Discovery {
             status: 200,
-            body: r#"{"syscalls":["double"]}"#.into(),
+            body: r#"["double"]"#.into(),
             reply,
         };
         let provider = super::provider::start(discovery, 2);

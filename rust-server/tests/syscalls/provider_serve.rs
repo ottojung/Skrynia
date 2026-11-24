@@ -7,7 +7,6 @@ pub(super) fn serve(socket: &mut std::net::TcpStream, discovery: &Discovery) {
     reader.read_line(&mut line).unwrap();
     let method = line.split_whitespace().next().unwrap_or("").to_owned();
     let path = line.split_whitespace().nth(1).unwrap_or("").to_owned();
-    assert_eq!(method, "POST");
     let mut headers = Vec::new();
     loop {
         line.clear();
@@ -16,7 +15,7 @@ pub(super) fn serve(socket: &mut std::net::TcpStream, discovery: &Discovery) {
         }
         headers.push(line.to_ascii_lowercase());
     }
-    let (status, body, kind) = if path == "/version" {
+    let (status, body, kind) = if path == "/syscalls_list" && method == "GET" {
         assert!(
             headers
                 .iter()
@@ -28,6 +27,7 @@ pub(super) fn serve(socket: &mut std::net::TcpStream, discovery: &Discovery) {
             "application/json",
         )
     } else {
+        assert_eq!(method, "POST");
         let mut bytes = [0u8; 4];
         reader.read_exact(&mut bytes).unwrap();
         assert_eq!(bytes, u32::MAX.to_le_bytes());

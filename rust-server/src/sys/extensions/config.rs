@@ -1,5 +1,5 @@
 impl super::Syscalls {
-    /// Configure the HTTP provider by discovering names from <base>/version.
+    /// Configure the HTTP provider by discovering names from GET <base>/syscalls_list.
     pub fn http_provider(&mut self, base: &str) -> Result<(), String> {
         if self.fallback.is_some() {
             return Err("HTTP syscall provider already configured".into());

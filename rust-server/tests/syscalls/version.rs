@@ -9,7 +9,7 @@ use tower::ServiceExt;
 fn discovery_lists_all_custom_names_without_executing_root() {
     let discovery = super::provider::Discovery {
         status: 200,
-        body: r#"{"syscalls":["remote","double","remote","unused"]}"#.into(),
+        body: r#"["remote","double","remote","unused","version","syscalls_list"]"#.into(),
         reply: 0u32.to_le_bytes().to_vec(),
     };
     let provider = super::provider::start(discovery, 1);
@@ -36,7 +36,7 @@ fn discovery_lists_all_custom_names_without_executing_root() {
         assert!(json["version"].is_string() && json["commit"].is_string());
         assert_eq!(
             json["syscalls"],
-            serde_json::json!(["double", "remote", "unused"])
+            serde_json::json!(["double", "remote", "syscalls_list", "unused", "version"])
         );
         let get = app
             .oneshot(Request::get("/version").body(Body::empty()).unwrap())

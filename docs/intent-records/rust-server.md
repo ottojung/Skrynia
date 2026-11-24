@@ -39,7 +39,7 @@ kernel builds. Program 0 may import arbitrary operator-configured names
 from the syscall namespace with the signature i32 -> i32. Native
 implementations are registered at startup. An optional HTTP provider is
 configured only by SKRYNIA_SYSCALL_URL and advertises its names at startup
-through POST <base>/version; the kernel validates, sorts, deduplicates and
+through GET <base>/syscalls_list (HTTP 200, JSON array of strings); the kernel validates, sorts, deduplicates and
 merges those names with native registrations, with native names winning.
 Resolve imports once at startup without runtime name dispatch; there is no
 operator-supplied syscall name list. The kernel must not understand

@@ -1,11 +1,11 @@
 #[test]
-fn rejects_malformed_and_reserved_names() {
+fn rejects_malformed_names_and_lists() {
     for body in [
-        r#"{"syscalls":["bad name"]}"#,
-        r#"{"syscalls":["."]}"#,
-        r#"{"syscalls":["version"]}"#,
-        r#"{"syscalls":"double"}"#,
-        r#"{"syscalls":[1]}"#,
+        r#"["bad name"]"#,
+        r#"["."]"#,
+        r#""double""#,
+        r#"{"syscalls":["double"]}"#,
+        r#"[1]"#,
         r#"{}"#,
         r#"not json"#,
     ] {
@@ -24,7 +24,7 @@ fn rejects_malformed_and_reserved_names() {
 #[test]
 fn rejects_non_200_and_oversized_body() {
     for (status, body) in [
-        (302u16, r#"{"syscalls":["double"]}"#.to_string()),
+        (302u16, r#"["double"]"#.to_string()),
         (200, "x".repeat(9000)),
     ] {
         let d = super::provider::Discovery {
