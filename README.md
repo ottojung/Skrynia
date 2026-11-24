@@ -21,7 +21,8 @@ The kernel transport has one execution endpoint and one metadata endpoint; HTTP 
 - A successful Program 0 return means HTTP 200 with uninterpreted response
   bytes.
 - `POST /version` returns JSON containing `version`, `commit`, and
-  `syscalls` (sorted supported custom syscall names), without running WASM.
+  `syscalls` (sorted registered native and discovered provider names),
+  without running WASM.
   Other methods and paths are not application routing surfaces.
 
 Program 0 has privileged imports for confined disk files/directories,
@@ -36,8 +37,9 @@ linear memory, distinct from kernel staging and explicitly opened global RAM.
 The workspace package `libskrynia` provides the same kernel as a Rust library.
 Program 0 can import operator-configured functions from the `syscall` WASM
 namespace, each with signature `(i32) -> i32`. Native implementations take
-precedence over the optional HTTP fallback, with import targets resolved
-once during startup. Child programs cannot import these functions directly.
+precedence over an optional HTTP provider whose names are discovered at
+startup from `POST <base>/version`, with import targets resolved once during
+startup. Child programs cannot import these functions directly.
 See [custom syscalls](docs/v3/syscalls.md) for the library API, wire format,
 configuration and memory contract.
 
