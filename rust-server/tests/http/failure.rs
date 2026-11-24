@@ -4,7 +4,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use futures_util::stream;
-use skrynia_server::http;
+use libskrynia::http;
 use tower::ServiceExt;
 #[tokio::test]
 async fn streaming_transport_failure_is_not_eof() {

@@ -3,7 +3,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use skrynia_server::http;
+use libskrynia::http;
 use std::time::Duration;
 use tower::ServiceExt;
 

@@ -29,7 +29,7 @@ fn nested_eval_callback() {
     std::fs::create_dir_all(dir.join("operator")).unwrap();
     fs::create_dir_all(dir.join("user")).unwrap();
     std::fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = skrynia_server::boot::Kernel::start(
+    let k = libskrynia::boot::Kernel::start(
         &dir.join("r.wasm"),
         &dir.join("operator"),
         &dir.join("user"),

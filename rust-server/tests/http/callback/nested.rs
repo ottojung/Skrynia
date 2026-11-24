@@ -1,6 +1,6 @@
 #[test]
 fn nested_guest_cannot_steal_root_disk_fd_after_callback() {
-    use skrynia_server::boot::Kernel;
+    use libskrynia::boot::Kernel;
     let dir = std::env::temp_dir().join(format!(
         "skrynia-nested-cap-{}-{}",
         std::process::id(),

@@ -24,9 +24,9 @@ fn workers() -> usize {
 
 #[test]
 fn compile_timeout_clean_failure_and_responsive() {
-    let eng = skrynia_server::boot::vm::compile::engine().unwrap();
+    let eng = libskrynia::boot::vm::compile::engine().unwrap();
     let t = Instant::now();
-    let r = skrynia_server::boot::vm::compile::bounded(&eng, b"SKRYNIA_HANG");
+    let r = libskrynia::boot::vm::compile::bounded(&eng, b"SKRYNIA_HANG");
     assert!(t.elapsed() < Duration::from_millis(4200));
     assert!(matches!(r, Err("limit")));
     let deadline = Instant::now() + Duration::from_millis(800);
@@ -35,7 +35,7 @@ fn compile_timeout_clean_failure_and_responsive() {
     }
     assert_eq!(workers(), 0);
     let wasm = wat::parse_str("(module)").unwrap();
-    assert!(skrynia_server::boot::vm::compile::bounded(&eng, &wasm).is_ok());
-    let bad = skrynia_server::boot::vm::compile::bounded(&eng, b"\0asm-bad");
+    assert!(libskrynia::boot::vm::compile::bounded(&eng, &wasm).is_ok());
+    let bad = libskrynia::boot::vm::compile::bounded(&eng, b"\0asm-bad");
     assert!(matches!(bad, Err("invalid")));
 }

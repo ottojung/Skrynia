@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use skrynia_server::http;
+use libskrynia::http;
 use tower::ServiceExt;
 fn privileged_guest() -> Vec<u8> {
     wat::parse_str(r#"(module(import "skrynia" "open_disk"(func $od(param i32 i32 i32)(result i32)))(memory(export "memory") 1)(func(export "skrynia_main")(param $i i32)(param $o i32)(result i32)(call $od(i32.const 0)(i32.const 0)(i32.const 1))))"#).unwrap()

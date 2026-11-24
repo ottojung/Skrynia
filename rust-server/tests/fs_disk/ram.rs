@@ -1,4 +1,4 @@
-use skrynia_server::ram::Ram;
+use libskrynia::ram::Ram;
 use std::sync::Arc;
 
 #[test]
@@ -23,7 +23,7 @@ fn truncate_zero_fills() {
     ram.read(0, &mut buf).unwrap();
     assert_eq!(&buf[4..], &[0, 0, 0, 0]);
     assert_eq!(
-        ram.truncate(skrynia_server::ram::MAX_RAM_BYTES + 1),
+        ram.truncate(libskrynia::ram::MAX_RAM_BYTES + 1),
         Err("nospace")
     );
     assert_eq!(ram.len(), 8);

@@ -1,5 +1,5 @@
 use super::{fs, hex, load, sandbox};
-use skrynia_server::boot::Kernel;
+use libskrynia::boot::Kernel;
 
 #[test]
 fn authorized_fd_survives_multiple_child_callbacks() {

@@ -1,3 +1,4 @@
+mod start;
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::{io::Read, path::Path};
@@ -11,7 +12,7 @@ pub fn bytes(path: &Path) -> Result<Vec<u8>, String> {
     if !meta.is_file() {
         return Err("root must be a regular file".into());
     }
-    let limit = super::vm::state::MAX_MODULE_BYTES;
+    let limit = crate::boot::vm::state::MAX_MODULE_BYTES;
     if meta.len() > limit as u64 {
         return Err("root module too large".into());
     }

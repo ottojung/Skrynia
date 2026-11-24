@@ -4,7 +4,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use skrynia_server::http;
+use libskrynia::http;
 use tower::ServiceExt;
 
 fn trap_root() -> Vec<u8> {

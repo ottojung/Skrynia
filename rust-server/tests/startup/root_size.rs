@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::fs;
 #[test]
 fn root_limit_enforced_before_reading_large_file_or_touching_disk() {

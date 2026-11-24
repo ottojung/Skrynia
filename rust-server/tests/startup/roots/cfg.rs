@@ -1,4 +1,4 @@
-use skrynia_server::conf;
+use libskrynia::conf;
 use std::ffi::OsString;
 
 #[test]

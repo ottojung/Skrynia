@@ -10,7 +10,8 @@ Pointers/lengths/offsets/capacities/counts are `u32` unless stated.
 
 Skrynia is a single-node WebAssembly computer. The Rust kernel provides only
 HTTP transport, module validation/instantiation, sandboxed execution,
-filesystem operations, global RAM primitives, time, randomness, and physical
+filesystem operations, global RAM primitives, time, randomness, operator-selected
+custom syscall imports, and physical
 safety limits. The kernel MUST NOT implement grants, quotas, accounting,
 authentication, registration, lookup, mutable `set`, routing, program IDs,
 application object-store semantics, or any implicit capability distribution.
@@ -27,9 +28,11 @@ either is missing, invalid or aliased.
 
 ## HTTP and response contract
 
-The only endpoint is `POST /` with `Content-Type: application/octet-stream`
+The only execution endpoint is `POST /` with `Content-Type: application/octet-stream`
 and an arbitrary binary body. No selector header, path parameter, query
 routing, or kernel interpretation of body structure.
+`POST /version` returns JSON build metadata and the configured custom
+syscall names, without executing Program 0. See [custom syscalls](v3/syscalls.md).
 
 For each request the kernel supplies Program 0 with a kernel-managed,
 read-only, forward-only **input stream descriptor**, not a WASM pointer/array.
@@ -69,7 +72,7 @@ Partial output cannot be rolled back and the kernel does not retry execution.
 
 Transport/VM failures are distinct from application failures:
 - malformed request framing or unreadable body: `400`
-- method/path not `POST /`: `404`
+- method/path not `POST /` or `POST /version`: `404`
 - configured Program 0 invalid or unavailable: `503`
 - request body exceeds `SKRYNIA_MAX_REQUEST_BYTES` (default 16 MiB): `413`
 - Program 0 trap, resource-limit exhaustion, invalid ABI use, or kernel
@@ -84,7 +87,8 @@ not inspect output meaning. Any application-level protocol belongs in independen
 ## Memory domains and ownership
 
 1. **Private WASM linear memory**: separate linear memory per module instance.
-   Every pointer passed to or from host imports/exports addresses this memory.
+   Every pointer in the built-in VM ABI addresses this memory. Custom syscalls
+   may instead interpret their opaque argument/result as global RAM offsets.
    Input/output stream descriptors are opaque handles, never pointers.
    A guest never receives a pointer to another instance's memory or to RAM.
 2. **Kernel-owned memory**: request/result staging, frames, descriptors,
@@ -94,12 +98,14 @@ not inspect output meaning. Any application-level protocol belongs in independen
 
 No runtime component may implicitly read, write, allocate, mirror, or cache
 request bodies, private memory, compiled code, descriptors, or kernel metadata
-in global RAM. RAM is touched only by explicit `open_ram/read/write/seek/
+in global RAM. RAM is touched only by explicit native provider RAM access or
+`open_ram/read/write/seek/
 truncate/cas_ram_u64` operations. Global RAM offsets are not capabilities.
 
 ## Root imports (Program 0 only)
 
-Program 0 is instantiated with module name `skrynia` and exactly these imports.
+Program 0 may use the following fixed `skrynia` imports and configured
+`syscall` function imports as specified in [custom syscalls](v3/syscalls.md).
 Types: `i32` return values are status/length codes as specified.
 
 ```text
@@ -403,7 +409,7 @@ descriptor isolation, nested evaluation, output streaming, request admission,
 disk confinement and fault handling.
 
 `docs/v3/abi.md` records additional normative ABI decisions. Tests of the
-native transport use only `POST /`; program-level operations, storage schemas,
+native transport use `POST /` and `POST /version`; program-level operations, storage schemas,
 grants, authentication, subscriptions and notifications are not native APIs.
 The separately deployed root WASM and other programs must be qualified
 independently of the kernel.

@@ -1,4 +1,4 @@
-use skrynia_server::boot::Kernel;
+use libskrynia::boot::Kernel;
 use std::fs;
 
 fn run(name: &str, root: &str) -> Result<Vec<u8>, i32> {

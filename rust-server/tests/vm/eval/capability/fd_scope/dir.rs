@@ -1,5 +1,5 @@
 use super::{fs, hex, load, sandbox};
-use skrynia_server::boot::Kernel;
+use libskrynia::boot::Kernel;
 
 #[test]
 fn user_directory_fd_survives_multiple_provider_callbacks() {

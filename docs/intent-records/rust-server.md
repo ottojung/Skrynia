@@ -27,3 +27,18 @@ complexity bounds hold and distinguish measured results from targets. Avoid
 silently equating filesystem operations with constant-time access. Do not add
 application object, grant, notification, or quota semantics to the native
 kernel in pursuit of an optimization. Preserve durability and sandbox safety.
+
+$id-4160689473985217
+title: Operator-extensible kernel syscalls
+date: 2026/11/23
+source: @ottojung
+kind: requirement
+
+The main repository shall provide the libskrynia Rust library for custom
+kernel builds. Program 0 may import arbitrary operator-configured names
+from the syscall namespace with the signature i32 -> i32. Resolve native
+implementations at startup without runtime name dispatch or network
+communication; otherwise use the configured HTTP provider. The kernel
+must not understand capability-specific argument or result formats.
+Evaluated children must not receive direct custom imports. POST /version
+shall expose build version, commit and the supported custom syscall names.

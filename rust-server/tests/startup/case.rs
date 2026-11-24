@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::fs;
 
 pub(super) fn check(name: &str, wat: &str) -> bool {

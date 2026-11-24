@@ -8,7 +8,7 @@ mod v3_eval;
 mod v3_fixtures;
 mod v3_nested;
 mod v3_ram;
-use skrynia_server::fs::{self, disk::DiskMode};
+use libskrynia::fs::{self, disk::DiskMode};
 #[test]
 fn disk_ops_modes_and_errors() {
     let (dir, k) = setup("skrynia-fs-disk");

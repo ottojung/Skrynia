@@ -3,6 +3,9 @@ use std::sync::Arc;
 use wasmtime::{Engine, Module};
 
 impl Kernel {
+    pub fn version(&self) -> &serde_json::Value {
+        &self.version
+    }
     pub fn engine(&self) -> &Engine {
         &self.engine
     }

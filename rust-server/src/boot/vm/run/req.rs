@@ -26,11 +26,7 @@ pub fn invoke(
     store
         .set_fuel(FUEL)
         .map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
-    let mut linker = wasmtime::Linker::new(&engine);
-    crate::boot::vm::link::root::add(&mut linker).map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
-    let inst = linker
-        .instantiate(&mut store, kernel.root())
-        .map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
+    let inst = kernel.pre.instantiate(&mut store).map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
     store
         .data_mut()
         .frames

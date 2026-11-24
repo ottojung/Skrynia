@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::fs;
 
 fn run(name: &str, root: &str) -> Vec<u8> {

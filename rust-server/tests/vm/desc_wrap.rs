@@ -1,4 +1,4 @@
-use skrynia_server::fs::table::Table;
+use libskrynia::fs::table::Table;
 #[test]
 fn fd_generations_never_alias_or_turn_into_errors() {
     let mut table = Table::new();

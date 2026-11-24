@@ -1,4 +1,4 @@
-use skrynia_server::fs::table::Table;
+use libskrynia::fs::table::Table;
 
 #[test]
 fn fd_table_limits_and_targets() {

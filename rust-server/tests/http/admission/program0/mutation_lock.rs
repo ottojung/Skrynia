@@ -1,6 +1,6 @@
 use axum::{body::Body, http::Request, http::StatusCode};
 use http_body_util::BodyExt;
-use skrynia_server::{boot, http};
+use libskrynia::{boot, http};
 use std::fs;
 use tower::ServiceExt;
 

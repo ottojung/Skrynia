@@ -1,0 +1,41 @@
+mod link;
+mod request;
+
+pub(super) struct Fallback {
+    pub names: std::collections::BTreeSet<String>,
+    base: reqwest::Url,
+    client: reqwest::blocking::Client,
+}
+
+impl Fallback {
+    pub fn new(base: &str, names: &[&str]) -> Result<Self, String> {
+        let mut base = reqwest::Url::parse(base).map_err(|e| e.to_string())?;
+        if !matches!(base.scheme(), "http" | "https")
+            || base.host().is_none()
+            || base.query().is_some()
+            || base.fragment().is_some()
+            || !base.username().is_empty()
+            || base.password().is_some()
+        {
+            return Err("invalid syscall base URL".into());
+        }
+        base.path_segments_mut()
+            .map_err(|_| "invalid base URL")?
+            .pop_if_empty();
+        let mut set = std::collections::BTreeSet::new();
+        for name in names {
+            super::names::check(name)?;
+            if !set.insert(name.to_string()) {
+                return Err(format!("duplicate HTTP syscall: {name}"));
+            }
+        }
+        let client = std::thread::spawn(request::client)
+            .join()
+            .map_err(|_| "HTTP syscall client initialization failed")??;
+        Ok(Self {
+            names: set,
+            base,
+            client,
+        })
+    }
+}

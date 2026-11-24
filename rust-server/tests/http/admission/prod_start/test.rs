@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use skrynia_server::{boot, conf, http};
+use libskrynia::{boot, conf, http};
 use std::{ffi::OsString, fs};
 use tower::ServiceExt;
 

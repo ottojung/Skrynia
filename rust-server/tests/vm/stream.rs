@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::fs;
 #[allow(dead_code)]
 pub(super) fn run(name: &str, root: &str, body: &[u8]) -> Result<Vec<u8>, i32> {

@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::fs;
 #[test]
 fn restart_serves_same_data_dir() {

@@ -10,7 +10,7 @@ lint:
 	cargo clippy --locked --all-targets -- -D clippy::correctness -D clippy::suspicious -D clippy::perf -D clippy::complexity
 
 build:
-	cargo build --locked --release --package skrynia-server
+	cargo build --locked --release --package libskrynia
 
 check: test
 

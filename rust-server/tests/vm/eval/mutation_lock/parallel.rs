@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::{fs, sync::Arc, thread};
 fn kernel(name: &str, root: &str) -> (boot::Kernel, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(name);

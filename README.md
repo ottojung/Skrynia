@@ -10,7 +10,7 @@ maintained in [skrynia-tools](https://github.com/ottojung/skrynia-tools).
 The kernel neither builds nor selects a Program 0 and knows nothing about the
 proxied application protocol.
 
-The kernel transport has exactly one endpoint; HTTP verbs are not application operations:
+The kernel transport has one execution endpoint and one metadata endpoint; HTTP verbs are not application operations:
 
 - `POST /` with arbitrary `application/octet-stream` bytes.
 - Each request runs a fresh logical Program 0 instance, exporting
@@ -19,7 +19,10 @@ The kernel transport has exactly one endpoint; HTTP verbs are not application op
   can only be written and closed. Neither can seek or truncate. Short
   reads/writes are normal. Responses stream with bounded backpressure.
 - A successful Program 0 return means HTTP 200 with uninterpreted response
-  bytes. Other methods and paths are not application routing surfaces.
+  bytes.
+- `POST /version` returns JSON containing `version`, `commit`, and
+  `syscalls` (sorted supported custom syscall names), without running WASM.
+  Other methods and paths are not application routing surfaces.
 
 Program 0 has privileged imports for confined disk files/directories,
 explicit shared volatile RAM with sequentially consistent 64-bit CAS,
@@ -27,6 +30,16 @@ clock, secure randomness, and nested WASM evaluation. Evaluated children
 cannot access these privileges directly: their sole import is
 `skrynia.invoke`, mediated by the caller. Each guest has private WASM
 linear memory, distinct from kernel staging and explicitly opened global RAM.
+
+## Custom kernels
+
+The workspace package `libskrynia` provides the same kernel as a Rust library.
+Program 0 can import operator-configured functions from the `syscall` WASM
+namespace, each with signature `(i32) -> i32`. Native implementations take
+precedence over the optional HTTP fallback, with import targets resolved
+once during startup. Child programs cannot import these functions directly.
+See [custom syscalls](docs/v3/syscalls.md) for the library API, wire format,
+configuration and memory contract.
 
 ## Development
 

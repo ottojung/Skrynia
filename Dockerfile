@@ -3,11 +3,15 @@ WORKDIR /work
 COPY Cargo.toml Cargo.lock ./
 COPY rust-server/Cargo.toml rust-server/Cargo.toml
 COPY rust-server/src/ rust-server/src/
-RUN cargo build --locked --release -p skrynia-server
+RUN cargo build --locked --release -p libskrynia
 
 FROM docker.io/library/debian:bookworm-slim
 RUN groupadd -g 1000 skrynia && useradd -u 1000 -g 1000 -M skrynia && mkdir -p /var/lib/skrynia/operator /var/lib/skrynia/user && chmod 0700 /var/lib/skrynia /var/lib/skrynia/operator /var/lib/skrynia/user && chown -R skrynia:skrynia /var/lib/skrynia
 COPY --from=build /work/target/release/skrynia-server /usr/local/bin/skrynia-server
+ARG SKRYNIA_VERSION=development
+ARG SKRYNIA_COMMIT=development
+ENV SKRYNIA_VERSION=${SKRYNIA_VERSION}
+ENV SKRYNIA_COMMIT=${SKRYNIA_COMMIT}
 USER 1000:1000
 ENV SKRYNIA_BIND=0.0.0.0:17380
 ENV SKRYNIA_OPERATOR_DIR=/var/lib/skrynia/operator

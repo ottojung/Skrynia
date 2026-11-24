@@ -5,7 +5,7 @@ use axum::{
 };
 use futures_util::stream;
 use http_body_util::BodyExt;
-use skrynia_server::http;
+use libskrynia::http;
 use tower::ServiceExt;
 
 pub(super) const STREAM_ROOT: &str = r#"(module

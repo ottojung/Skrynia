@@ -4,7 +4,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use futures_util::{StreamExt, stream};
-use skrynia_server::http;
+use libskrynia::http;
 use tower::ServiceExt;
 
 #[tokio::test]

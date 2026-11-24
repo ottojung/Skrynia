@@ -11,7 +11,7 @@ pub fn app() -> axum::Router {
         "../../../test-fixtures/stream_early_output.wat"
     ))
     .unwrap();
-    skrynia_server::http::router(kernel_with_wasm("skrynia-http-active-bound", &wasm))
+    libskrynia::http::router(kernel_with_wasm("skrynia-http-active-bound", &wasm))
 }
 pub fn input() -> (mpsc::Sender<Bytes>, Request<Body>) {
     let (tx, rx) = mpsc::channel::<Bytes>(1);

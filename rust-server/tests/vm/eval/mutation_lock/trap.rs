@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::fs;
 
 fn kernel(name: &str, root: &str) -> (boot::Kernel, std::path::PathBuf) {

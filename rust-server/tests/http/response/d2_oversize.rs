@@ -4,7 +4,7 @@ use axum::{
     http::{HeaderValue, Request, StatusCode, header::TRANSFER_ENCODING},
 };
 use futures_util::stream;
-use skrynia_server::http;
+use libskrynia::http;
 use std::io;
 use tower::ServiceExt;
 

@@ -1,5 +1,5 @@
 use super::{fs, hex, load, sandbox};
-use skrynia_server::boot::Kernel;
+use libskrynia::boot::Kernel;
 
 #[test]
 fn callback_owned_fd_is_disposed_after_child_trap() {

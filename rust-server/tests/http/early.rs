@@ -4,7 +4,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use futures_util::stream;
-use skrynia_server::http;
+use libskrynia::http;
 use tower::ServiceExt;
 #[tokio::test]
 async fn root_can_return_without_consuming_endless_input() {

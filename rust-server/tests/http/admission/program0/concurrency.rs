@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use skrynia_server::http;
+use libskrynia::http;
 use tower::ServiceExt;
 #[tokio::test]
 async fn concurrent_requests_with_nonzero_guest() {

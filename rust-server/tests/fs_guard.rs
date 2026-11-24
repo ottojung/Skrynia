@@ -1,5 +1,5 @@
-use skrynia_server::boot;
-use skrynia_server::fs::disk::DiskMode as M;
+use libskrynia::boot;
+use libskrynia::fs::disk::DiskMode as M;
 use std::fs as stdfs;
 fn setup(n: &str) -> (std::path::PathBuf, boot::Kernel) {
     let d = std::env::temp_dir().join(n);
@@ -16,7 +16,7 @@ fn setup(n: &str) -> (std::path::PathBuf, boot::Kernel) {
 fn guard_ops() {
     let (d, k) = setup("skrynia-fs-guard");
     let s = k.fs();
-    let (mut fds, u) = (skrynia_server::fs::table::Table::new(), Some(skrynia_server::fs::RootKind::User));
+    let (mut fds, u) = (libskrynia::fs::table::Table::new(), Some(libskrynia::fs::RootKind::User));
     let fd = s.open_disk(u, &mut fds, b"a", M::read_write(), 0).unwrap();
     s.close(&mut fds, fd).unwrap();
     assert_eq!(s.open_disk(u, &mut fds, b"a", M::create_new_rw(), 0).err(), Some("exists"));
@@ -29,13 +29,13 @@ fn guard_ops() {
     stdfs::create_dir(d.join("user/reald")).unwrap();
     std::os::unix::fs::symlink("../outside", d.join("user/reald/esc")).unwrap();
     assert!(s.open_disk(u, &mut fds, b"reald/esc", M::read_only(), 0).is_err());
-    let mode = skrynia_server::fs::node::MkdirMode::create_if_absent();
+    let mode = libskrynia::fs::node::MkdirMode::create_if_absent();
     assert!(s.mkdir(u, b"reald", mode).is_ok());
     assert!(s.mkdir(u, b"a", mode).is_err());
     assert!(s.mkdir(u, b"link", mode).is_err());
     stdfs::write(d.join("user/plain"), b"file").unwrap();
     assert!(s.mkdir(u, b"plain", mode).is_err());
-    let new = skrynia_server::fs::node::MkdirMode::create_new();
+    let new = libskrynia::fs::node::MkdirMode::create_new();
     assert_eq!(s.mkdir(u, b"reald", new).err(), Some("exists"));
     assert!(k.prepare(10_000).is_ok());
     let _ = stdfs::remove_dir_all(&d);

@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::fs;
 fn kernel(name: &str, wat: &str) -> (std::path::PathBuf, boot::Kernel) {
     let dir = std::env::temp_dir().join(format!("skrynia-q-{name}-{}", std::process::id()));

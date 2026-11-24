@@ -1,4 +1,4 @@
-use skrynia_server::boot::Kernel;
+use libskrynia::boot::Kernel;
 use std::fs;
 fn dir(name: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!(

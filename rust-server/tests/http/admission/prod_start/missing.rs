@@ -3,8 +3,8 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
+use libskrynia::{boot, conf, http};
 use sha2::{Digest, Sha256};
-use skrynia_server::{boot, conf, http};
 use std::{ffi::OsString, fs};
 use tower::ServiceExt;
 #[tokio::test]

@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use futures_util::stream;
-use skrynia_server::{boot, http};
+use libskrynia::{boot, http};
 use std::{fs, io};
 use tokio::time::{Duration, timeout};
 use tower::ServiceExt;

@@ -1,4 +1,4 @@
-use skrynia_server::boot::Kernel;
+use libskrynia::boot::Kernel;
 use std::fs;
 fn kernel() -> Kernel {
     let dir = std::env::temp_dir().join(format!("skrynia-input-fd-{}", std::process::id()));

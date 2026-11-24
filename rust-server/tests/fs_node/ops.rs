@@ -1,5 +1,5 @@
-use skrynia_server::fs::RootKind::User as U;
-use skrynia_server::{boot, fs};
+use libskrynia::fs::RootKind::User as U;
+use libskrynia::{boot, fs};
 use std::fs as stdfs;
 fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
     let dir = std::env::temp_dir().join(name);

@@ -7,7 +7,7 @@ fn dir(name: &str) -> std::path::PathBuf {
 }
 #[test]
 fn privileged_disk_callback_denied_without_explicit_delegation() {
-    use skrynia_server::boot::Kernel;
+    use libskrynia::boot::Kernel;
     let dir = dir("deny");
     std::fs::create_dir_all(dir.join("operator")).unwrap();
     std::fs::create_dir_all(dir.join("user")).unwrap();

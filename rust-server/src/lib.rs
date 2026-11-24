@@ -6,4 +6,4 @@ pub mod http;
 pub mod ram;
 pub mod safe;
 pub mod sys;
-pub use sys::{clock, rand};
+pub use sys::{Syscalls, clock, rand, run, run_with};

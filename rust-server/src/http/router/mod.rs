@@ -1,3 +1,4 @@
+mod version;
 use axum::{Router, routing::any};
 use std::sync::Arc;
 use tokio::sync::Semaphore;
@@ -9,6 +10,7 @@ pub struct App {
 }
 pub fn router(kernel: crate::boot::Kernel) -> Router {
     Router::new()
+        .route("/version", any(version::handle))
         .fallback(any(super::handle::handle))
         .with_state(App {
             kernel: Arc::new(kernel),

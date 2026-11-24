@@ -1,5 +1,5 @@
 use super::{fs, hex, load, sandbox};
-use skrynia_server::boot::Kernel;
+use libskrynia::boot::Kernel;
 
 #[test]
 fn direct_nested_eval_cannot_retarget_private_operator_fd() {

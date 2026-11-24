@@ -1,4 +1,4 @@
-use skrynia_server::boot;
+use libskrynia::boot;
 use std::fs;
 
 fn wasm(dir: &std::path::Path) -> std::path::PathBuf {

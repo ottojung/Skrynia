@@ -1,4 +1,4 @@
-use skrynia_server::safe;
+use libskrynia::safe;
 use std::path::Path;
 
 #[test]
@@ -21,11 +21,11 @@ fn accepts_normal_paths() {
 
 #[test]
 fn time_and_random_look_valid() {
-    assert!(skrynia_server::sys::clock::now_millis() > 1_700_000_000_000);
+    assert!(libskrynia::sys::clock::now_millis() > 1_700_000_000_000);
     let mut a = [0u8; 32];
     let mut b = [0u8; 32];
-    skrynia_server::sys::rand::fill_secure(&mut a).unwrap();
-    skrynia_server::sys::rand::fill_secure(&mut b).unwrap();
+    libskrynia::sys::rand::fill_secure(&mut a).unwrap();
+    libskrynia::sys::rand::fill_secure(&mut b).unwrap();
     assert_ne!(a, [0u8; 32]);
     assert_ne!(a, b);
 }
@@ -39,7 +39,7 @@ fn guest_trap_propagates_error() {
     std::fs::create_dir_all(dir.join("operator")).unwrap();
     std::fs::create_dir_all(dir.join("user")).unwrap();
     std::fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = skrynia_server::boot::Kernel::start(
+    let k = libskrynia::boot::Kernel::start(
         &dir.join("r.wasm"),
         &dir.join("operator"),
         &dir.join("user"),

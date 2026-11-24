@@ -7,8 +7,8 @@ pub(super) mod restart;
 pub(super) mod rotate;
 pub(super) mod slow;
 pub(super) mod stream;
+use libskrynia::boot::Kernel;
 use sha2::{Digest, Sha256};
-use skrynia_server::boot::Kernel;
 use std::fs;
 pub(super) fn root_wasm() -> Vec<u8> {
     wat::parse_str(include_str!(

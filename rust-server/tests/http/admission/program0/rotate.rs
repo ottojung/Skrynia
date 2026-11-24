@@ -3,7 +3,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use skrynia_server::http;
+use libskrynia::http;
 use std::fs;
 use tower::ServiceExt;
 #[tokio::test]

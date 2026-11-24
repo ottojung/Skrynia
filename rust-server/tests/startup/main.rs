@@ -1,4 +1,4 @@
-use skrynia_server::{boot, conf};
+use libskrynia::{boot, conf};
 use std::ffi::OsString;
 use std::fs;
 
@@ -40,7 +40,7 @@ fn boot_rejects_empty_root_abi() {
 
 #[test]
 fn ram_max_limit() {
-    let ram = skrynia_server::ram::Ram::new();
+    let ram = libskrynia::ram::Ram::new();
     assert!(ram.truncate(64 * 1024 * 1024).is_ok());
     assert!(ram.truncate(64 * 1024 * 1024 + 1).is_err());
 }

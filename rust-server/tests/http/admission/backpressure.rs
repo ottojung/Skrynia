@@ -13,7 +13,7 @@ async fn full_undrained_channel_times_out() {
         "(module (memory (export \"memory\") 1) (func (export \"skrynia_main\") (param i32 i32) (result i32) (loop $s (br $s)) (i32.const 0)))",
     )
     .unwrap();
-    let app = skrynia_server::http::router(super::kernel_with_wasm(
+    let app = libskrynia::http::router(super::kernel_with_wasm(
         "skrynia-v3-full-input-timeout",
         &wasm,
     ));
