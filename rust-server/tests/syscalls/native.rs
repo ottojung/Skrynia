@@ -1,9 +1,13 @@
 #[test]
 fn native_wins_and_accesses_ram() {
+    let discovery = super::provider::Discovery {
+        status: 200,
+        body: r#"{"syscalls":["double"]}"#.into(),
+        reply: 0u32.to_le_bytes().to_vec(),
+    };
+    let provider = super::provider::start(discovery, 1);
     let mut calls = libskrynia::Syscalls::new();
-    calls
-        .http_fallback("http://127.0.0.1:1/provider", &["double"])
-        .unwrap();
+    calls.http_provider(&provider.url).unwrap();
     calls
         .register("double", |ram, arg| {
             let mut b = [0; 4];
@@ -17,6 +21,7 @@ fn native_wins_and_accesses_ram() {
     assert_eq!(k.invoke(b"").unwrap(), 1u32.to_le_bytes());
     k.ram().write(0, &3u32.to_le_bytes()).unwrap();
     assert_eq!(k.invoke(b"").unwrap(), 2u32.to_le_bytes());
+    provider.join();
 }
 
 #[test]
@@ -27,7 +32,6 @@ fn invalid_imports_fail_at_startup() {
     assert!(calls.register("double", |_, arg| Ok(arg)).is_err());
     assert!(calls.register("../bad", |_, arg| Ok(arg)).is_err());
     let bad = super::ROOT.replace("(param i32) (result i32)))", "(param i32) (result i64)))");
-    // Use a valid module with an incompatible import signature.
     let bad = bad.replace(
         "(call $double (i32.const -1))",
         "(i32.wrap_i64 (call $double (i32.const -1)))",

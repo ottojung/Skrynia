@@ -10,13 +10,13 @@ namespace, including children with delegated evaluation or filesystem access.
 
 ## Resolution and execution
 
-The operator registers native functions or configures an explicit list of HTTP
-functions. Native registrations win when the same name is present in both.
-An unavailable name, wrong type, or unknown namespace fails startup. The
-kernel resolves imports and creates a Wasmtime InstancePre once at startup;
-fresh logical instances reuse the resolved imports. There is no per-call
-name lookup or HTTP on the native path. The WASM-to-native boundary is not
-guaranteed to be machine-code inlined.
+The operator registers native functions and may configure one HTTP provider.
+The provider's supported names are discovered at startup; native registrations
+win when the same name is present in both. An unavailable name, wrong type,
+or unknown namespace fails startup. The kernel resolves imports and creates a
+Wasmtime InstancePre once at startup; fresh logical instances reuse the
+resolved imports. There is no per-call name lookup or HTTP on the native path.
+The WASM-to-native boundary is not guaranteed to be machine-code inlined.
 
 ## Custom kernel
 
@@ -49,14 +49,23 @@ stateful providers inside a factory that is not executed by the isolated
 compiler-worker subprocess. Providers must be thread-safe, trusted
 and bounded; native code is not sandboxed or interrupted by WASM fuel.
 
-## HTTP fallback
+## HTTP provider discovery
 
-Set both environment variables (or use the library's `http_fallback` method):
+Set the single environment variable `SKRYNIA_SYSCALL_URL` to the provider base
+URL. There is no `SKRYNIA_SYSCALLS` variable and no operator-supplied name list.
+Custom kernels can call `Syscalls::http_provider(base)` instead.
 
-```sh
-SKRYNIA_SYSCALL_URL=https://provider.example/syscalls
-SKRYNIA_SYSCALLS=double,gpu.submit
-```
+At startup the kernel sends `POST <base>/version` with an empty
+`application/octet-stream` body. The provider must answer HTTP 200 with a JSON
+object whose `syscalls` key holds an array of strings; extra fields are
+ignored. Each name must follow the name rule above and `version` is reserved
+because it collides with the discovery route. The kernel rejects non-200
+responses, redirects, malformed JSON, wrong types, malformed names, the
+reserved name and responses over 8 KiB; the request times out after 30
+seconds. Advertised names are validated, sorted, deduplicated and merged with
+native registrations (native wins) before imports are resolved and the names
+are published through the kernel's own `POST /version`. With no URL set the
+kernel is native-only and sends no discovery request.
 
 For an imported name with no native implementation, the kernel issues one
 POST to the base URL with the name appended as a path segment. Request body
@@ -78,9 +87,9 @@ for HTTP interoperability.
 ## Discovery
 
 `POST /version` returns JSON with the existing `version` and `commit` build
-metadata and `syscalls`, a sorted, deduplicated list of configured custom
-names, whether or not the currently loaded root imports them. It does not
-test remote service availability or execute Program 0. Native-only hosts
-require no fallback configuration. The fixed `skrynia` ABI is documented
-separately and is not included in this list. Other methods on this endpoint
-return 404.
+metadata and `syscalls`, a sorted, deduplicated list of registered native and
+discovered provider names, whether or not the currently loaded root imports
+them. It does not test remote service availability or execute Program 0.
+Native-only hosts require no provider configuration. The fixed `skrynia` ABI
+is documented separately and is not included in this list. Other methods on
+this endpoint return 404.

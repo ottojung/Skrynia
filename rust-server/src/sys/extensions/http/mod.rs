@@ -1,3 +1,4 @@
+mod discover;
 mod link;
 mod request;
 
@@ -8,7 +9,7 @@ pub(super) struct Fallback {
 }
 
 impl Fallback {
-    pub fn new(base: &str, names: &[&str]) -> Result<Self, String> {
+    pub fn discover(base: &str) -> Result<Self, String> {
         let mut base = reqwest::Url::parse(base).map_err(|e| e.to_string())?;
         if !matches!(base.scheme(), "http" | "https")
             || base.host().is_none()
@@ -22,18 +23,12 @@ impl Fallback {
         base.path_segments_mut()
             .map_err(|_| "invalid base URL")?
             .pop_if_empty();
-        let mut set = std::collections::BTreeSet::new();
-        for name in names {
-            super::names::check(name)?;
-            if !set.insert(name.to_string()) {
-                return Err(format!("duplicate HTTP syscall: {name}"));
-            }
-        }
         let client = std::thread::spawn(request::client)
             .join()
             .map_err(|_| "HTTP syscall client initialization failed")??;
+        let names = discover::names(&client, &base)?;
         Ok(Self {
-            names: set,
+            names,
             base,
             client,
         })
