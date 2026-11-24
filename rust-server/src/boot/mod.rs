@@ -24,7 +24,7 @@ pub struct Kernel {
 
 impl Kernel {
     pub fn start(root_wasm: &Path, operator_dir: &Path, user_dir: &Path) -> Result<Self, String> {
-        Self::start_with_syscalls(root_wasm, operator_dir, user_dir, crate::Syscalls::new())
+        Self::start_with_syscalls(root_wasm, operator_dir, user_dir, crate::Syscalls::empty())
     }
     pub fn start_with_roots(
         root_wasm: &Path,

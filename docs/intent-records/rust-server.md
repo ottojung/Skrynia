@@ -34,15 +34,16 @@ date: 2026/11/23
 source: @ottojung
 kind: requirement
 
-The main repository shall provide the libskrynia Rust library for custom
-kernel builds. Program 0 may import arbitrary operator-configured names
-from the syscall namespace with the signature i32 -> i32. Native
-implementations are registered at startup. An optional HTTP provider is
-configured only by SKRYNIA_SYSCALL_URL and advertises its names at startup
-through GET <base>/syscalls_list (HTTP 200, JSON array of strings); the kernel validates, sorts, deduplicates and
-merges those names with native registrations, with native names winning.
-Resolve imports once at startup without runtime name dispatch; there is no
-operator-supplied syscall name list. The kernel must not understand
-capability-specific argument or result formats. Evaluated children must not
-receive direct custom imports. POST /version shall expose build version,
-commit and the supported custom syscall names.
+The main repository shall provide libskrynia for semantics-preserving
+optimizations of the reference implementation. Program 0 may import
+arbitrary advertised names from the syscall namespace with signature
+i32 -> i32. The operational prescription uses a separate HTTP server
+configured by SKRYNIA_SYSCALL_URL, discovered through GET
+<base>/syscalls_list, and called through POST <base>/<name>. The kernel
+must not understand capability-specific argument or result formats.
+A custom kernel may eliminate HTTP entirely while preserving the
+same syscall names, values and observable effects. There is no
+independent class of syscalls or precedence/fallback rule. Resolve
+imports once at startup. Evaluated children must not receive direct
+custom imports. POST /version shall expose build version, commit and
+the supported syscall names.

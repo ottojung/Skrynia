@@ -10,15 +10,11 @@ impl super::Syscalls {
             .map(|i| i.name().to_owned())
             .collect();
         for name in imports {
-            if let Some(register) = self.native.remove(&name) {
-                register(linker, &name)?;
-            } else if let Some(fallback) = &self.fallback
-                && fallback.names.contains(&name)
-            {
-                fallback.link(linker, &name)?;
-            } else {
-                return Err(format!("unsupported syscall: {name}"));
-            }
+            let equivalent = self
+                .calls
+                .remove(&name)
+                .ok_or_else(|| format!("unsupported syscall: {name}"))?;
+            (equivalent.link)(linker, &name)?;
         }
         Ok(())
     }

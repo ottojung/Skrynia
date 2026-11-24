@@ -1,5 +1,5 @@
 mod discovery;
-mod native;
+mod optimized;
 mod provider;
 mod provider_serve;
 mod remote;

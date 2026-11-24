@@ -1,17 +1,23 @@
 mod shutdown;
-pub fn run(syscalls: super::extensions::Syscalls) -> Result<(), Box<dyn std::error::Error>> {
-    run_with(|| Ok(syscalls))
+/// Run the HTTP reference implementation.
+pub fn run() -> Result<(), Box<dyn std::error::Error>> {
+    launch(|| Ok(super::extensions::Syscalls::from_env()?))
 }
 
-/// Construct providers only in the server, never in the isolated compiler worker.
-pub fn run_with(
+/// Run an equivalent implementation instead of the HTTP reference transport.
+pub fn run_optimized(
+    configure: impl FnOnce() -> Result<super::extensions::Syscalls, Box<dyn std::error::Error>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    launch(configure)
+}
+
+fn launch(
     configure: impl FnOnce() -> Result<super::extensions::Syscalls, Box<dyn std::error::Error>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if std::env::args().nth(1).as_deref() == Some("--compile-worker") {
         crate::boot::vm::compile::worker_main();
     }
-    let mut syscalls = configure()?;
-    syscalls.configure_env()?;
+    let syscalls = configure()?;
     tokio::runtime::Runtime::new()?.block_on(serve(syscalls))
 }
 

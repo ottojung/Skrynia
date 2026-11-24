@@ -87,8 +87,8 @@ not inspect output meaning. Any application-level protocol belongs in independen
 ## Memory domains and ownership
 
 1. **Private WASM linear memory**: separate linear memory per module instance.
-   Every pointer in the built-in VM ABI addresses this memory. Custom syscalls
-   may instead interpret their opaque argument/result as global RAM offsets.
+   Every pointer in the built-in VM ABI addresses this memory. Syscall
+   arguments and results are opaque u32 values; their protocol is external.
    Input/output stream descriptors are opaque handles, never pointers.
    A guest never receives a pointer to another instance's memory or to RAM.
 2. **Kernel-owned memory**: request/result staging, frames, descriptors,
@@ -98,8 +98,7 @@ not inspect output meaning. Any application-level protocol belongs in independen
 
 No runtime component may implicitly read, write, allocate, mirror, or cache
 request bodies, private memory, compiled code, descriptors, or kernel metadata
-in global RAM. RAM is touched only by explicit native provider RAM access or
-`open_ram/read/write/seek/
+in global RAM. RAM is touched only by explicit `open_ram/read/write/seek/
 truncate/cas_ram_u64` operations. Global RAM offsets are not capabilities.
 
 ## Root imports (Program 0 only)

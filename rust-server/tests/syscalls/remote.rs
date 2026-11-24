@@ -11,8 +11,7 @@ fn http_roundtrip_and_exact_result_length() {
             reply,
         };
         let provider = super::provider::start(discovery, 2);
-        let mut calls = libskrynia::Syscalls::new();
-        calls.http_provider(&provider.url).unwrap();
+        let calls = libskrynia::Syscalls::http(&provider.url).unwrap();
         let k = super::kernel(super::ROOT, calls).unwrap();
         let result = k.invoke(b"");
         provider.join();

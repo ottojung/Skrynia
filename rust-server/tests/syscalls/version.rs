@@ -13,12 +13,7 @@ fn discovery_lists_all_custom_names_without_executing_root() {
         reply: 0u32.to_le_bytes().to_vec(),
     };
     let provider = super::provider::start(discovery, 1);
-    let mut calls = libskrynia::Syscalls::new();
-    calls
-        .register("double", |_, _| panic!("version must not execute root"))
-        .unwrap();
-    calls.register("unused", |_, n| Ok(n)).unwrap();
-    calls.http_provider(&provider.url).unwrap();
+    let calls = libskrynia::Syscalls::http(&provider.url).unwrap();
     let app = libskrynia::http::router(super::kernel(super::ROOT, calls).unwrap());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

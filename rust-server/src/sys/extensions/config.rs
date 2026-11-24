@@ -1,26 +1,15 @@
 impl super::Syscalls {
-    /// Configure the HTTP provider by discovering names from GET <base>/syscalls_list.
-    pub fn http_provider(&mut self, base: &str) -> Result<(), String> {
-        if self.fallback.is_some() {
-            return Err("HTTP syscall provider already configured".into());
-        }
-        self.fallback = Some(super::http::Fallback::discover(base)?);
-        Ok(())
+    /// Reference execution: discover and execute through the HTTP server.
+    pub fn http(base: &str) -> Result<Self, String> {
+        super::http::Provider::discover(base)?.into_calls()
     }
 
-    /// Configure the HTTP provider from SKRYNIA_SYSCALL_URL when present.
-    pub fn configure_env(&mut self) -> Result<(), String> {
-        if let Some(base) = optional("SKRYNIA_SYSCALL_URL")? {
-            self.http_provider(&base)?;
+    /// Reference execution from the operator's environment.
+    pub fn from_env() -> Result<Self, String> {
+        match std::env::var("SKRYNIA_SYSCALL_URL") {
+            Ok(base) => Self::http(&base),
+            Err(std::env::VarError::NotPresent) => Ok(Self::empty()),
+            Err(_) => Err("invalid SKRYNIA_SYSCALL_URL".into()),
         }
-        Ok(())
-    }
-}
-
-fn optional(key: &str) -> Result<Option<String>, String> {
-    match std::env::var(key) {
-        Ok(value) => Ok(Some(value)),
-        Err(std::env::VarError::NotPresent) => Ok(None),
-        Err(_) => Err(format!("invalid {key}")),
     }
 }

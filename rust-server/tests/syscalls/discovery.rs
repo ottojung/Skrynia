@@ -15,8 +15,7 @@ fn rejects_malformed_names_and_lists() {
             reply: Vec::new(),
         };
         let provider = super::provider::start(d, 1);
-        let mut calls = libskrynia::Syscalls::new();
-        assert!(calls.http_provider(&provider.url).is_err());
+        assert!(libskrynia::Syscalls::http(&provider.url).is_err());
         provider.join();
     }
 }
@@ -33,8 +32,7 @@ fn rejects_non_200_and_oversized_body() {
             reply: Vec::new(),
         };
         let provider = super::provider::start(d, 1);
-        let mut calls = libskrynia::Syscalls::new();
-        assert!(calls.http_provider(&provider.url).is_err());
+        assert!(libskrynia::Syscalls::http(&provider.url).is_err());
         provider.join();
     }
 }

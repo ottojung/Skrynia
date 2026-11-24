@@ -1,14 +1,14 @@
+mod calls;
 mod discover;
-mod link;
 mod request;
 
-pub(super) struct Fallback {
+pub(super) struct Provider {
     pub names: std::collections::BTreeSet<String>,
     base: reqwest::Url,
     client: reqwest::blocking::Client,
 }
 
-impl Fallback {
+impl Provider {
     pub fn discover(base: &str) -> Result<Self, String> {
         let mut base = reqwest::Url::parse(base).map_err(|e| e.to_string())?;
         if !matches!(base.scheme(), "http" | "https")
