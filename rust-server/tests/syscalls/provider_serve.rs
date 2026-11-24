@@ -5,14 +5,23 @@ pub(super) fn serve(socket: &mut std::net::TcpStream, discovery: &Discovery) {
     let mut reader = BufReader::new(&mut *socket);
     let mut line = String::new();
     reader.read_line(&mut line).unwrap();
+    let method = line.split_whitespace().next().unwrap_or("").to_owned();
     let path = line.split_whitespace().nth(1).unwrap_or("").to_owned();
+    assert_eq!(method, "POST");
+    let mut headers = Vec::new();
     loop {
         line.clear();
         if reader.read_line(&mut line).unwrap() == 0 || line == "\r\n" {
             break;
         }
+        headers.push(line.to_ascii_lowercase());
     }
     let (status, body, kind) = if path == "/version" {
+        assert!(
+            headers
+                .iter()
+                .all(|h| !h.starts_with("content-length:") || h.contains(": 0"))
+        );
         (
             discovery.status,
             discovery.body.as_bytes(),

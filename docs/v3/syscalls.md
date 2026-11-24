@@ -90,6 +90,6 @@ for HTTP interoperability.
 metadata and `syscalls`, a sorted, deduplicated list of registered native and
 discovered provider names, whether or not the currently loaded root imports
 them. It does not test remote service availability or execute Program 0.
-Native-only hosts require no fallback configuration. The fixed `skrynia` ABI
+Native-only hosts require no provider configuration. The fixed `skrynia` ABI
 is documented separately and is not included in this list. Other methods on
 this endpoint return 404.
