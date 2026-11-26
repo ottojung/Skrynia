@@ -1,2 +1,0 @@
-mod deny;
-mod ok;

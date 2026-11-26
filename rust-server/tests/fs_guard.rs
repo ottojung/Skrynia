@@ -37,6 +37,6 @@ fn guard_ops() {
     assert!(s.mkdir(u, b"plain", mode).is_err());
     let new = libskrynia::fs::node::MkdirMode::create_new();
     assert_eq!(s.mkdir(u, b"reald", new).err(), Some("exists"));
-    assert!(k.prepare(10_000).is_ok());
+    assert!(k.prepare().is_ok());
     let _ = stdfs::remove_dir_all(&d);
 }

@@ -4,12 +4,11 @@ pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
         "truncate" | "seek" => ("il", "i"),
         "close" | "sync" => ("i", "i"),
         "exists" | "delete" | "is_dir" | "open_directory" | "secure_random_bits" => ("ii", "i"),
-        "rename" | "fs_delegate_scope" => ("iiii", "i"),
+        "rename" => ("iiii", "i"),
         "open_ram" | "try_mutation_lock" | "release_mutation_lock" => ("", "i"),
         "cas_ram_u64" => ("illli", "i"),
         "now" => ("", "l"),
-        "eval" | "eval_delegate" => ("iiiii", "i"),
-        "eval_buffered" => ("iiiiiii", "i"),
+        "eval" => ("lliii", "l"),
         _ => return None,
     })
 }

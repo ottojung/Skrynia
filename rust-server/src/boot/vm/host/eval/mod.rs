@@ -1,15 +1,25 @@
-mod buffered;
-mod cb;
-mod check;
+mod binding;
 mod comp;
-mod guest;
-mod reg;
+mod entry;
+mod func;
+mod link;
 mod run;
+mod snapshot;
+mod start;
+
 pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
-    add_funcs(linker)
-}
-pub fn add_funcs(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
-    reg::add(linker)?;
-    buffered::add(linker)?;
-    crate::boot::vm::host::fsscope::add(linker)
+    linker
+        .func_wrap(
+            "skrynia",
+            "eval",
+            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
+             code: u64,
+             code_size: u64,
+             function: i32,
+             arg0: i32,
+             arg1: i32|
+             -> i64 { run::eval(&mut c, code, code_size, function, arg0, arg1) },
+        )
+        .map(|_| ())
+        .map_err(|e| e.to_string())
 }
