@@ -18,7 +18,7 @@ pub(super) fn discovery_body() -> String {
         .map(|v| v.to_string())
         .collect::<Vec<_>>()
         .join(",");
-    format!("[{list}]")
+    format!(r#"{{"functions":[{list}]}}"#)
 }
 
 pub(super) fn expected() -> serde_json::Value {

@@ -1,7 +1,7 @@
 use crate::Signature;
 use std::collections::BTreeMap;
 
-pub fn to_discovery(signatures: &BTreeMap<String, Signature>) -> serde_json::Value {
+pub fn to_list(signatures: &BTreeMap<String, Signature>) -> serde_json::Value {
     let list = signatures
         .iter()
         .map(|(name, sig)| {
@@ -13,6 +13,10 @@ pub fn to_discovery(signatures: &BTreeMap<String, Signature>) -> serde_json::Val
         })
         .collect();
     serde_json::Value::Array(list)
+}
+
+pub fn to_discovery(signatures: &BTreeMap<String, Signature>) -> serde_json::Value {
+    serde_json::json!({"functions": to_list(signatures)})
 }
 
 fn names(types: &str) -> Vec<&'static str> {

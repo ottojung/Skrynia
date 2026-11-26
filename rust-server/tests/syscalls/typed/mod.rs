@@ -21,6 +21,7 @@ pub(super) const MIX_IMPORT: &str =
 
 pub(super) const MIX_BODY: &str = "(call $sink (call $mix (i32.const -1) (i64.const 8589934597) (i32.const 7))) (drop (call $w (local.get $out) (i32.const 0) (i32.const 12)))";
 
-pub(super) const MIX_ARGS: [(u8, u64); 3] = [(b'i', u64::MAX), (b'l', 8589934597), (b'i', 7)];
-pub(super) const MIX_RESULTS: [(u8, u64); 2] = [(b'l', 8589934596), (b'i', 21)];
+pub(super) const MIX_ARGS: [(u8, u64); 3] =
+    [(0x32, u32::MAX as u64), (0x40, 8589934597), (0x32, 7)];
+pub(super) const MIX_RESULTS: [(u8, u64); 2] = [(0x40, 8589934596), (0x32, 21)];
 pub(super) const MIX_BYTES: [u8; 12] = [4, 0, 0, 0, 2, 0, 0, 0, 21, 0, 0, 0];

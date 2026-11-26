@@ -8,7 +8,7 @@ fn typed_transport_matches_native_for_mixed_widths() {
     let version = format!(r#"{{"version":"v","commit":"development","syscalls":{LIST}}}"#);
     let discovery = super::super::provider::Discovery {
         status: 200,
-        body: LIST.into(),
+        body: format!(r#"{{"functions":{LIST}}}"#),
         version: Some(version),
         reply: super::super::provider::wire(&super::MIX_RESULTS),
         request: Some(super::super::provider::wire(&super::MIX_ARGS)),
