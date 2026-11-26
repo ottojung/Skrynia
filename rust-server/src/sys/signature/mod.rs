@@ -2,7 +2,7 @@ mod json;
 mod ty;
 mod wire;
 
-pub use json::{from_discovery, from_version, to_discovery, to_list};
+pub use json::{from_discovery, from_version, to_list};
 pub use wire::{decode, encode, fill};
 
 /// Ordered integer parameter and result types: `i` = i32, `l` = i64.

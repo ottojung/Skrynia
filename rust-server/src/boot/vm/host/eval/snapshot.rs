@@ -10,7 +10,6 @@ pub fn snapshot(
     if size > crate::boot::vm::state::MAX_MODULE_BYTES as u64 {
         return Err(ERR_RANGE);
     }
-    let offset = usize::try_from(offset).map_err(|_| ERR_RANGE)?;
     let size = usize::try_from(size).map_err(|_| ERR_RANGE)?;
     let mut bytes = vec![0u8; size];
     let n = c
