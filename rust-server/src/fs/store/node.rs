@@ -7,10 +7,10 @@ impl Fs {
         path: &[u8],
     ) -> Result<(RootKind, std::path::PathBuf), &'static str> {
         let (kind, suffix) = crate::fs::root::select::split(path)?;
-        if let Some(want) = root {
-            if want != kind {
-                return Err("root");
-            }
+        if let Some(want) = root
+            && want != kind
+        {
+            return Err("root");
         }
         Ok((kind, crate::fs::path::clean(suffix)?))
     }

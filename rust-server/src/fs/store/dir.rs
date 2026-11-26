@@ -9,10 +9,10 @@ impl Fs {
         owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
         let (kind, suffix) = crate::fs::root::select::split(p)?;
-        if let Some(want) = root {
-            if want != kind {
-                return Err("root");
-            }
+        if let Some(want) = root
+            && want != kind
+        {
+            return Err("root");
         }
         let e = if suffix == b"." {
             crate::fs::dir::open_root(self.root(kind))?

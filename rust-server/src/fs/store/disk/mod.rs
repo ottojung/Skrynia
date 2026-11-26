@@ -13,10 +13,10 @@ impl Fs {
         owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
         let (kind, suffix) = crate::fs::root::select::split(path)?;
-        if let Some(want) = root {
-            if want != kind {
-                return Err("root");
-            }
+        if let Some(want) = root
+            && want != kind
+        {
+            return Err("root");
         }
         let rel = crate::fs::path::clean(suffix)?;
         let e = crate::fs::disk::open_disk(self.root(kind), &rel, mode)?;

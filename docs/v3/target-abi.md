@@ -49,7 +49,8 @@ read/write imports and no RAM buffer requirement for byte I/O. Bytes are
 **[K0-CHOICE] Scalar encoding.** Negative results are errors, nonnegative
 results are values or success status. Codes: `-1` EOF, `-2` EBADF, `-3` EINVAL
 (including byte/operand out of range), `-4` ENOTSUP, `-5` EIO, `-6` ERANGE
-(overflow/underflow), `-7` bounds violation. Status-only operations return `0`.
+(overflow/underflow), `-7` bounds violation, `-8` ENOENT (genuine absence of a
+qualified path only; distinct from `-2` EBADF and `-5` EIO). Status-only operations return `0`.
 `read1` returns the byte `0..255` on success and `-1` at EOF. `write1` returns
 `0` on success. Descriptors are linear byte streams with a per-descriptor
 cursor; a successful byte transfer advances it by one; an error leaves it
@@ -87,10 +88,22 @@ valid offset without alignment requirements: success is a release operation
 that publishes prior ordinary RAM writes to a later acquiring observation;
 failed observations also acquire. No CAS buffer and no multi-byte CAS.
 
-`open_directory(".")` opens the authorized storage root itself and `sync` on
-that descriptor requests directory durability for top-level creation,
-deletion and rename, with no relaxation of path confinement or parent
-traversal.
+**[K10-IMPLEMENTATION-CHOICE] Explicit confined roots.** Every path passed to
+`open_disk`, `mkdir`, `exists`, `is_dir`, `delete`, `rename` and
+`open_directory` must begin with exactly one namespace token, `user/` or
+`operator/`. The token alone selects that root; the kernel strips it and
+applies the unchanged relative-path grammar (no absolute paths, `..`, `//`,
+trailing slash, NUL or paths over 4096 bytes). Unqualified paths, token
+escapes and cross-token renames are rejected with `-3`; there is no implicit
+default, overlay or fallback between the two physically distinct roots.
+`FsAuth` only restricts: full authority permits both namespaces, scoped caps
+are checked against the token-selected root and cannot redirect it. Never
+treat `-8` (the only genuine ENOENT code), `-5` EIO or `-2` EBADF as absence of
+a path. `open_directory("user/.")` or `open_directory("operator/.")` opens that
+namespace root, and `sync` on that descriptor requests directory durability
+for top-level creation, deletion and rename, with no relaxation of path
+confinement or parent traversal. This is a recorded implementation choice,
+not a separate owner approval.
 
 ## 4. Generic single-function eval
 
