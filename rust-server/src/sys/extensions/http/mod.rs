@@ -1,9 +1,12 @@
 mod calls;
 mod discover;
 mod request;
+mod version;
+
+use std::collections::BTreeMap;
 
 pub(super) struct Provider {
-    pub names: std::collections::BTreeSet<String>,
+    pub signatures: BTreeMap<String, crate::Signature>,
     base: reqwest::Url,
     client: reqwest::blocking::Client,
 }
@@ -26,9 +29,10 @@ impl Provider {
         let client = std::thread::spawn(request::client)
             .join()
             .map_err(|_| "HTTP syscall client initialization failed")??;
-        let names = discover::names(&client, &base)?;
+        let signatures = discover::signatures(&client, &base)?;
+        version::cross_check(&client, &base, &signatures)?;
         Ok(Self {
-            names,
+            signatures,
             base,
             client,
         })

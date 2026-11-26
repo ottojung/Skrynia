@@ -1,46 +1,39 @@
-type Link = Box<
-    dyn FnOnce(&mut wasmtime::Linker<crate::boot::vm::state::Vm>, &str) -> Result<(), String>
-        + Send,
->;
+mod context;
+mod link;
 
-/// A transport-free equivalent of one POST endpoint.
-/// The caller is responsible for preserving its full observable semantics.
+use super::check_name;
+use crate::Signature;
+use std::sync::Arc;
+use wasmtime::Val;
+
+pub(super) type Native = Arc<dyn Fn(&[Val]) -> Result<Vec<Val>, String> + Send + Sync>;
+
+/// A transport-free native equivalent of one typed POST endpoint.
 pub struct EquivalentCall {
     pub(super) name: String,
-    pub(super) link: Link,
+    pub(super) signature: Signature,
+    pub(super) link: link::Link,
 }
 
 impl EquivalentCall {
     pub fn new(
         name: &str,
-        call: impl Fn(u32) -> Result<u32, String> + Send + Sync + 'static,
+        params: &str,
+        results: &str,
+        call: impl Fn(&[Val]) -> Result<Vec<Val>, String> + Send + Sync + 'static,
     ) -> Result<Self, String> {
-        super::names::check(name)?;
+        let signature = Signature::new(params, results)?;
+        let native: Native = Arc::new(call);
+        let link = link::native(signature.clone(), native)?;
+        Self::build(name, signature, link)
+    }
+
+    fn build(name: &str, signature: Signature, link: link::Link) -> Result<Self, String> {
+        check_name(name)?;
         Ok(Self {
             name: name.into(),
-            link: Box::new(move |linker, name| {
-                linker
-                    .func_wrap("syscall", name, move |arg: u32| {
-                        call(arg).map_err(wasmtime::Error::msg)
-                    })
-                    .map_err(|e| e.to_string())?;
-                Ok(())
-            }),
+            signature,
+            link,
         })
-    }
-}
-
-impl super::Syscalls {
-    /// Replace the entire HTTP prescription with its equivalent operations.
-    /// The supplied names must equal the reference server's discovery list.
-    pub fn optimized(calls: impl IntoIterator<Item = EquivalentCall>) -> Result<Self, String> {
-        let mut result = Self::empty();
-        for call in calls {
-            let name = call.name.clone();
-            if result.calls.insert(name.clone(), call).is_some() {
-                return Err(format!("duplicate syscall: {name}"));
-            }
-        }
-        Ok(result)
     }
 }
