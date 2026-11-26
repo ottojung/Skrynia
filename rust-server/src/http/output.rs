@@ -2,7 +2,6 @@ use axum::body::Bytes;
 use std::io::{self, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 use tokio::sync::mpsc;
 
 pub type Chunk = io::Result<Bytes>;
@@ -20,20 +19,17 @@ impl Write for Output {
             return Ok(0);
         }
         let count = src.len().min(64 * 1024);
-        loop {
-            if self.1.load(Ordering::Relaxed) {
-                return Err(io::Error::other("response deadline"));
-            }
-            let chunk = Ok(Bytes::copy_from_slice(&src[..count]));
-            match self.0.try_send(chunk) {
-                Ok(()) => return Ok(count),
-                Err(mpsc::error::TrySendError::Full(_)) => {
-                    std::thread::sleep(Duration::from_millis(2));
-                }
-                Err(mpsc::error::TrySendError::Closed(_)) => {
-                    return Err(io::Error::other("response closed"));
-                }
-            }
+        if self.1.load(Ordering::Relaxed) {
+            return Err(io::Error::other("response deadline"));
+        }
+        // The VM runs in spawn_blocking, so a bounded blocking send is safe here.
+        // It applies the same backpressure as the old try_send + 2ms sleep loop,
+        // but wakes as soon as the consumer drains a slot instead of sleeping a
+        // fixed 2ms per byte (which capped byte-wise write1 output near 1KB/s).
+        let chunk = Ok(Bytes::copy_from_slice(&src[..count]));
+        match self.0.blocking_send(chunk) {
+            Ok(()) => Ok(count),
+            Err(_) => Err(io::Error::other("response closed")),
         }
     }
     fn flush(&mut self) -> io::Result<()> {
