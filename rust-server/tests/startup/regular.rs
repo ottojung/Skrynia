@@ -2,7 +2,7 @@
 #[test]
 fn startup_rejects_nonregular_root_without_blocking() {
     use libskrynia::boot;
-    use std::{ffi::CString, fs};
+    use std::ffi::CString;
     let dir = std::env::temp_dir().join(format!("skrynia-root-fifo-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("operator")).unwrap();

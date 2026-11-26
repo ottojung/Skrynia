@@ -24,7 +24,9 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
     let t = term::new();
     let verdict: gate::Verdict = Arc::new(AtomicU8::new(0));
     let (tx, rx) = mpsc::channel(2);
-    let (out_tx, out_rx) = mpsc::channel(2);
+    let (out_tx, out_rx) = mpsc::channel(3);
+    // Preserve two data slots and a reserved terminal-error slot.
+    let terminal = out_tx.clone().try_reserve_owned().expect("fresh queue");
     let deadline = tokio::time::Instant::now() + super::router::response_total();
     let body = if chunked {
         gate::body(request.into_body(), lim.max, verdict.clone())
@@ -33,7 +35,7 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
     };
     let pump = tokio::spawn(pump::run(body, tx, t.clone(), lim));
     let kernel = app.kernel;
-    let worker_tx = out_tx.clone();
+    let worker_tx = out_tx;
     let input_term = t.clone();
     let worker = tokio::task::spawn_blocking(move || {
         let _permit = permit;
@@ -43,6 +45,6 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
             Box::new(output::Output(worker_tx, deadline)),
         )
     });
-    tokio::spawn(flow::supervise(pump, worker, out_tx));
+    tokio::spawn(flow::supervise(pump, worker, terminal));
     respond::response(out_rx, t, verdict).await
 }

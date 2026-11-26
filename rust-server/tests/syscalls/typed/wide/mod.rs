@@ -19,8 +19,7 @@ pub(super) fn frame(values: &[u64]) -> Vec<u8> {
 }
 
 pub(super) fn types(count: usize) -> String {
-    std::iter::repeat("\"i32\"")
-        .take(count)
+    std::iter::repeat_n("\"i32\"", count)
         .collect::<Vec<_>>()
         .join(",")
 }
