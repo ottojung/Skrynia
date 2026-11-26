@@ -1,6 +1,6 @@
 (module
-  (import "skrynia" "open_directory" (func $od(param i32 i32)(result i32)))
-  (import "skrynia" "next_entry" (func $nx(param i32 i32 i32)(result i32)))
+  (import "skrynia" "open_directory" (func $od(param i64 i64)(result i32)))
+  (import "skrynia" "next_entry" (func $nx(param i32 i64 i64)(result i32)))
   (import "skrynia" "fs_delegate_scope" (func $s(param i32 i32 i32 i32)(result i32)))
   (import "skrynia" "eval_delegate" (func $e(param i32 i32 i32 i32 i32)(result i32)))
   (memory (export "memory") 4)
@@ -12,10 +12,10 @@
   (func $cb(param $rp i32)(param $rl i32)(param $dp i32)(param $cap i32)(result i32)
     (if (i32.eq (global.get $state)(i32.const 0))
       (then
-        (global.set $fd (call $od (i32.const 4096)(i32.const 7)))
+        (global.set $fd (call $od (i64.const 4096) (i64.const 7)))
         (global.set $state (i32.const 1))
         (return (i32.const 0))))
-    (call $nx (global.get $fd)(local.get $dp)(local.get $cap)))
+    (call $nx (global.get $fd) (i64.extend_i32_u local.get $dp) (i64.extend_i32_u local.get $cap)))
   (elem (i32.const 0) func $cb)
   (func (export "skrynia_main")(param $in i32)(param $out i32)(result i32)
     (drop (call $s (i32.const 0)(i32.const 4096)(i32.const 7)(i32.const 255)))

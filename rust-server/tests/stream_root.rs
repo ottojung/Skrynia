@@ -18,6 +18,6 @@ fn request_fd_is_read_only_and_not_seekable() {
     let k = kernel();
     assert_eq!(
         k.invoke(b"abc").unwrap(),
-        [b"abc".as_slice(), &[252; 8]].concat()
+        [b"abc".as_slice(), &[252, 252, 3, 0, 252, 252, 252, 252]].concat()
     );
 }

@@ -1,35 +1,23 @@
-pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
+type Vm = crate::boot::vm::state::Vm;
+type Caller<'a> = wasmtime::Caller<'a, Vm>;
+
+pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
     linker
         .func_wrap(
             "skrynia",
-            "write",
-            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
-             fd: i32,
-             src: u32,
-             len: u32|
-             -> i32 {
-                if len > crate::boot::limits::MAX_IO {
-                    return crate::boot::vm::codes::ERR_LIMIT;
+            "write1",
+            |mut c: Caller<'_>, fd: i32, byte: u32| -> i32 {
+                if byte > 255 {
+                    return crate::boot::vm::host::ram::args::E_INVAL;
                 }
-                if let Err(e) = super::guard::check(c.data(), crate::fs::Fd(fd)) {
-                    return e;
+                if super::guard::check(c.data(), crate::fs::Fd(fd)).is_err() {
+                    return crate::boot::vm::host::ram::args::E_BADFD;
                 }
-                let mem = match crate::boot::vm::mem::get(&mut c) {
-                    Ok(x) => x,
-                    Err(e) => return e,
-                };
-                if src as u64 + len as u64 > mem.data_size(&c) as u64 {
-                    return crate::boot::vm::codes::ERR_RANGE;
-                }
-                let chunk = len.min(crate::boot::limits::IO_CHUNK);
-                let buf = match crate::boot::vm::mem::read_buf(&mut c, mem, src, chunk) {
-                    Ok(x) => x,
-                    Err(e) => return e,
-                };
                 let fs = c.data().fs.clone();
-                match fs.write(&mut c.data_mut().fds, crate::fs::Fd(fd), &buf) {
-                    Ok(n) => n as i32,
-                    Err(e) => crate::boot::vm::err::map(e),
+                match fs.write1(&mut c.data_mut().fds, crate::fs::Fd(fd), byte as u8) {
+                    Ok(()) => 0,
+                    Err("badfd") => crate::boot::vm::host::ram::args::E_BADFD,
+                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
                 }
             },
         )

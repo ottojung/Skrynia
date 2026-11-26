@@ -22,9 +22,7 @@ impl Fs {
         size: u64,
     ) -> Result<(), &'static str> {
         match fds.get(fd) {
-            Some(Item::Ram(_)) => self
-                .ram
-                .truncate(usize::try_from(size).map_err(|_| "nospace")?),
+            Some(Item::Ram(_)) => self.ram.truncate(size),
             _ => Err("badfd"),
         }
     }

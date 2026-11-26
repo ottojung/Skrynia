@@ -1,7 +1,7 @@
 (module
       (import "skrynia" "eval_buffered" (func $e(param i32 i32 i32 i32 i32 i32 i32)(result i32)))
       (import "skrynia" "fs_delegate_scope" (func $s(param i32 i32 i32 i32)(result i32)))
-      (import "skrynia" "open_disk" (func $od(param i32 i32 i32)(result i32)))
+      (import "skrynia" "open_disk" (func $od(param i64 i64 i32)(result i32)))
       (import "skrynia" "read" (func $r(param i32 i32 i32)(result i32)))
       (import "skrynia" "write" (func $w(param i32 i32 i32)(result i32)))
       (memory (export "memory") 4)
@@ -10,7 +10,7 @@
       (data(i32.const 4096) "allowed/file")
       (global $fd (mut i32) (i32.const -1))
       (func $cb(param i32 i32 i32 i32)(result i32)
-        (global.set $fd (call $od (i32.const 4096)(i32.const 12)(i32.const 1)))
+        (global.set $fd (call $od (i64.const 4096) (i64.const 12) (i32.const 1)))
         (i32.const 0))
       (elem(i32.const 0) func $cb)
       (func (export "skrynia_main")(param $in i32)(param $out i32)(result i32)

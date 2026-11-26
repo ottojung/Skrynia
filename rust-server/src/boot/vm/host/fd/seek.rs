@@ -1,17 +1,19 @@
-pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
+type Vm = crate::boot::vm::state::Vm;
+
+pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
     linker
         .func_wrap(
             "skrynia",
             "seek",
-            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>, fd: i32, off: u64| -> i32 {
-                let f = crate::fs::Fd(fd);
-                if let Err(e) = super::guard::check(c.data(), f) {
-                    return e;
+            |mut c: wasmtime::Caller<'_, Vm>, fd: i32, shift: i64| -> i64 {
+                if super::guard::check(c.data(), crate::fs::Fd(fd)).is_err() {
+                    return i64::from(crate::boot::vm::host::ram::args::E_BADFD);
                 }
                 let fs = c.data().fs.clone();
-                match fs.seek(&mut c.data_mut().fds, f, off) {
-                    Ok(()) => 0,
-                    Err(e) => crate::boot::vm::err::map(e),
+                match fs.seek_rel(&mut c.data_mut().fds, crate::fs::Fd(fd), shift) {
+                    Ok(pos) => pos as i64,
+                    Err("badfd") => i64::from(crate::boot::vm::host::ram::args::E_BADFD),
+                    Err(e) => i64::from(crate::boot::vm::host::ram::args::map_fs(e)),
                 }
             },
         )
@@ -20,15 +22,15 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
         .func_wrap(
             "skrynia",
             "truncate",
-            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>, fd: i32, size: u64| -> i32 {
-                let f = crate::fs::Fd(fd);
-                if let Err(e) = super::guard::check(c.data(), f) {
-                    return e;
+            |mut c: wasmtime::Caller<'_, Vm>, fd: i32, size: u64| -> i32 {
+                if super::guard::check(c.data(), crate::fs::Fd(fd)).is_err() {
+                    return crate::boot::vm::host::ram::args::E_BADFD;
                 }
                 let fs = c.data().fs.clone();
-                match fs.truncate_fd(&mut c.data_mut().fds, f, size) {
+                match fs.truncate_fd(&mut c.data_mut().fds, crate::fs::Fd(fd), size) {
                     Ok(()) => 0,
-                    Err(e) => crate::boot::vm::err::map(e),
+                    Err("badfd") => crate::boot::vm::host::ram::args::E_BADFD,
+                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
                 }
             },
         )

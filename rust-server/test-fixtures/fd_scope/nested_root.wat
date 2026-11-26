@@ -1,5 +1,5 @@
 (module
-      (import "skrynia" "open_disk" (func $od (param i32 i32 i32)(result i32)))
+      (import "skrynia" "open_disk" (func $od (param i64 i64 i32)(result i32)))
       (import "skrynia" "eval_delegate" (func $ed (param i32 i32 i32 i32 i32)(result i32)))
       (import "skrynia" "fs_delegate_scope" (func $ds (param i32 i32 i32 i32)(result i32)))
       (memory (export "memory") 4)
@@ -7,7 +7,7 @@
       (data (i32.const 4096) "secret.txt")
       (func (export "skrynia_main") (param $i i32)(param $o i32)(result i32)
         (local $secret i32)
-        (local.set $secret (call $od (i32.const 4096)(i32.const 10)(i32.const 1)))
+        (local.set $secret (call $od (i64.const 4096) (i64.const 10) (i32.const 1)))
         (if (i32.ne (local.get $secret)(i32.const 65538)) (then (return (i32.const -5))))
         (drop (call $ds (i32.const 0)(i32.const 0)(i32.const 0)(i32.const 255)))
         (call $ed (i32.const 0)(i32.const @@P1_LEN@@)(local.get $i)(local.get $o)(i32.const -1))))
