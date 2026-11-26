@@ -11,7 +11,7 @@ impl Fs {
             Some(Item::Ram(e)) => &mut e.pos,
             _ => return Err("badfd"),
         };
-        let off = usize::try_from(*pos).map_err(|_| "oob")?;
+        let off = *pos;
         let n = self.ram.read(off, dst)?;
         *pos += n as u64;
         Ok(n)
@@ -26,7 +26,7 @@ impl Fs {
             Some(Item::Ram(e)) => &mut e.pos,
             _ => return Err("badfd"),
         };
-        let off = usize::try_from(*pos).map_err(|_| "oob")?;
+        let off = *pos;
         let n = self.ram.write(off, src)?;
         *pos += n as u64;
         Ok(n)

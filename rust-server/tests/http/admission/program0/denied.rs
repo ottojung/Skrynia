@@ -6,7 +6,7 @@ use http_body_util::BodyExt;
 use libskrynia::http;
 use tower::ServiceExt;
 fn privileged_guest() -> Vec<u8> {
-    wat::parse_str(r#"(module(import "skrynia" "open_disk"(func $od(param i32 i32 i32)(result i32)))(memory(export "memory") 1)(func(export "skrynia_main")(param $i i32)(param $o i32)(result i32)(call $od(i32.const 0)(i32.const 0)(i32.const 1))))"#).unwrap()
+    wat::parse_str(r#"(module(import "skrynia" "open_disk"(func $od(param i64 i64 i32)(result i32)))(memory(export "memory") 1)(func(export "skrynia_main")(param $i i32)(param $o i32)(result i32)(call $od (i64.const 0) (i64.const 0) (i32.const 1))))"#).unwrap()
 }
 fn trap_guest() -> Vec<u8> {
     wat::parse_str(r#"(module(import "skrynia" "write"(func $w(param i32 i32 i32)(result i32)))(memory(export "memory") 1)(data(i32.const 0)"part")(func(export "skrynia_main")(param $i i32)(param $o i32)(result i32)(drop(call $w(local.get $o)(i32.const 0)(i32.const 4))) unreachable (i32.const 0)))"#).unwrap()

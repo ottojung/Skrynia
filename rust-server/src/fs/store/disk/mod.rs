@@ -1,4 +1,6 @@
+mod byte;
 mod io;
+mod legacy_seek;
 mod seek;
 pub(super) use super::{Fs, Item, RootKind};
 

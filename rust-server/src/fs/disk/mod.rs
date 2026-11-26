@@ -1,3 +1,4 @@
+pub(crate) mod byte;
 mod entry;
 mod io;
 mod mode;

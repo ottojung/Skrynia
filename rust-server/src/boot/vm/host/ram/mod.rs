@@ -1,5 +1,6 @@
+pub mod args;
 mod cas;
-mod check;
+mod legacy;
 
 pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
     linker
@@ -16,5 +17,6 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
             },
         )
         .map_err(|e| e.to_string())?;
-    cas::add(linker)
+    cas::add(linker)?;
+    legacy::add(linker)
 }

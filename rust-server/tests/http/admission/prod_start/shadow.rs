@@ -9,14 +9,14 @@ use tower::ServiceExt;
 #[rustfmt::skip]
 fn root() -> Vec<u8> {
     wat::parse_str(concat!(
-        "(module(import \"skrynia\" \"open_disk\"(func $o(param i32 i32 i32)(result i32)))",
+        "(module(import \"skrynia\" \"open_disk\"(func $o(param i64 i64 i32)(result i32)))",
         "(import \"skrynia\" \"read\"(func $r(param i32 i32 i32)(result i32)))",
         "(import \"skrynia\" \"close\"(func $c(param i32)(result i32)))",
         "(import \"skrynia\" \"write\"(func $w(param i32 i32 i32)(result i32)))",
         "(memory(export \"memory\") 2)(data(i32.const 0)\"secret.bin\")",
         "(func(export \"skrynia_main\")(param $in i32)(param $out i32)(result i32)",
         "(local $fd i32)(local $n i32)",
-        "(local.set $fd(call $o(i32.const 0)(i32.const 10)(i32.const 1)))",
+        "(local.set $fd(call $o (i64.const 0) (i64.const 10) (i32.const 1)))",
         "(if(i32.lt_s(local.get $fd)(i32.const 0))(then(return(i32.const 0))))",
         "(local.set $n(call $r(local.get $fd)(i32.const 32)(i32.const 64)))",
         "(drop(call $c(local.get $fd)))",

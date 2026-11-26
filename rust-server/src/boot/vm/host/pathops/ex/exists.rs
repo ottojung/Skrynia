@@ -1,14 +1,12 @@
-pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
+type Vm = crate::boot::vm::state::Vm;
+
+pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
     linker
         .func_wrap(
             "skrynia",
             "exists",
-            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>, ptr: u32, len: u32| -> i32 {
-                let mem = match crate::boot::vm::mem::get(&mut c) {
-                    Ok(x) => x,
-                    Err(e) => return e,
-                };
-                let p = match crate::boot::vm::mem::read_buf(&mut c, mem, ptr, len) {
+            |mut c: wasmtime::Caller<'_, Vm>, ptr: u64, len: u64| -> i32 {
+                let p = match crate::boot::vm::host::ram::args::read(&mut c, ptr, len) {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
@@ -22,7 +20,7 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                 };
                 match c.data().fs.exists(root, &p) {
                     Ok(v) => v as i32,
-                    Err(e) => crate::boot::vm::err::map(e),
+                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
                 }
             },
         )

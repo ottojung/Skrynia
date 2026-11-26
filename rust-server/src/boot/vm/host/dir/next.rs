@@ -1,41 +1,33 @@
-pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
+type Vm = crate::boot::vm::state::Vm;
+
+pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
     linker
         .func_wrap(
             "skrynia",
             "next_entry",
-            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
-             fd: i32,
-             dst: u32,
-             cap: u32|
-             -> i32 {
-                if let Err(e) = super::super::fd::guard::check(c.data(), crate::fs::Fd(fd)) {
-                    return e;
-                }
-                let m = match crate::boot::vm::mem::get(&mut c) {
-                    Ok(x) => x,
-                    Err(e) => return e,
-                };
-                if dst as u64 + cap as u64 > m.data_size(&c) as u64 {
-                    return crate::boot::vm::codes::ERR_RANGE;
+            |mut c: wasmtime::Caller<'_, Vm>, fd: i32, dst: u64, cap: u64| -> i32 {
+                if crate::boot::vm::host::fd::guard::check(c.data(), crate::fs::Fd(fd)).is_err() {
+                    return crate::boot::vm::host::ram::args::E_BADFD;
                 }
                 let max = cap.min(4096);
+                if max > crate::boot::limits::MAX_IO as u64 {
+                    return crate::boot::vm::host::ram::args::E_BOUNDS;
+                }
                 let mut buf = vec![0u8; max as usize];
                 let fs = c.data().fs.clone();
                 let res = fs.next_entry(&mut c.data_mut().fds, crate::fs::Fd(fd), &mut buf);
                 let out = match res {
                     Ok(crate::fs::dir::Next::Name(n)) => n,
                     Ok(crate::fs::dir::Next::End) => return 0,
-                    Ok(crate::fs::dir::Next::Small) => return crate::boot::vm::codes::ERR_OVERFLOW,
-                    Err(e) => return crate::boot::vm::err::map(e),
+                    Ok(crate::fs::dir::Next::Small) => {
+                        return crate::boot::vm::host::ram::args::E_BOUNDS;
+                    }
+                    Err(e) => return crate::boot::vm::host::ram::args::map_fs(e),
                 };
-                let m = match crate::boot::vm::mem::get(&mut c) {
-                    Ok(x) => x,
-                    Err(e) => return e,
-                };
-                if crate::boot::vm::mem::write_buf(&mut c, m, dst, &buf[..out]).is_err() {
-                    return crate::boot::vm::codes::ERR_RANGE;
+                match crate::boot::vm::host::ram::args::write(&mut c, dst, &buf[..out]) {
+                    Ok(()) => out as i32,
+                    Err(e) => e,
                 }
-                out as i32
             },
         )
         .map_err(|e| e.to_string())?;
