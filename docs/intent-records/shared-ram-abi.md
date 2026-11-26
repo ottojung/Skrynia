@@ -6,8 +6,8 @@ kind: requirement
 
 All memory pointers and buffer ranges in the Skrynia machine ABI refer to
 the single shared RAM object, never to a caller's WASM linear memory.
-This applies to paths, directory entries, random output, CAS observation
-buffers (if used), eval code and binding arrays, and derived FFI buffers.
+This applies to paths, directory entries, random output, eval code and
+binding arrays, and derived FFI buffers. CAS has no observation buffer.
 Scalar values, descriptor identifiers and function-table indices remain
 values of their respective types, not RAM addresses.
 
@@ -16,7 +16,13 @@ belong to software. RAM remains dynamically resizable via truncate:
 growth initializes newly exposed bytes to zero, shrink discards the tail.
 Ordinary RAM reads and writes guarantee individual byte atomicity, not
 atomic multi-byte transfers or snapshots. Disjoint writes must not erase
-one another. CAS remains the special atomic synchronization operation.
+one another. CAS is the special atomic synchronization operation and
+acts on exactly one byte, at any valid RAM byte offset, without alignment
+requirements. It atomically compares that byte with an expected byte and
+replaces it with a desired byte on equality. It must be linearizable with
+other CAS and ordinary accesses to that byte. Return the observed byte
+as a scalar, not through a RAM buffer. Multi-byte CAS is not a fundamental
+machine operation. This supersedes the former 64-bit CAS requirement.
 Conflicting accesses to regions removed or recreated by concurrent
 truncation need not have meaningful data semantics; host safety is mandatory.
 Ordinary RAM data operations must not require a global RAM mutex.

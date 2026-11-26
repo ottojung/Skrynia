@@ -22,8 +22,7 @@ signatures below are the working design, subject to final ABI specification):
     i32 rename(u32 old, u32 old_len, u32 new, u32 new_len);
     i32 open_directory(u32 path, u32 len);
     i32 next_entry(i32 fd, u32 dst, u32 capacity);
-    i32 cas_ram_u64(i32 fd, u64 offset, u64 expected,
-                    u64 desired, u32 observed);
+    i32 cas1(i32 fd, u64 offset, u32 expected, u32 desired);
     i64 now();
     i32 secure_random_bits(u32 dst, u32 bits);
     i64 eval(u32 code, u32 code_size, u32 bindings,
@@ -33,8 +32,12 @@ All pointers refer to shared RAM. The fixed inventory contains 19
 functions, plus operator-defined named FFI imports in namespace syscall.
 read1/write1 are the only fundamental descriptor data transfers.
 seek is relative and signed; input supports nonnegative shifts.
+CAS compares and conditionally replaces exactly one RAM byte. The proposed
+cas1 signature returns the observed byte directly (0..255), or a negative
+error; expected and desired must be in 0..255. The exact name and scalar
+signature remain working proposals. No CAS buffer or multi-byte CAS.
 
-Remove native read, write, invoke, eval_delegate, eval_buffered,
+Remove native cas_ram_u64, read, write, invoke, eval_delegate, eval_buffered,
 fs_delegate_scope, try_mutation_lock and release_mutation_lock.
 No native registration, program-ID management or application protocols.
 Allocation, memory protection and application policy belong to software.
