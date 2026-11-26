@@ -3,6 +3,7 @@ mod optimized;
 mod provider;
 mod provider_serve;
 mod remote;
+mod typed;
 mod version;
 
 pub(crate) const ROOT: &str = r#"(module

@@ -16,12 +16,14 @@ fn eval_rejects_privileged_guest_imports() {
         1,
     );
     fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let calls =
-        libskrynia::Syscalls::optimized([libskrynia::EquivalentCall::new("double", |_| {
-            panic!("child must not call syscall")
-        })
-        .unwrap()])
-        .unwrap();
+    let calls = libskrynia::Syscalls::optimized([libskrynia::EquivalentCall::new(
+        "double",
+        "i",
+        "i",
+        |_| panic!("child must not call syscall"),
+    )
+    .unwrap()])
+    .unwrap();
     let k = Kernel::start_with_syscalls(
         &dir.join("r.wasm"),
         &dir.join("operator"),
