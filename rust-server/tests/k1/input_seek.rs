@@ -20,3 +20,23 @@ fn input_forward_skip_clamps_at_eof_and_backward_is_denied() {
     assert_eq!(k.invoke(b"abcdef").unwrap(), vec![99, 255, 252]);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn scalar_only_root_can_echo_and_query_output_cursor() {
+    let d = dir("output-seek");
+    let root = r#"(module
+      (import "skrynia" "read1" (func $r (param i32) (result i32)))
+      (import "skrynia" "write1" (func $w (param i32 i32) (result i32)))
+      (import "skrynia" "seek" (func $s (param i32 i64) (result i64)))
+      (func (export "skrynia_main") (param $in i32) (param $out i32) (result i32)
+        (drop (call $w (local.get $out) (call $r (local.get $in))))
+        (drop (call $w (local.get $out) (call $r (local.get $in))))
+        (if (i64.ne (call $s (local.get $out) (i64.const 0)) (i64.const 2))
+          (then (return (i32.const -5))))
+        (if (i64.ne (call $s (local.get $out) (i64.const 1)) (i64.const -4))
+          (then (return (i32.const -5))))
+        (i32.const 0)))"#;
+    let k = kernel(&d, root);
+    assert_eq!(k.invoke(b"ab").unwrap(), b"ab");
+    let _ = std::fs::remove_dir_all(&d);
+}

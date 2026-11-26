@@ -14,13 +14,9 @@ impl Fs {
                 }
                 e.skip(shift as u64)
             }
-            Some(Item::Output(_) | Item::BufferedOutput(_)) => {
-                if shift == 0 {
-                    Ok(0)
-                } else {
-                    Err("unsupported")
-                }
-            }
+            Some(Item::Output(e)) if shift == 0 => Ok(e.position()),
+            Some(Item::BufferedOutput(e)) if shift == 0 => e.position(),
+            Some(Item::Output(_) | Item::BufferedOutput(_)) => Err("unsupported"),
             Some(Item::Ram(e)) => {
                 let next = i128::from(e.pos) + i128::from(shift);
                 if next < 0 || next as u64 > self.ram.len() {

@@ -59,8 +59,9 @@ cursor; a successful byte transfer advances it by one; an error leaves it
 unchanged (except the documented skip clamp below).
 
 **[K0-CHOICE] Relative seek.** `seek(fd, shift)` returns the new absolute
-cursor position (`>= 0`) on success or a negative error, with no cursor
-movement on error. `shift = 0` is a no-op that still returns the position.
+cursor position (`>= 0`) on success or a negative error. A failed seek on
+forward-only input may already have consumed bytes; those cannot be rewound.
+Other failed seeks do not move the cursor. `shift = 0` is a no-op that still returns the position.
 Regular file and RAM descriptors support signed seeking inside `[0, len]`;
 `len + shift` outside that interval is `-6`. Forward-only input streams accept
 `shift >= 0` only: a positive shift discards that many input bytes, a short

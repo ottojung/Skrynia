@@ -11,7 +11,8 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
                 }
                 let fs = c.data().fs.clone();
                 match fs.seek_rel(&mut c.data_mut().fds, crate::fs::Fd(fd), shift) {
-                    Ok(pos) => pos as i64,
+                    Ok(pos) => i64::try_from(pos)
+                        .unwrap_or(i64::from(crate::boot::vm::host::ram::args::E_RANGE)),
                     Err("badfd") => i64::from(crate::boot::vm::host::ram::args::E_BADFD),
                     Err(e) => i64::from(crate::boot::vm::host::ram::args::map_fs(e)),
                 }

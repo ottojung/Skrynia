@@ -28,6 +28,9 @@ impl BufferedOutput {
     pub fn write1(&mut self, byte: u8) -> Result<(), &'static str> {
         self.write(&[byte]).map(|_| ())
     }
+    pub fn position(&self) -> Result<u64, &'static str> {
+        Ok(self.inner.lock().map_err(|_| "io")?.data.len() as u64)
+    }
     pub fn take(&self) -> Vec<u8> {
         match self.inner.lock() {
             Ok(mut g) => std::mem::take(&mut g.data),
