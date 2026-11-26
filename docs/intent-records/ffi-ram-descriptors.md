@@ -1,24 +1,30 @@
 $id-1891053258346573
-title: FFI providers interpret RAM offsets and descriptor references
-date: 2026/11/25
+title: Named FFI imports with machine-context access
+date: 2026/11/26
 source: @ottojung
 kind: requirement
 
-External functions are expected to handle arguments that represent
-shared RAM addresses or file descriptor references. A scalar argument
-may identify an arbitrarily structured request in RAM or a descriptor
-for accessing data; this is not an argument-size limitation requiring
-a replacement buffer-based FFI ABI.
+Preserve the named WASM import architecture, with module namespace syscall
+and one i32 argument and one i32 result (unsigned u32 bit patterns).
+No generic ffi(name, argument) dispatcher. The argument and result are
+opaque to the kernel; provider protocols may interpret them as shared RAM
+addresses, file descriptor references, scalar values or other handles.
 
-The machine does not assign application-specific meanings to foreign
-function arguments or results. Providers define their own protocols.
-Do not assume that foreign functions require local WASM linear-memory
-buffers or mandatory serialization of every argument into a byte stream.
+The reference skrynia-server discovers names via GET /syscalls_list and
+executes named functions via POST /<name>, retaining the four-byte
+little-endian argument and result. libskrynia executes custom Rust
+implementations of those names directly, with equivalent semantics.
+Do not require a new argument-buffer convention.
 
-The FFI execution mechanism must make the relevant RAM and descriptor
-operations usable by providers. A raw numeric reference alone is not
-cross-process access: specify the actual provider access mechanism,
-descriptor scope/lifetime, and transport/native equivalence before
-implementation. These details are not decided by this record.
+Native providers must receive access to the calling machine context,
+including its RAM and descriptor operations. HTTP providers must obtain
+equivalent access through a private call-scoped interface. The concrete
+transport, authentication, descriptor scope/lifetime, cancellation,
+concurrency and revocation protocol remains to be specified. A descriptor
+number by itself is insufficient to identify request-local state.
+Do not expose new public application routes in the kernel for FFI.
+
+Resolve imports during initialization. See ffi-fallbacks.md for optional
+accelerators and fallback behavior. No automatic replay of failed calls.
 
 This record states architectural intent, not existing implementation.

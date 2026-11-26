@@ -1,13 +1,13 @@
 $id-1891053258346571
 title: All machine ABI buffers address shared RAM
-date: 2026/11/25
+date: 2026/11/26
 source: @ottojung
 kind: requirement
 
 All memory pointers and buffer ranges in the Skrynia machine ABI refer to
 the single shared RAM object, never to a caller's WASM linear memory.
-This applies to descriptor transfers, paths, directory entries, random
-output, CAS observation buffers (if used), and eval code and binding arrays.
+This applies to paths, directory entries, random output, CAS observation
+buffers (if used), eval code and binding arrays, and derived FFI buffers.
 Scalar values, descriptor identifiers and function-table indices remain
 values of their respective types, not RAM addresses.
 
@@ -21,15 +21,13 @@ Conflicting accesses to regions removed or recreated by concurrent
 truncation need not have meaningful data semantics; host safety is mandatory.
 Ordinary RAM data operations must not require a global RAM mutex.
 
-read on a RAM descriptor copies from its cursor into a shared RAM range;
-write copies from a shared RAM range into the descriptor's cursor.
-The same ABI applies to all other supported descriptor types.
-Exact overlapping-copy semantics remain to be specified.
+RAM is accessible through descriptors like other byte-addressable resources.
+The only fundamental descriptor data-transfer operations are read1 and
+write1. Bulk RAM transfers are copies between descriptors, supplied as
+derived FFI rather than native read/write imports. Exact overlapping-copy
+semantics remain to be specified.
 
-eval is the sole evaluation operation. Its code and binding-array pointers
-now address shared RAM, superseding the previous local-linear-memory design.
-It binds only explicitly supplied functions; no implicit invoke or other
-application-specific imports are supplied by the machine. The binding
-representation and complete signature remain subject to ABI specification.
+eval code and binding-array pointers address shared RAM. A WASM module
+need not define or export linear memory. See generic-eval.md.
 
 This record states architectural intent, not existing implementation.

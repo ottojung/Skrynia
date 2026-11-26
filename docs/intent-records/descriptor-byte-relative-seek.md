@@ -1,13 +1,14 @@
 $id-1891053258346572
-title: Single-byte descriptor I/O and relative seek
-date: 2026/11/25
+title: Byte-only fundamental descriptor I/O and relative seek
+date: 2026/11/26
 source: @ottojung
 kind: requirement
 
-Add read1 and write1 as descriptor operations for reading and writing
-exactly one byte. They complement bulk read/write, which transfer bytes
-between descriptors and shared RAM. Single-byte I/O is intended to avoid
-requiring an intermediate RAM buffer for ordinary scalar byte access.
+read1 and write1 are the only fundamental descriptor data-transfer
+operations. Each transfers exactly one byte on success. Do not retain
+buffered read or write as fixed kernel imports. Bulk transfer is a
+derived named FFI operation with a reference fallback, not an additional
+fundamental capability. The byte operations need no RAM buffer.
 
 seek takes a signed relative displacement from the current position,
 not an absolute offset. Zero leaves the position unchanged, +1 advances
@@ -21,5 +22,5 @@ behavior before implementing the final ABI. The exact scalar return/error
 encoding for read1 and write1 and supported output-stream seek behavior
 are not established by this record.
 
-This record supersedes incompatible absolute-seek and non-seekable-input
-intent. It states architectural intent, not existing implementation.
+Supersedes the earlier bulk-plus-byte I/O intent and absolute-seek ABI.
+See kernel-abi.md and ffi-fallbacks.md.
