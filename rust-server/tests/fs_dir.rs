@@ -20,11 +20,11 @@ fn dir_ops() {
         .unwrap();
     for n in [b"user/x/a".as_slice(), b"user/x/bb".as_slice()] {
         let fd = s
-            .open_disk(Some(U), &mut fds, n, fs::disk::DiskMode::read_write(), 0)
+            .open_disk(Some(U), &mut fds, n, fs::disk::DiskMode::read_write())
             .unwrap();
         s.close(&mut fds, fd).unwrap();
     }
-    let fd = s.open_directory(Some(U), &mut fds, b"user/x", 0).unwrap();
+    let fd = s.open_directory(Some(U), &mut fds, b"user/x").unwrap();
     let mut seen = Vec::new();
     loop {
         let mut b = [0u8; 16];
@@ -37,7 +37,7 @@ fn dir_ops() {
     seen.sort();
     assert_eq!(seen, vec![b"a".to_vec(), b"bb".to_vec()]);
     s.sync(&mut fds, fd).unwrap();
-    let fd = s.open_directory(Some(U), &mut fds, b"user/x", 0).unwrap();
+    let fd = s.open_directory(Some(U), &mut fds, b"user/x").unwrap();
     for _ in 0..2 {
         let got = s.next_entry(&mut fds, fd, &mut []).unwrap();
         assert!(matches!(got, fs::dir::Next::Small));

@@ -8,8 +8,7 @@ impl Fs {
     pub fn open_ram(
         &self,
         fds: &mut crate::fs::table::Table<Item>,
-        owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
-        fds.insert(Item::Ram(RamFd { pos: 0 }), owner)
+        fds.insert(Item::Ram(RamFd { pos: 0 }))
     }
 }

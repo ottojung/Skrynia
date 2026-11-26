@@ -10,11 +10,7 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                let root = match super::super::super::fs_cap::resolve(
-                    &c,
-                    crate::boot::vm::cap::FsOp::Exists,
-                    &p,
-                ) {
+                let root = match super::super::super::fs_root::resolve(&p) {
                     Ok(r) => r,
                     Err(e) => return e,
                 };

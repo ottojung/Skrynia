@@ -16,15 +16,8 @@ pub fn invoke(
             cache,
         ),
     );
-    store.data_mut().fs_auth = crate::boot::vm::cap::FsAuth::Full;
-    store.data_mut().fs_delegate = crate::boot::vm::cap::FsAuth::Empty;
-    let fd = store.data_mut().fds.insert(crate::fs::store::Item::Input(crate::fs::store::item::Input::new(input, max_bytes)), 0).map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
-    let output_fd = store.data_mut().fds.insert(crate::fs::store::Item::Output(crate::fs::store::item::Output::new(output)), 0).map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
+    let fd = store.data_mut().fds.insert(crate::fs::store::Item::Input(crate::fs::store::item::Input::new(input, max_bytes))).map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
+    let output_fd = store.data_mut().fds.insert(crate::fs::store::Item::Output(crate::fs::store::item::Output::new(output))).map_err(|_| crate::boot::vm::codes::ERR_LIMIT)?;
     let inst = kernel.pre.instantiate(&mut store).map_err(|_| crate::boot::vm::codes::ERR_FAULT)?;
-    store
-        .data_mut()
-        .frames
-        .push(crate::boot::vm::state::Frame::root(inst));
-    store.data_mut().cur = Some(inst);
-    super::root::call_root(&mut store, fd.0, output_fd.0)
+    super::root::call_root(&mut store, inst, fd.0, output_fd.0)
 }

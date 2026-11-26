@@ -6,9 +6,6 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
             "skrynia",
             "next_entry",
             |mut c: wasmtime::Caller<'_, Vm>, fd: i32, dst: u64, cap: u64| -> i32 {
-                if crate::boot::vm::host::fd::guard::check(c.data(), crate::fs::Fd(fd)).is_err() {
-                    return crate::boot::vm::host::ram::args::E_BADFD;
-                }
                 let max = cap.min(4096);
                 if max > crate::boot::limits::MAX_IO as u64 {
                     return crate::boot::vm::host::ram::args::E_BOUNDS;

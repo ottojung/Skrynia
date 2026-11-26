@@ -26,7 +26,6 @@ fn node_ops_and_rename() {
             &mut fds,
             b"user/d/a",
             fs::disk::DiskMode::read_write(),
-            0,
         )
         .unwrap();
     s.write(&mut fds, fd, b"hi").unwrap();

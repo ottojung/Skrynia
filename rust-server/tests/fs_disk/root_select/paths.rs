@@ -15,7 +15,7 @@ fn qualified_paths_route_each_root_independently() {
         (RootKind::Operator, b"operator/k.bin", b"operator-value"),
     ] {
         let fd = s
-            .open_disk(Some(root), &mut fds, path, DiskMode::read_write(), 0)
+            .open_disk(Some(root), &mut fds, path, DiskMode::read_write())
             .unwrap();
         assert_eq!(s.write(&mut fds, fd, value).unwrap(), value.len());
         s.sync(&mut fds, fd).unwrap();

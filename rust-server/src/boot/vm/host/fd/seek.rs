@@ -6,9 +6,6 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
             "skrynia",
             "seek",
             |mut c: wasmtime::Caller<'_, Vm>, fd: i32, shift: i64| -> i64 {
-                if super::guard::check(c.data(), crate::fs::Fd(fd)).is_err() {
-                    return i64::from(crate::boot::vm::host::ram::args::E_BADFD);
-                }
                 let fs = c.data().fs.clone();
                 match fs.seek_rel(&mut c.data_mut().fds, crate::fs::Fd(fd), shift) {
                     Ok(pos) => i64::try_from(pos)
@@ -24,9 +21,6 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
             "skrynia",
             "truncate",
             |mut c: wasmtime::Caller<'_, Vm>, fd: i32, size: u64| -> i32 {
-                if super::guard::check(c.data(), crate::fs::Fd(fd)).is_err() {
-                    return crate::boot::vm::host::ram::args::E_BADFD;
-                }
                 let fs = c.data().fs.clone();
                 match fs.truncate_fd(&mut c.data_mut().fds, crate::fs::Fd(fd), size) {
                     Ok(()) => 0,

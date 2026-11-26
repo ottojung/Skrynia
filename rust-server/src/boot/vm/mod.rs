@@ -1,4 +1,3 @@
-pub mod cap;
 pub mod codes;
 pub mod compile;
 pub mod err;

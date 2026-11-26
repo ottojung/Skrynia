@@ -6,7 +6,6 @@ impl Fs {
         root: Option<RootKind>,
         fds: &mut crate::fs::table::Table<Item>,
         p: &[u8],
-        owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
         let (kind, suffix) = crate::fs::root::select::split(p)?;
         if let Some(want) = root
@@ -20,7 +19,7 @@ impl Fs {
             let rel = crate::fs::path::clean(suffix)?;
             crate::fs::dir::open_dir(self.root(kind), &rel)?
         };
-        fds.insert(Item::Dir(e), owner)
+        fds.insert(Item::Dir(e))
     }
     pub fn next_entry(
         &self,

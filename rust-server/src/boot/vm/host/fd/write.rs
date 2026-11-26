@@ -10,9 +10,6 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
                 if byte > 255 {
                     return crate::boot::vm::host::ram::args::E_INVAL;
                 }
-                if super::guard::check(c.data(), crate::fs::Fd(fd)).is_err() {
-                    return crate::boot::vm::host::ram::args::E_BADFD;
-                }
                 let fs = c.data().fs.clone();
                 match fs.write1(&mut c.data_mut().fds, crate::fs::Fd(fd), byte as u8) {
                     Ok(()) => 0,

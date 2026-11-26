@@ -1,5 +1,4 @@
 mod ctl;
-pub(crate) mod guard;
 mod open;
 pub mod read;
 mod seek;

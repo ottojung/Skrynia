@@ -14,18 +14,14 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                let ra =
-                    match super::super::fs_cap::resolve(&c, crate::boot::vm::cap::FsOp::Rename, &a)
-                    {
-                        Ok(r) => r,
-                        Err(e) => return e,
-                    };
-                let rb =
-                    match super::super::fs_cap::resolve(&c, crate::boot::vm::cap::FsOp::Rename, &b)
-                    {
-                        Ok(r) => r,
-                        Err(e) => return e,
-                    };
+                let ra = match super::super::fs_root::resolve(&a) {
+                    Ok(r) => r,
+                    Err(e) => return e,
+                };
+                let rb = match super::super::fs_root::resolve(&b) {
+                    Ok(r) => r,
+                    Err(e) => return e,
+                };
                 let root = match (ra, rb) {
                     (Some(x), Some(y)) if x == y => Some(x),
                     (Some(_), Some(_)) => return crate::boot::vm::host::ram::args::E_NOSUP,

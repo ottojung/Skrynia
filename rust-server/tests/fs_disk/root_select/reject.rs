@@ -13,9 +13,9 @@ fn unqualified_paths_are_rejected_by_every_fs_entry_point() {
         assert!(s.mkdir(None, p, mode).is_err(), "{p:?}");
         assert!(s.delete(None, p).is_err(), "{p:?}");
         assert!(s.rename(None, p, b"user/x").is_err(), "{p:?}");
-        assert!(s.open_directory(None, &mut fds, p, 0).is_err(), "{p:?}");
+        assert!(s.open_directory(None, &mut fds, p).is_err(), "{p:?}");
         for m in [DiskMode::read_only(), DiskMode::read_write()] {
-            assert!(s.open_disk(None, &mut fds, p, m, 0).is_err(), "{p:?}");
+            assert!(s.open_disk(None, &mut fds, p, m).is_err(), "{p:?}");
         }
     }
 }
@@ -26,7 +26,7 @@ fn no_implicit_fallback_between_confined_roots() {
     let s = k.fs();
     let mut fds = fs::table::Table::new();
     let fd = s
-        .open_disk(None, &mut fds, b"user/only.bin", DiskMode::read_write(), 0)
+        .open_disk(None, &mut fds, b"user/only.bin", DiskMode::read_write())
         .unwrap();
     s.close(&mut fds, fd).unwrap();
     assert!(dir.join("user/only.bin").is_file());
@@ -36,13 +36,7 @@ fn no_implicit_fallback_between_confined_roots() {
             .unwrap()
     );
     assert!(
-        s.open_disk(
-            None,
-            &mut fds,
-            b"operator/only.bin",
-            DiskMode::read_only(),
-            0
-        )
-        .is_err()
+        s.open_disk(None, &mut fds, b"operator/only.bin", DiskMode::read_only())
+            .is_err()
     );
 }
