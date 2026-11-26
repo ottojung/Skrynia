@@ -17,7 +17,8 @@ pub(super) fn root(import: &str, body: &str) -> String {
     )
 }
 
-pub(super) const MIX_IMPORT: &str = r#"(import "syscall" "mix" (func $mix (param i32 i64 i32) (result i64 i32)))"#;
+pub(super) const MIX_IMPORT: &str =
+    r#"(import "syscall" "mix" (func $mix (param i32 i64 i32) (result i64 i32)))"#;
 
 pub(super) const MIX_BODY: &str = "(call $sink (call $mix (i32.const -1) (i64.const 8589934597) (i32.const 7))) (drop (call $w (local.get $out) (i32.const 0) (i32.const 12)))";
 
