@@ -37,3 +37,8 @@ eval code and binding-array pointers address shared RAM. A WASM module
 need not define or export linear memory. See generic-eval.md.
 
 This record states architectural intent, not existing implementation.
+
+Reaffirmed by the owner on 2026/11/26: retain this shared RAM design.
+Performance and coordination concerns are not authorization to change
+the memory model. Implement the existing requirements as written; leave
+allocation, protection and synchronization protocols to userland.

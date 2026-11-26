@@ -24,3 +24,8 @@ are not established by this record.
 
 Supersedes the earlier bulk-plus-byte I/O intent and absolute-seek ABI.
 See kernel-abi.md and ffi-fallbacks.md.
+
+Reaffirmed by the owner on 2026/11/26: retain this byte-only descriptor
+I/O design. Performance concerns and proposed wider I/O primitives from
+architectural assessments are not authorization to redesign it. Optimize
+implementations without changing the specified fundamental operations.
