@@ -1,23 +1,27 @@
+use super::length::{count, frame_len};
 use super::{Signature, VERSION, tag};
 use wasmtime::Val;
 
+/// Decode a reply against the exact declared result signature. The count and
+/// frame length are signature-derived; malformed or non-minimal frames fail
+/// before values are decoded.
 pub fn decode(signature: &Signature, bytes: &[u8]) -> Result<Vec<Val>, String> {
-    if bytes.len() < 2 || bytes[0] != VERSION {
+    if bytes.first().copied() != Some(VERSION) {
         return Err("invalid wire version".into());
     }
-    let count = bytes[1] as usize;
+    let (count, header) = count(bytes)?;
     if count != signature.results().len() {
         return Err("result count mismatch".into());
     }
-    let mut rest = &bytes[2..];
-    let mut values = Vec::with_capacity(count);
-    for ty in signature.results().bytes() {
-        let (bits, used) = take(rest, ty)?;
-        values.push(value(ty, bits));
-        rest = &rest[used..];
+    if bytes.len() != frame_len(signature.results())? {
+        return Err("wire frame length mismatch".into());
     }
-    if !rest.is_empty() {
-        return Err("trailing wire bytes".into());
+    let mut values = Vec::with_capacity(count);
+    let mut at = header;
+    for ty in signature.results().bytes() {
+        let (bits, used) = take(&bytes[at..], ty)?;
+        values.push(value(ty, bits));
+        at += used;
     }
     Ok(values)
 }

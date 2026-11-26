@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-const MAX_BYTES: u64 = 8 * 1024;
+/// Practical ceiling for discovery metadata; wide signatures need more than
+/// the old fixed 8 KiB. Frames themselves use a signature-derived bound.
+const MAX_BYTES: u64 = 1024 * 1024;
 
 pub(super) fn signatures(
     client: &reqwest::blocking::Client,

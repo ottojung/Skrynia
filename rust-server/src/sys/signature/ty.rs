@@ -1,5 +1,5 @@
 pub fn valid(types: &str) -> bool {
-    types.len() <= 16 && types.bytes().all(|b| b == b'i' || b == b'l')
+    types.bytes().all(|b| b == b'i' || b == b'l')
 }
 
 pub fn values(types: &str) -> impl Iterator<Item = wasmtime::ValType> + '_ {

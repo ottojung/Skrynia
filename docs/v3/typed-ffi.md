@@ -29,11 +29,20 @@ same `"syscalls"` key.
 `POST /<name>` and its response use one versioned tagged little-endian layout:
 
 - byte 0: version `0x01`
-- byte 1: number of values (0..=16)
+- byte 1: number of values `N` when `N <= 254` (unchanged small frames), or
+  the sentinel `0xff` followed by a checked 4-byte little-endian `u32` count
+  when `N >= 255`
 - per value: tag `0x32` plus a 4-byte little-endian `i32`, or tag `0x40` plus
   an 8-byte little-endian `i64`; no padding
 
-The body must match the declared signature exactly: wrong version, wrong
+This is the K6 wire choice: a backwards-compatible extension of the K0 v1
+count field, so every existing frame with 254 or fewer values is byte-identical
+(and the one-i32 publication provider frame `[1,1,0x32,...]` stays valid).
+Counts in the extended field below 255 are non-minimal and rejected. The
+encoded length is derived from the declared signature with checked arithmetic
+and bounded by a 64 MiB practical allocation ceiling for a single frame;
+discovery metadata has a separate 1 MiB ceiling. The body must match the
+declared signature exactly: wrong version, wrong count, non-minimal extended
 count, wrong tag, truncated data or trailing bytes are rejected. For the HTTP
 provider these are treated as provider failures before execution; the target
 server specification uses `400` for malformed or mismatched input, `404` for
