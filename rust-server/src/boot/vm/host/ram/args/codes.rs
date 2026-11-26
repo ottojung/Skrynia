@@ -10,7 +10,8 @@ pub fn map_fs(e: &'static str) -> i32 {
         "badfd" => E_BADFD,
         "perm" | "unsupported" | "delete" | "mkdir" | "rename" | "stat" | "mode" => E_NOSUP,
         "overflow" => E_RANGE,
-        "oob" | "unaligned" | "limit" => E_BOUNDS,
+        "invalid" | "escape" | "null" | "empty" => E_INVAL,
+        "oob" | "range" | "unaligned" | "limit" => E_BOUNDS,
         "io" | "open" => E_IO,
         _ => E_IO,
     }

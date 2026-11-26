@@ -11,7 +11,7 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                 let owner = c.data().fd_scope;
                 match fs.open_ram(&mut c.data_mut().fds, owner) {
                     Ok(fd) => fd.0,
-                    Err(e) => crate::boot::vm::err::map(e),
+                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
                 }
             },
         )

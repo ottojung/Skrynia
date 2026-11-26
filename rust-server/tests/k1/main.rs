@@ -1,4 +1,5 @@
 mod byte_io;
+mod errors;
 mod input_seek;
 mod root_dir;
 mod shared_ram;

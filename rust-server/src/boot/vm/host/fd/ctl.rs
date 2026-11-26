@@ -11,7 +11,7 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                 let fs = c.data().fs.clone();
                 match fs.close(&mut c.data_mut().fds, f) {
                     Ok(()) => 0,
-                    Err(e) => crate::boot::vm::err::map(e),
+                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
                 }
             },
         )
@@ -28,7 +28,7 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                 let fs = c.data().fs.clone();
                 match fs.sync(&mut c.data_mut().fds, f) {
                     Ok(()) => 0,
-                    Err(e) => crate::boot::vm::err::map(e),
+                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
                 }
             },
         )

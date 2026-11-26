@@ -21,6 +21,7 @@ fn check_mode(c: &wasmtime::Caller<'_, Vm>, path: &[u8], m: crate::fs::disk::Dis
 #[rustfmt::skip]
 pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
     linker.func_wrap("skrynia", "open_disk", |mut c: wasmtime::Caller<'_, Vm>, ptr: u64, len: u64, m: u32| -> i32 {
+        if m & !31 != 0 { return crate::boot::vm::host::ram::args::E_INVAL; }
         let path = match crate::boot::vm::host::ram::args::read(&mut c, ptr, len) { Ok(x) => x, Err(e) => return e };
         let dm = mode(m);
         let root = match check_mode(&c, &path, dm) { Ok(r) => r, Err(e) => return e };
