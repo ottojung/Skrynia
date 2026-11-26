@@ -70,9 +70,9 @@ belong in separately supplied userland VMs.
 
 The reference implementation confines filesystem operations to existing
 disjoint private roots configured by the operator. Filesystem paths are
-relative UTF-8, no NUL, no absolute path, no parent traversal, no empty
-segments or trailing slash, and at most 4096 bytes. A root directory may be
-opened using the root-directory convention in the machine ABI. Confinement
+qualified UTF-8 paths of the form `user/...` or `operator/...`, with no NUL,
+absolute path, parent traversal, empty segments or trailing slash, and at most
+4096 bytes. `user/.` and `operator/.` name the two root directories. Confinement
 uses descriptor-relative traversal and rejects symlink traversal; lexical
 validation alone is insufficient.
 
@@ -89,10 +89,10 @@ a snapshot under concurrent mutations.
 Root selection must be explicit and consistent across reads, writes,
 existence checks, directory iteration, rename and sync. Qualification must
 include actual persisted userland writes followed by reads and restart,
-not only host-preseeded read fixtures. The integrated candidate's old
-mode-dependent operator/user root selection is a known integration blocker;
-see the qualification plan. Root paths and migration conventions must be
-documented with the corrected implementation.
+not only host-preseeded read fixtures. Selection uses the explicit namespace
+for every path operation; read/write mode does not select a different root.
+Rename must remain within one root. Genuine absence is distinct from a bad
+descriptor or an I/O failure (see the machine ABI).
 
 The kernel does not implement application authentication, grants, storage
 schemas, quotas, accounting, program IDs, subscriptions or Web Push. Such

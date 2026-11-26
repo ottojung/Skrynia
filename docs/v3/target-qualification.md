@@ -23,7 +23,7 @@ head. No result is reported from a dirty or unpushed checkout.
    byte-only `read1`/`write1`; signed relative seek and forward input skips;
    shared-RAM `u64` addresses/lengths and dynamic resize; byte atomicity and
    disjoint writes under concurrency; sequentially consistent single-byte CAS
-   with release/acquire publication; root `open_directory(".")` plus `sync`;
+   with release/acquire publication; root `open_directory("user/.")` / `open_directory("operator/.")` plus `sync`;
    generic zero-or-one function `eval` with exact type validation, originating
    context execution, fresh child stores, no implicit imports or mandatory
    memory; arbitrary typed named FFI with discovery and no replay.
