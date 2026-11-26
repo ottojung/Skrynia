@@ -6,8 +6,11 @@ kind: requirement
 
 All memory pointers and buffer ranges in the Skrynia machine ABI refer to
 the single shared RAM object, never to a caller's WASM linear memory.
-This applies to paths, directory entries, random output, eval code and
-binding arrays, and derived FFI buffers. CAS has no observation buffer.
+All shared RAM addresses and buffer lengths in the machine ABI are u64,
+independent of the WASM linear-memory address width. This applies to
+paths, directory entries, random output and eval code. FFI signatures
+are provider-defined; use u64 for shared RAM addresses and buffer lengths
+when defining such arguments. CAS has no observation buffer.
 Scalar values, descriptor identifiers and function-table indices remain
 values of their respective types, not RAM addresses.
 
@@ -20,7 +23,11 @@ one another. CAS is the special atomic synchronization operation and
 acts on exactly one byte, at any valid RAM byte offset, without alignment
 requirements. It atomically compares that byte with an expected byte and
 replaces it with a desired byte on equality. It must be linearizable with
-other CAS and ordinary accesses to that byte. Return the observed byte
+other CAS and ordinary accesses to that byte. CAS operations must be
+sequentially consistent, with acquire/release synchronization of ordinary
+byte accesses elsewhere in RAM: a successful release CAS publishes prior
+writes to an acquiring CAS that observes that publication. Failed CAS
+observations also have acquire semantics. Return the observed byte
 as a scalar, not through a RAM buffer. Multi-byte CAS is not a fundamental
 machine operation. This supersedes the former 64-bit CAS requirement.
 Conflicting accesses to regions removed or recreated by concurrent
@@ -33,7 +40,7 @@ write1. Bulk RAM transfers are copies between descriptors, supplied as
 derived FFI rather than native read/write imports. Exact overlapping-copy
 semantics remain to be specified.
 
-eval code and binding-array pointers address shared RAM. A WASM module
+eval code pointers address shared RAM. No binding array is used. A WASM module
 need not define or export linear memory. See generic-eval.md.
 
 This record states architectural intent, not existing implementation.

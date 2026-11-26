@@ -15,10 +15,14 @@ to the kernel; providers may interpret them as shared RAM addresses, file
 descriptor references, scalar values or other handles.
 
 The reference skrynia-server discovers available named functions via
-GET /syscalls_list and executes them via POST /<name>. Generalize the
+GET /syscalls_list and executes them via POST /<name>. Discovery must
+advertise every available function's name and ordered parameter and result
+types, including empty lists. POST /version must expose the available
+signatures as well as build metadata, for deployment tooling. Generalize the
 HTTP argument/result encoding to match each function's WASM signature.
 Use a deterministic, typed integer wire representation; finalize discovery
-metadata, encoding and signature-mismatch handling in the ABI.
+JSON shape, binary encoding and signature-mismatch handling in the ABI.
+Reject unresolved or mismatched imports before execution.
 libskrynia executes corresponding custom Rust implementations directly
 with equivalent semantics. Do not require an argument-buffer convention
 or force multiple scalar arguments into a RAM request structure.

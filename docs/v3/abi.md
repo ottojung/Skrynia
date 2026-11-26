@@ -1,5 +1,10 @@
 # Skrynia v3 ABI decisions
 
+> **Implementation snapshot, not the next ABI.** The existing implementation
+> described below predates the approved [target kernel design](../intent-records/kernel-abi.md).
+> The intent records govern the migration; older incompatible ABI details
+> below are not requirements for the new design.
+
 These ABI decisions accompany the native v3 kernel VM contract. The kernel
 has no knowledge of the application protocol spoken by an operator-supplied
 root program.

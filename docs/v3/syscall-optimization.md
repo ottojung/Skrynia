@@ -1,5 +1,10 @@
 # Optimizing syscall execution with libskrynia
 
+> **Implementation snapshot, not the next ABI.** The existing implementation
+> described below predates the approved [target kernel design](../intent-records/kernel-abi.md).
+> The intent records govern the migration; older incompatible ABI details
+> below are not requirements for the new design.
+
 The [HTTP operational prescription](syscalls.md) defines what syscalls mean.
 A custom kernel may eliminate transport entirely if it preserves that
 prescription's observable semantics. The library does not define another

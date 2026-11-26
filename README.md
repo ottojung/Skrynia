@@ -1,5 +1,10 @@
 # Skrynia v3
 
+> **Implementation snapshot, not the next ABI.** The existing implementation
+> described below predates the approved [target kernel design](docs/intent-records/kernel-abi.md).
+> The intent records govern the migration; older incompatible ABI details
+> below are not requirements for the new design.
+
 Skrynia is a small Rust WebAssembly kernel, not a built-in database or grant
 server. It executes **operator-supplied Program 0 WASM** in response to
 opaque binary HTTP requests. All application protocols, storage keys,

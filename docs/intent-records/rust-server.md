@@ -39,14 +39,16 @@ kind: requirement
 
 The main repository shall provide libskrynia for semantics-preserving
 optimizations of the reference implementation. Program 0 may import
-arbitrary advertised names from the syscall namespace with signature
-i32 -> i32. The operational prescription uses a separate HTTP server
+arbitrary advertised names from the syscall namespace with arbitrary
+integer signatures (i32 and i64 parameters/results). See
+ffi-ram-descriptors.md for the current typed ABI requirement. The operational prescription uses a separate HTTP server
 configured by SKRYNIA_SYSCALL_URL, discovered through GET
 <base>/syscalls_list, and called through POST <base>/<name>. The kernel
 must not understand capability-specific argument or result formats.
 A custom kernel may eliminate HTTP entirely while preserving the
 same syscall names, values and observable effects. There is no
-independent class of syscalls or precedence/fallback rule. Resolve
+independent class of syscalls or kernel fallback rule; software selects
+optional implementations before execution. Resolve
 imports once at startup. Evaluated children must not receive direct
 custom imports. POST /version shall expose build version, commit and
-the supported syscall names.
+the supported syscall names and signatures.

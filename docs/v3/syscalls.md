@@ -1,5 +1,10 @@
 # Syscalls
 
+> **Implementation snapshot, not the next ABI.** The existing implementation
+> described below predates the approved [target kernel design](../intent-records/kernel-abi.md).
+> The intent records govern the migration; older incompatible ABI details
+> below are not requirements for the new design.
+
 Program 0 may import functions from the WASM module namespace `syscall`.
 Each has exactly one i32 argument and one i32 result, interpreted as unsigned
 32-bit bit patterns. Names are 1–128 ASCII letters, digits, underscores,

@@ -1,5 +1,10 @@
 # Skrynia v3 virtual machine — executable contract
 
+> **Implementation snapshot, not the next ABI.** The existing implementation
+> described below predates the approved [target kernel design](intent-records/kernel-abi.md).
+> The intent records govern the migration; older incompatible ABI details
+> below are not requirements for the new design.
+
 Status: **native v3 kernel contract**, with additional userland release qualification required.
 Milestone: Antonina `dgKBALkpO7M7oKBHrZUzCT-shortly`.
 This document defines only the native VM kernel and its transport boundary.

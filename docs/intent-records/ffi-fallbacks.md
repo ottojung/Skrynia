@@ -16,8 +16,10 @@ program/library), not necessarily to the native kernel. The kernel must
 not guarantee that every derived FFI name exists. Ordinary unresolved
 WASM imports still fail linking. Select the implementation before
 execution; never replay using a fallback after a call has begun or
-failed. The availability detection and software linking mechanism
-remain to be specified. Preserve reference observable semantics,
+failed. skrynia-tools uses discovered function names and exact signatures to
+select or generate the appropriate WASM module at deployment. A module
+must not contain unresolved optional imports even on unused paths.
+Exact module-selection/generation mechanics remain userland decisions. Preserve reference observable semantics,
 including cursor movement, errors, effects and concurrency guarantees.
 
 Start with copy as the standard derived FFI function. It has exactly

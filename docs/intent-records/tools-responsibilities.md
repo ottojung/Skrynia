@@ -14,6 +14,9 @@ belongs entirely to userland, not the kernel.
 skrynia-tools supplies:
 - Program 0 and the userland invoke convention.
 - WASM ABI bindings, serialization and convenient wrappers.
+- Deployment-time discovery of typed FFI signatures and selection or
+  generation of WASM modules that import only available matching functions;
+  software-defined fallbacks for optional operations.
 - HTTP syscall provider implementations, initially publish and unpublish,
   and optional derived-operation accelerators where feasible. HTTP copy
   is not required; software providing copy may supply its own byte-I/O
