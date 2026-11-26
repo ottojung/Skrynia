@@ -1,35 +1,31 @@
-use super::binding::Binding;
 use super::func::Selected;
-use wasmtime::{Caller, Linker, Val};
+use wasmtime::{Caller, Extern, Func, FuncType, Store};
 
-pub fn add(
-    linker: &mut Linker<crate::boot::vm::state::Vm>,
-    binding: Option<Binding>,
-    selected: Option<Selected>,
-    arg0: i32,
-    arg1: i32,
-) -> Result<(), i32> {
-    let (binding, selected) = match (binding, selected) {
-        (None, None) => return Ok(()),
-        (Some(b), Some(s)) => (b, s),
-        _ => return Err(crate::boot::vm::codes::ERR_INVALID),
-    };
-    if !super::func::same(&binding.ty, &selected.ty) {
-        return Err(crate::boot::vm::codes::ERR_INVALID);
+type Vm = crate::boot::vm::state::Vm;
+
+pub struct Parent<'a, 'b> {
+    pub caller: &'a mut Caller<'b, Vm>,
+    pub func: Option<Func>,
+}
+
+pub fn validate(binding: Option<&FuncType>, selected: Option<&Selected>) -> Result<(), i32> {
+    match (binding, selected) {
+        (None, None) => Ok(()),
+        (Some(b), Some(s)) if super::func::same(b, &s.ty) => Ok(()),
+        _ => Err(-3),
     }
-    let func = selected.func;
-    linker
-        .func_new(
-            &binding.module,
-            &binding.name,
-            binding.ty,
-            move |mut c: Caller<'_, crate::boot::vm::state::Vm>,
-                  args: &[Val],
-                  results: &mut [Val]| {
-                let _context = (arg0, arg1);
-                func.call(&mut c, args, results)
-            },
-        )
-        .map_err(|_| crate::boot::vm::codes::ERR_INVALID)?;
-    Ok(())
+}
+
+pub fn imports(store: &mut Store<Parent<'_, '_>>, binding: Option<FuncType>) -> Vec<Extern> {
+    let Some(ty) = binding else {
+        return vec![];
+    };
+    let f = Func::new(store, ty, |mut c, args, results| {
+        let parent = c.data_mut();
+        parent
+            .func
+            .expect("validated binding")
+            .call(&mut *parent.caller, args, results)
+    });
+    vec![f.into()]
 }

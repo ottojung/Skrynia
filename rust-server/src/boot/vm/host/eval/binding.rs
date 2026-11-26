@@ -1,26 +1,16 @@
 use wasmtime::FuncType;
 
-pub struct Binding {
-    pub module: String,
-    pub name: String,
-    pub ty: FuncType,
-}
-
-pub fn single(module: &wasmtime::Module) -> Result<Option<Binding>, i32> {
+pub fn single(module: &wasmtime::Module) -> Result<Option<FuncType>, i32> {
     let mut found = None;
     for import in module.imports() {
         let ty = import.ty();
         let Some(ft) = ty.func() else {
-            return Err(crate::boot::vm::codes::ERR_INVALID);
+            return Err(-3);
         };
         if !super::func::integer_only(ft) || found.is_some() {
-            return Err(crate::boot::vm::codes::ERR_INVALID);
+            return Err(-3);
         }
-        found = Some(Binding {
-            module: import.module().to_string(),
-            name: import.name().to_string(),
-            ty: ft.clone(),
-        });
+        found = Some(ft.clone());
     }
     Ok(found)
 }

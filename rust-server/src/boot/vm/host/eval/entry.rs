@@ -1,44 +1,37 @@
-use wasmtime::{Caller, Linker, Module};
+use super::func::Selected;
+use super::link::Parent;
+use wasmtime::{Caller, FuncType, Instance, Module, Store};
 
-const ERR_INVAL: i64 = -3;
 const ERR_IO: i64 = -5;
-const ERR_TRAP: i64 = -9;
 
 pub fn execute(
     c: &mut Caller<'_, crate::boot::vm::state::Vm>,
     module: &Module,
-    bytes: &[u8],
-    linker: Linker<crate::boot::vm::state::Vm>,
+    binding: Option<FuncType>,
+    selected: Option<Selected>,
+    exported_start: bool,
 ) -> i64 {
-    let instance = match linker.instantiate(&mut *c, module) {
+    let engine = c.data().engine.clone();
+    let mut store = Store::new(
+        &engine,
+        Parent {
+            caller: c,
+            func: selected.map(|s| s.func),
+        },
+    );
+    let imports = super::link::imports(&mut store, binding);
+    let instance = match Instance::new(&mut store, module, &imports) {
         Ok(v) => v,
         Err(_) => return ERR_IO,
     };
-    match module.exports().find(|e| e.name() == "_start") {
-        Some(export) => {
-            let export_ty = export.ty();
-            let Some(ty) = export_ty.func() else {
-                return ERR_INVAL;
-            };
-            if ty.params().count() != 0 || ty.results().count() != 0 {
-                return ERR_INVAL;
-            }
-            let start = match instance.get_func(&mut *c, "_start") {
-                Some(v) => v,
-                None => return ERR_IO,
-            };
-            let mut results: [wasmtime::Val; 0] = [];
-            match start.call(&mut *c, &[], &mut results) {
-                Ok(()) => 0,
-                Err(_) => ERR_TRAP,
-            }
-        }
-        None => {
-            if super::start::has_start_section(bytes) {
-                0
-            } else {
-                ERR_INVAL
-            }
+    if exported_start {
+        let start = match instance.get_func(&mut store, "_start") {
+            Some(v) => v,
+            None => return ERR_IO,
+        };
+        if start.call(&mut store, &[], &mut []).is_err() {
+            return ERR_IO;
         }
     }
+    0
 }

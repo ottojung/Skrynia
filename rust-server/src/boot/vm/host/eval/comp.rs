@@ -3,13 +3,14 @@ pub fn compile(
     code: &[u8],
 ) -> Result<wasmtime::Module, i32> {
     if code.len() > crate::boot::vm::state::MAX_MODULE_BYTES {
-        return Err(crate::boot::vm::codes::ERR_LIMIT);
+        return Err(-6);
     }
     if let Some(m) = c.data().cache.get(code) {
         return Ok(m);
     }
     let engine = c.data().engine.clone();
-    let m = crate::boot::vm::compile::bounded(&engine, code).map_err(crate::boot::vm::err::map)?;
+    let m = crate::boot::vm::compile::bounded(&engine, code)
+        .map_err(|e| if e == "invalid" { -3 } else { -5 })?;
     c.data().cache.put(code, m.clone());
     Ok(m)
 }

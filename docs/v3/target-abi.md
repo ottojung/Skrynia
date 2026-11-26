@@ -113,15 +113,17 @@ not through the `eval` result. Each evaluation uses a fresh child store
 borrowing the suspended parent; sequential evaluations do not accumulate
 instances in a long-lived store.
 
-**Integration assumption recorded by K0 (from K2, 2026-11-26):** Wasmtime host
-functions are store-bound, so the implementation may invoke the supplied
-function through a generic typed trampoline in the same store while still
-instantiating a fresh child instance for each evaluation and retaining no
-instance in a long-lived store. This is an engine implementation concession,
-not owner ABI. A separate child store borrowing the suspended parent remains
-the experimentally validated candidate and may replace it without an ABI
-change. Legacy bulk I/O shims temporarily retained while K1/K2 port tests are
-transitional and must be removed before target acceptance.
+**Implementation refinement (K5, 2026-11-26):** each child uses a separate
+store borrowing the suspended parent via a typed scalar trampoline. It
+does not leave an instance in the parent store. Validate the entrypoint
+and supplied function before instantiation, so invalid entrypoints cannot
+execute a module start section. As an explicit implementation choice,
+reject a module with both an exported `_start` and a start section; either
+entry mechanism alone is valid. Trap/instantiation failure returns -5;
+invalid selectors, import types and entrypoints return -3. `arg0` and
+`arg1` are currently reserved when a function is supplied: they are not
+injected into the selected function's arguments. No owner decision has
+assigned them further semantics. Their signature is unchanged.
 
 Wasmtime fuel, epoch deadlines, store resource limits and aggregate fuel
 transfer are not part of this ABI. Measurement, metering, budgets and quotas

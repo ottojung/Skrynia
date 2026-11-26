@@ -8,15 +8,15 @@ use tokio::time::{Duration, advance};
 use tower::ServiceExt;
 
 #[tokio::test(start_paused = true)]
-async fn full_undrained_channel_times_out() {
+async fn incomplete_input_times_out() {
     let wasm = wat::parse_str(
         r#"(module
-          (import "skrynia" "read1" (func $sk_read1_0 (param i32) (result i32)))(func $read (param $fd i32)(param $dst i32)(param $len i32)(result i32)(local $i i32)(local $b i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(local.set $b(call $sk_read1_0(local.get $fd)))(if(i32.lt_s(local.get $b)(i32.const 0))(then(if(i32.ne(local.get $b)(i32.const -1))(then(return(local.get $b))))(br $done)))(i32.store8(i32.add(local.get $dst)(local.get $i))(local.get $b))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $i))
+          (import "skrynia" "read1" (func $read (param i32) (result i32)))
           (memory (export "memory") 1)
-          (func (export "skrynia_main") (param i32 i32) (result i32)
+          (func (export "skrynia_main") (param $in i32) (param i32) (result i32)
             (local $n i32)
             (loop $s
-              (local.set $n (call $read (i32.const 0) (i32.const 0) (i32.const 1)))
+              (local.set $n (call $read (local.get $in)))
               (br_if $s (i32.ge_s (local.get $n) (i32.const 0))))
             (i32.const 0)))"#,
     )

@@ -15,18 +15,16 @@ pub fn select(
     let table = c
         .get_export("__indirect_function_table")
         .and_then(|e| e.into_table())
-        .ok_or(crate::boot::vm::codes::ERR_INVALID)?;
-    let value = table
-        .get(&mut *c, index as u64)
-        .ok_or(crate::boot::vm::codes::ERR_INVALID)?;
-    let func = value
-        .unwrap_func()
-        .ok_or(crate::boot::vm::codes::ERR_INVALID)?;
+        .ok_or(-3)?;
+    let value = table.get(&mut *c, index as u64).ok_or(-3)?;
+    let wasmtime::Ref::Func(Some(func)) = value else {
+        return Err(-3);
+    };
     let ty = func.ty(&*c);
     if !integer_only(&ty) {
-        return Err(crate::boot::vm::codes::ERR_INVALID);
+        return Err(-3);
     }
-    Ok(Some(Selected { func: *func, ty }))
+    Ok(Some(Selected { func, ty }))
 }
 
 pub fn integer_only(ty: &FuncType) -> bool {

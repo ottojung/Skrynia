@@ -14,7 +14,7 @@ fn child_trap_returns_error_and_parent_recovers() {
 (elem(i32.const 0) func $cb)
 (func(export "skrynia_main")(param $in i32)(param $out i32)(result i32)
 (local $a i64)(local $b i64)
-(local.set $a(call $e(i64.const 0)(i64.const {blen})(i32.const 0)(i32.const 0)(i32.const 0)))
+(local.set $a(call $e(i64.const 0)(i64.const {blen})(i32.const -1)(i32.const 0)(i32.const 0)))
 (local.set $b(call $e(i64.const 4096)(i64.const {glen})(i32.const -1)(i32.const 0)(i32.const 0)))
 (i64.store(i32.const 128)(local.get $a))
 (i64.store(i32.const 136)(local.get $b))
@@ -29,6 +29,6 @@ fn child_trap_returns_error_and_parent_recovers() {
     let out = r.kernel.invoke(&[]).unwrap();
     let first = i64::from_le_bytes(out[0..8].try_into().unwrap());
     let second = i64::from_le_bytes(out[8..16].try_into().unwrap());
-    assert!(first < 0, "trapping child must report an error");
+    assert_eq!(first, -5, "actual child trap must report I/O error");
     assert_eq!(second, 0, "parent must recover and continue");
 }

@@ -29,3 +29,17 @@ fn code_outside_shared_ram_is_rejected() {
     let out = r.kernel.invoke(&[]).unwrap();
     assert_eq!(i64::from_le_bytes(out.try_into().unwrap()), -6);
 }
+
+#[test]
+fn invalid_negative_selector_is_rejected() {
+    let child = r#"(module(func(export "_start")))"#;
+    assert_eq!(call("bad-selector", child, -2, 0, 0, NOOP).0, -3);
+}
+
+#[test]
+fn invalid_entrypoint_cannot_execute_start_side_effects() {
+    let child = r#"(module(import "a" "mark" (func $m))
+      (func $init (call $m))(start $init)
+      (func(export "_start")(param i32)))"#;
+    assert_eq!(call("bad-start", child, 0, 0, 0, NOOP), (-3, 0));
+}
