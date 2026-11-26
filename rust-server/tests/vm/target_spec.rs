@@ -10,9 +10,12 @@ fn read(name: &str) -> String {
 }
 
 #[test]
-fn target_is_distinct_from_implementation_snapshot() {
-    assert!(read("v3/target-abi.md").contains("> a description of the kernel"));
-    assert!(read("v3/abi.md").contains("Implementation snapshot, not the next ABI"));
+fn target_and_qualification_are_distinct() {
+    assert!(read("v3/target-abi.md").contains("normative ABI"));
+    assert!(
+        read("v3-vm-spec.md").contains("Kernel contract")
+            || read("v3-vm-spec.md").contains("kernel contract")
+    );
     assert!(read("v3/target-qualification.md").contains("historical evidence only"));
 }
 

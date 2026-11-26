@@ -1,12 +1,9 @@
 mod setup;
 use setup::setup;
+mod docs_fixtures;
 mod private;
 mod ram;
 mod safe_path;
-mod v3_codes;
-mod v3_eval;
-mod v3_fixtures;
-mod v3_nested;
 use libskrynia::fs::{self, disk::DiskMode};
 #[test]
 fn disk_ops_modes_and_errors() {

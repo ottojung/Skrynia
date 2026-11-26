@@ -1,10 +1,7 @@
 # Skrynia target ABI — normative integration specification
 
-> **Status:** target specification for the K0/K1/K2/K3/T1 migration. It is **not**
-> a description of the kernel currently built at `main`. The shipped ABI at
-> `main 0ccc90f` is an implementation snapshot documented in `v3/abi.md`; where
-> that snapshot conflicts with this file or the intent records, this file and
-> the intent records govern the target, and the old snapshot is historical only.
+> **Status:** normative ABI for the target kernel implementation.
+> Whole-stack acceptance is governed separately by the qualification plan.
 >
 > **Authority:** `docs/intent-records/*.md` at owner head
 > `0ccc90ff7cfa8ee1a62b4a1e90b6b08677976323` (2026-11-26). Nothing here changes
@@ -63,7 +60,7 @@ cursor position (`>= 0`) on success or a negative error. A failed seek on
 forward-only input may already have consumed bytes; those cannot be rewound.
 Other failed seeks do not move the cursor. `shift = 0` is a no-op that still returns the position.
 Regular file and RAM descriptors support signed seeking inside `[0, len]`;
-`len + shift` outside that interval is `-6`. Forward-only input streams accept
+`position + shift` outside that interval is `-6`. Forward-only input streams accept
 `shift >= 0` only: a positive shift discards that many input bytes, a short
 skip clamps the cursor to end-of-stream (subsequent `read1` is `-1`), and a
 negative shift is `-4`. Output-only streams accept only `shift = 0`; a nonzero
@@ -110,26 +107,17 @@ code from section 2 on failure (trap, type mismatch, bounds, invalid code).
 `function = -1` means no supplied function and requires `arg0 = arg1 = 0`;
 `function >= 0` is an index into the evaluator-supplied function table and
 binds the child's single function import to that originating-context function
-after exact type validation. The child entrypoint is an exported `_start`
-with signature `() -> ()`, otherwise the module start section, otherwise
-`-3`. The child's call arguments are forwarded to the selected function in its
-originating context; `arg0`/`arg1` are opaque `i32` context handles for that
-selection. Results reach callers through shared RAM or the supplied function,
-not through the `eval` result. Each evaluation uses a fresh child store
-borrowing the suspended parent; sequential evaluations do not accumulate
-instances in a long-lived store.
-
-**Implementation refinement (K5, 2026-11-26):** each child uses a separate
-store borrowing the suspended parent via a typed scalar trampoline. It
-does not leave an instance in the parent store. Validate the entrypoint
-and supplied function before instantiation, so invalid entrypoints cannot
-execute a module start section. As an explicit implementation choice,
-reject a module with both an exported `_start` and a start section; either
-entry mechanism alone is valid. Trap/instantiation failure returns -5;
-invalid selectors, import types and entrypoints return -3. `arg0` and
-`arg1` are currently reserved when a function is supplied: they are not
-injected into the selected function's arguments. No owner decision has
-assigned them further semantics. Their signature is unchanged.
+after exact type validation. The entrypoint is either an exported
+`_start () -> ()` or the module start section, not both. Validate entrypoint
+and binding before instantiation, so invalid entrypoints cannot execute
+a start section. Trap/instantiation failure returns -5; invalid selectors,
+import types and entrypoints return -3. `arg0`/`arg1` are reserved when a
+function is supplied; they are not injected into its arguments. No owner
+decision assigns them further semantics. Results reach callers through shared
+RAM or the supplied function, not through the eval result.
+Each child uses a fresh store borrowing the suspended parent via a typed
+scalar trampoline. The originating function executes in its own context,
+and sequential evaluations do not accumulate instances.
 
 Wasmtime fuel, epoch deadlines, store resource limits and aggregate fuel
 transfer are not part of this ABI. Measurement, metering, budgets and quotas
@@ -160,14 +148,10 @@ replay of a failed call.
 `POST /version` returns build version and commit plus the same descriptors
 under `"syscalls"`.
 
-**[K0-CHOICE] Binary wire format.** `POST /<name>` and its response use a
-versioned tagged little-endian layout: byte `0 = 0x01`, byte `1 = N` (argument
-or result count), followed by `N` records; tag `0x32` is a 4-byte `i32`, tag
-`0x40` is an 8-byte `i64`, with no padding. HTTP status `400` is a malformed
-body or signature mismatch rejected before execution, `404` an unknown
-function and `500` a provider failure. Native Rust implementations receive
-the typed integers directly; remote HTTP providers need no caller RAM or
-descriptor access. General remote machine-context access is deferred.
+**[K0-CHOICE] Binary wire format.** See [typed FFI](typed-ffi.md) for
+the complete versioned tagged little-endian layout, including the extended
+count field for 255 or more values. Native Rust implementations receive
+typed integers directly; general remote machine-context access is deferred.
 
 ## 7. Derived copy — unresolved by owner
 

@@ -1,8 +1,7 @@
 # Typed named FFI transport
 
 This describes the generic kernel's named `syscall` imports. It follows the
-intent records pinned at main `0ccc90f` and the `[K0-CHOICE]` decisions in
-`docs/v3/target-abi.md` section 6 at `f538792`. It is not a legacy ABI document.
+intent records pinned at main `0ccc90f` and the implementation choices in [the machine ABI](target-abi.md).
 
 ## Signature metadata
 
