@@ -1,38 +1,14 @@
-#[test]
-fn rejects_malformed_names_and_lists() {
-    for body in [
-        r#"["bad name"]"#,
-        r#"["."]"#,
-        r#""double""#,
-        r#"{"syscalls":["double"]}"#,
-        r#"[1]"#,
-        r#"{}"#,
-        r#"not json"#,
-    ] {
-        let d = super::provider::Discovery {
-            status: 200,
-            body: body.into(),
-            reply: Vec::new(),
-        };
-        let provider = super::provider::start(d, 1);
-        assert!(libskrynia::Syscalls::http(&provider.url).is_err());
-        provider.join();
-    }
-}
+mod malformed;
+mod mismatch;
 
-#[test]
-fn rejects_non_200_and_oversized_body() {
-    for (status, body) in [
-        (302u16, r#"["double"]"#.to_string()),
-        (200, "x".repeat(9000)),
-    ] {
-        let d = super::provider::Discovery {
-            status,
-            body,
-            reply: Vec::new(),
-        };
-        let provider = super::provider::start(d, 1);
-        assert!(libskrynia::Syscalls::http(&provider.url).is_err());
-        provider.join();
-    }
+pub(super) fn rejects(body: &str) -> bool {
+    let discovery = super::provider::Discovery {
+        status: 200,
+        body: body.into(),
+        ..Default::default()
+    };
+    let provider = super::provider::start(discovery, 1);
+    let failed = libskrynia::Syscalls::http(&provider.url).is_err();
+    provider.join();
+    failed
 }
