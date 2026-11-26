@@ -36,5 +36,6 @@ Finalize the signature, result/error codes, partial progress, EOF,
 overlapping ranges, same descriptor behavior and concurrency semantics
 before implementing copy. A forward byte loop is not necessarily
 memmove-equivalent; reading ahead may change cursor behavior on failure.
-Bound and account for host work independently of WASM instruction fuel.
-The exact resource-accounting mechanism remains undecided.
+Resource accounting and budget policy for derived operations belong to
+custom userland VMs and their providers, not to native WASM fuel or
+kernel metering. See userland-resource-metering.md.

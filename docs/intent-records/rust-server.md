@@ -24,7 +24,10 @@ Analyze the actual generic WASM kernel using a filesystem-aware resource
 model. Count CPU, peak RAM, live/peak disk, file operations, kernel VM work,
 concurrency and crash recovery separately. State the assumptions under which
 complexity bounds hold and distinguish measured results from targets. Avoid
-silently equating filesystem operations with constant-time access. Do not add
+silently equating filesystem operations with constant-time access.
+These are engineering analysis and benchmark requirements, not a mandate
+for native per-program resource accounting or execution limits. Runtime
+metering belongs to custom userland VMs; see userland-resource-metering.md. Do not add
 application object, grant, notification, or quota semantics to the native
 kernel in pursuit of an optimization. Preserve durability and sandbox safety.
 

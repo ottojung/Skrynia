@@ -19,11 +19,12 @@ between linear memories implicitly or grow them for callbacks.
 Remove eval_delegate, eval_buffered, fs_delegate_scope and kernel-specific
 callback protocols. Software implements policy through supplied functions.
 Finalize the shared-RAM binding representation, exact types, entrypoint,
-result/error encoding and resource limits before implementing the ABI.
+and result/error encoding before implementing the ABI. Resource metering
+and execution budgets are implemented by custom userland VMs, not by
+the native WASM engine; see userland-resource-metering.md.
 
 Sequential evaluations must not permanently accumulate instances in a
 long-lived Wasmtime store. Consider separate child stores borrowing the
-suspended parent, with generic typed host trampolines and aggregate fuel
-accounting. This is an experimentally validated candidate implementation,
+suspended parent, with generic typed host trampolines. This is an experimentally validated candidate implementation,
 not a required engine architecture. The experiment did not establish
 support for cross-store reference-typed values.
