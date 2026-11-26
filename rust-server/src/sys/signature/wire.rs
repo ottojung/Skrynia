@@ -1,17 +1,26 @@
 mod decode;
+mod length;
 
 pub use decode::decode;
+pub use length::{COUNT_EXTENDED, VERSION, frame_len};
 
 use super::Signature;
 use wasmtime::Val;
-
-pub const VERSION: u8 = 1;
 
 pub fn encode(signature: &Signature, args: &[Val]) -> Result<Vec<u8>, String> {
     if args.len() != signature.params().len() {
         return Err("argument count mismatch".into());
     }
-    let mut out = vec![VERSION, args.len() as u8];
+    let count = args.len();
+    let mut out = Vec::with_capacity(frame_len(signature.params())?);
+    out.push(VERSION);
+    if count < usize::from(COUNT_EXTENDED) {
+        out.push(count as u8);
+    } else {
+        out.push(COUNT_EXTENDED);
+        let wide = u32::try_from(count).map_err(|_| "too many wire values".to_string())?;
+        out.extend_from_slice(&wide.to_le_bytes());
+    }
     for (ty, value) in signature.params().bytes().zip(args) {
         let (tag, bytes) = scalar(ty, value)?;
         out.push(tag);

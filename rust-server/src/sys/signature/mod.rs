@@ -3,7 +3,7 @@ mod ty;
 mod wire;
 
 pub use json::{from_discovery, from_version, to_list};
-pub use wire::{decode, encode, fill};
+pub use wire::{decode, encode, fill, frame_len};
 
 /// Ordered integer parameter and result types: `i` = i32, `l` = i64.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +17,8 @@ impl Signature {
         if !ty::valid(params) || !ty::valid(results) {
             return Err("invalid integer signature".into());
         }
+        wire::frame_len(params)?;
+        wire::frame_len(results)?;
         Ok(Self {
             params: params.into(),
             results: results.into(),

@@ -11,9 +11,6 @@ fn letter(name: &str) -> Result<char, String> {
 
 fn notation(value: &serde_json::Value) -> Result<String, String> {
     let list = value.as_array().ok_or("signature types must be an array")?;
-    if list.len() > 16 {
-        return Err("signature too long".into());
-    }
     list.iter()
         .map(|v| {
             let name = v
