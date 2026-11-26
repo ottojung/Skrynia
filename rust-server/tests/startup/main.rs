@@ -42,7 +42,7 @@ fn boot_rejects_empty_root_abi() {
 fn ram_max_limit() {
     let ram = libskrynia::ram::Ram::new();
     assert!(ram.truncate(64 * 1024 * 1024).is_ok());
-    assert!(ram.truncate(64 * 1024 * 1024 + 1).is_err());
+    assert!(ram.truncate(libskrynia::ram::MAX_RAM_BYTES + 1).is_err());
 }
 mod case;
 mod exports;

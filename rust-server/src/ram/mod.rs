@@ -13,8 +13,9 @@ mod retained;
 #[cfg(test)]
 mod tests;
 
-// Existing host capacity bound; independent of execution budgets.
-pub const MAX_RAM_BYTES: u64 = 64 * 1024 * 1024;
+// Largest logical size representable by the signed seek result.
+// Physical storage is allocated lazily, not at truncate time.
+pub const MAX_RAM_BYTES: u64 = i64::MAX as u64;
 
 #[derive(Debug, Default)]
 pub struct Ram {

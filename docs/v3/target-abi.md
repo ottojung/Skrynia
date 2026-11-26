@@ -73,7 +73,12 @@ shift is `-4` (no implicit zero-fill or partial side effects).
 
 There is exactly one unpartitioned, dynamically resizable shared RAM object.
 `truncate` grows with zero-initialized bytes and shrinks by discarding the
-tail. Ordinary reads/writes guarantee individual byte atomicity and disjoint
+tail. The sparse reference implementation does not impose the former 64 MiB
+logical limit: the largest supported size is i64::MAX bytes because seek
+returns a nonnegative i64 position. Physical page allocation can fail.
+Host-side path staging remains bounded independently of RAM size.
+These are implementation choices, not application resource metering.
+Ordinary reads/writes guarantee individual byte atomicity and disjoint
 writes do not erase one another; no global RAM mutex is required. Allocation,
 protection and synchronization protocols belong to software.
 

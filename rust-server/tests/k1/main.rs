@@ -2,6 +2,7 @@ mod byte_io;
 mod input_seek;
 mod root_dir;
 mod shared_ram;
+mod sparse;
 
 use libskrynia::boot::Kernel;
 use std::fs;

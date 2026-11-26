@@ -13,7 +13,14 @@ pub fn read(
     if end > ram.len() {
         return Err(E_BOUNDS);
     }
-    let mut buf = vec![0u8; usize::try_from(len).map_err(|_| E_BOUNDS)?];
+    let n = usize::try_from(len).map_err(|_| E_BOUNDS)?;
+    // Path operations use a bounded host-side staging buffer, not the RAM size.
+    if n > crate::boot::limits::MAX_IO as usize {
+        return Err(E_BOUNDS);
+    }
+    let mut buf = Vec::new();
+    buf.try_reserve_exact(n).map_err(|_| E_IO)?;
+    buf.resize(n, 0);
     if ram.read(ptr, &mut buf).map_err(|_| E_BOUNDS)? != buf.len() {
         return Err(E_BOUNDS);
     }

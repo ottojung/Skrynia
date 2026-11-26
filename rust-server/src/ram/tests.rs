@@ -37,3 +37,16 @@ fn cas_publishes_prior_byte_writes() {
     assert_eq!(r.read_byte(1).unwrap(), 0xcd);
     assert_eq!(r.read_byte(7).unwrap(), 1);
 }
+
+#[test]
+fn sparse_ram_supports_offsets_beyond_four_gib() {
+    let r = Ram::new();
+    let at = 5u64 << 30;
+    r.truncate(at + 2).unwrap();
+    assert_eq!(r.read_byte(at).unwrap(), 0);
+    assert_eq!(r.cas1(at, 0, 73).unwrap(), 0);
+    assert_eq!(r.read_byte(at).unwrap(), 73);
+    r.truncate(at).unwrap();
+    r.truncate(at + 2).unwrap();
+    assert_eq!(r.read_byte(at).unwrap(), 0);
+}
