@@ -35,7 +35,7 @@ pub fn rig(name: &str, root: &str) -> Rig {
 pub fn put(r: &Rig, offset: u64, bytes: &[u8]) {
     r.kernel
         .ram()
-        .truncate(offset as usize + bytes.len())
+        .truncate(offset + bytes.len() as u64)
         .unwrap();
-    r.kernel.ram().write(offset as usize, bytes).unwrap();
+    r.kernel.ram().write(offset, bytes).unwrap();
 }
