@@ -8,11 +8,16 @@ impl Fs {
         p: &[u8],
         owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
-        let kind = root.unwrap_or(self.pick_read_root(p));
-        let e = if p == b"." {
+        let (kind, suffix) = crate::fs::root::select::split(p)?;
+        if let Some(want) = root {
+            if want != kind {
+                return Err("root");
+            }
+        }
+        let e = if suffix == b"." {
             crate::fs::dir::open_root(self.root(kind))?
         } else {
-            let rel = crate::fs::path::clean(p)?;
+            let rel = crate::fs::path::clean(suffix)?;
             crate::fs::dir::open_dir(self.root(kind), &rel)?
         };
         fds.insert(Item::Dir(e), owner)

@@ -12,14 +12,13 @@ impl Fs {
         mode: crate::fs::disk::DiskMode,
         owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
-        let rel = crate::fs::path::clean(path)?;
-        let kind = root.unwrap_or_else(|| {
-            if mode.write || mode.create || mode.truncate || mode.exclusive {
-                RootKind::User
-            } else {
-                self.pick_read_root(path)
+        let (kind, suffix) = crate::fs::root::select::split(path)?;
+        if let Some(want) = root {
+            if want != kind {
+                return Err("root");
             }
-        });
+        }
+        let rel = crate::fs::path::clean(suffix)?;
         let e = crate::fs::disk::open_disk(self.root(kind), &rel, mode)?;
         fds.insert(Item::File(e), owner)
     }
