@@ -46,7 +46,7 @@ fn cas_unambiguous_status_and_patterns() {
 
 #[test]
 fn ram_not_touched_without_explicit_op() {
-    let mut ram = Ram::new(8);
+    let ram = Ram::new(8);
     let before = ram.touches;
     let _ = &ram.bytes;
     assert_eq!(before, ram.touches);

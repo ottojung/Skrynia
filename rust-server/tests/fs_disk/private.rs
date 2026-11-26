@@ -1,4 +1,3 @@
-use libskrynia::fs;
 use std::{fs as stdfs, os::unix::fs::PermissionsExt};
 #[test]
 fn newly_created_disk_files_exclude_group_and_other() {

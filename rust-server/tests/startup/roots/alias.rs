@@ -1,5 +1,5 @@
 use libskrynia::boot;
-use std::{fs, os::unix::fs::symlink};
+use std::os::unix::fs::symlink;
 
 fn wasm(dir: &std::path::Path) -> std::path::PathBuf {
     let p = dir.join("root.wasm");
