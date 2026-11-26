@@ -4,17 +4,24 @@ date: 2026/11/26
 source: @ottojung
 kind: requirement
 
-Preserve the named WASM import architecture, with module namespace syscall
-and one i32 argument and one i32 result (unsigned u32 bit patterns).
-No generic ffi(name, argument) dispatcher. The argument and result are
-opaque to the kernel; provider protocols may interpret them as shared RAM
-addresses, file descriptor references, scalar values or other handles.
+Preserve named WASM function imports in module namespace syscall.
+Generalize FFI to arbitrary integer-argument signatures: any number of
+i32 and i64 parameters, including zero and mixed widths. Do not impose
+a universal (i32) -> i32 signature or a fixed argument count. Support
+function-specific integer results, including no result and multiple
+integer results; exact result-type policy is to be finalized in the ABI.
+No generic ffi(name, argument) dispatcher. Integer bit patterns are opaque
+to the kernel; providers may interpret them as shared RAM addresses, file
+descriptor references, scalar values or other handles.
 
-The reference skrynia-server discovers names via GET /syscalls_list and
-executes named functions via POST /<name>, retaining the four-byte
-little-endian argument and result. libskrynia executes custom Rust
-implementations of those names directly, with equivalent semantics.
-Do not require a new argument-buffer convention.
+The reference skrynia-server discovers available named functions via
+GET /syscalls_list and executes them via POST /<name>. Generalize the
+HTTP argument/result encoding to match each function's WASM signature.
+Use a deterministic, typed integer wire representation; finalize discovery
+metadata, encoding and signature-mismatch handling in the ABI.
+libskrynia executes corresponding custom Rust implementations directly
+with equivalent semantics. Do not require an argument-buffer convention
+or force multiple scalar arguments into a RAM request structure.
 
 Native providers must receive access to the calling machine context,
 including its RAM and descriptor operations. HTTP providers must obtain

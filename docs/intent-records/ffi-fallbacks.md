@@ -16,16 +16,17 @@ never replay using the fallback after a call has begun or failed.
 Preserve the reference operation's observable semantics, including
 cursor movement, errors, effects and concurrency guarantees.
 
-Start with copy as the standard derived FFI function:
-    (import "syscall" "copy" (func (param i32) (result i32)))
-Its opaque argument points to a request in shared RAM identifying source
-descriptor, destination descriptor and byte count. Skrynia guarantees
-a reference fallback using read1 and write1, implemented natively so
-that large copies do not require a WASM instruction loop per byte.
-A host may supply a faster implementation through the same named import.
+Start with copy as the standard derived FFI function. It has exactly
+four explicit integer arguments, not a single pointer to a RAM request
+structure. The meanings, order and widths of the four arguments and
+the return signature remain to be finalized; do not invent them.
+Skrynia guarantees a reference fallback using read1 and write1,
+implemented natively so that large copies do not require a WASM
+instruction loop per byte. A host may supply a faster implementation
+through the same typed named import.
 Do not reintroduce fixed bulk read/write kernel imports.
 
-Finalize the request layout, result/error codes, partial progress, EOF,
+Finalize the signature, result/error codes, partial progress, EOF,
 overlapping ranges, same descriptor behavior and concurrency semantics
 before implementing copy. A forward byte loop is not necessarily
 memmove-equivalent; reading ahead may change cursor behavior on failure.
