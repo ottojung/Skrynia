@@ -25,8 +25,7 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
     let verdict: gate::Verdict = Arc::new(AtomicU8::new(0));
     let (tx, rx) = mpsc::channel(2);
     let (out_tx, out_rx) = mpsc::channel(2);
-    let abort = output::abort();
-    flow::watchdog(abort.clone(), super::router::response_total());
+    let deadline = tokio::time::Instant::now() + super::router::response_total();
     let body = if chunked {
         gate::body(request.into_body(), lim.max, verdict.clone())
     } else {
@@ -41,7 +40,7 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
         kernel.invoke_stream(
             Box::new(input::Input::new(rx, input_term)),
             lim.max as u64,
-            Box::new(output::Output(worker_tx, abort)),
+            Box::new(output::Output(worker_tx, deadline)),
         )
     });
     tokio::spawn(flow::supervise(pump, worker, out_tx));
