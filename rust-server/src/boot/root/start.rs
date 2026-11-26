@@ -11,7 +11,9 @@ impl crate::boot::Kernel {
         let root = crate::boot::vm::compile::trusted(&engine, &bytes)
             .map_err(|e| format!("compile root: {e}"))?;
         crate::boot::validate::check(&root)?;
-        let version = crate::sys::version::info(syscalls.names())?;
+        let signatures = syscalls.signatures();
+        crate::boot::validate::check_syscalls(&root, &signatures)?;
+        let version = crate::sys::version::info(&signatures)?;
         let mut linker = wasmtime::Linker::new(&engine);
         crate::boot::vm::link::root::add(&mut linker)?;
         syscalls.link(&mut linker, &root)?;

@@ -1,5 +1,7 @@
 use std::io::Read;
 
+const MAX_BYTES: u64 = 4 * 1024;
+
 pub(super) fn client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -13,21 +15,26 @@ pub(super) fn client() -> Result<reqwest::blocking::Client, String> {
 pub(super) fn call(
     client: &reqwest::blocking::Client,
     url: &reqwest::Url,
-    arg: u32,
-) -> Result<u32, String> {
-    let mut response = client
+    signature: &crate::Signature,
+    args: &[wasmtime::Val],
+) -> Result<Vec<wasmtime::Val>, String> {
+    let body = crate::sys::signature::encode(signature, args)?;
+    let response = client
         .post(url.clone())
         .header("Content-Type", "application/octet-stream")
-        .body(arg.to_le_bytes().to_vec())
+        .body(body)
         .send()
         .map_err(|e| e.to_string())?;
     if response.status() != reqwest::StatusCode::OK {
         return Err(format!("syscall provider status: {}", response.status()));
     }
-    let mut bytes = [0u8; 4];
-    response.read_exact(&mut bytes).map_err(|e| e.to_string())?;
-    if response.read(&mut [0u8; 1]).map_err(|e| e.to_string())? != 0 {
-        return Err("invalid syscall response length".into());
+    let mut bytes = Vec::new();
+    response
+        .take(MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err("syscall response too large".into());
     }
-    Ok(u32::from_le_bytes(bytes))
+    crate::sys::signature::decode(signature, &bytes)
 }
