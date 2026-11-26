@@ -24,8 +24,8 @@ impl Kernel {
     pub fn cache(&self) -> &Arc<vm::state::Cache> {
         &self.cache
     }
-    pub fn prepare(&self, fuel: u64) -> Result<Request, String> {
-        exec::prepare(&self.engine, &self.root, fuel)
+    pub fn prepare(&self) -> Result<Request, String> {
+        exec::prepare(&self.engine, &self.root)
     }
     pub fn invoke(&self, body: &[u8]) -> Result<Vec<u8>, i32> {
         let sink = super::pipe::VecSink::default();

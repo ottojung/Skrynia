@@ -7,7 +7,6 @@ pub const MAX_COMPILE_MS: u64 = 3500;
 
 pub fn engine_config() -> Result<Config, String> {
     let mut cfg = Config::new();
-    cfg.consume_fuel(true);
     cfg.max_wasm_stack(MAX_WASM_STACK);
     Ok(cfg)
 }

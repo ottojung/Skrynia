@@ -1,9 +1,8 @@
 mod basic;
-mod buffered;
-mod capability;
-mod compile_bound;
-mod compile_fds;
-mod guard;
-mod mutation_lock;
+mod call;
+mod entry;
+mod imports;
 mod nested;
-mod stream;
+mod repeated;
+mod rig;
+mod trap;

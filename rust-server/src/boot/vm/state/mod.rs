@@ -20,7 +20,6 @@ pub struct Vm {
     pub depth: u32,
     pub guest: Option<GuestCap>,
     pub mutation_held: bool,
-    pub limits: wasmtime::StoreLimits,
     pub providers: Vec<ProviderCtx>,
     pub cur: Option<wasmtime::Instance>,
     pub fs_auth: crate::boot::vm::cap::FsAuth,
