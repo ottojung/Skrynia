@@ -1,7 +1,5 @@
 use std::io::Read;
 
-const MAX_BYTES: u64 = 4 * 1024;
-
 pub(super) fn client() -> Result<reqwest::blocking::Client, String> {
     reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -28,13 +26,15 @@ pub(super) fn call(
     if response.status() != reqwest::StatusCode::OK {
         return Err(format!("syscall provider status: {}", response.status()));
     }
-    let mut bytes = Vec::new();
+    let expected = crate::sys::signature::frame_len(signature.results())?;
+    let limit = expected.checked_add(1).ok_or("reply length overflow")?;
+    let mut bytes = Vec::with_capacity(expected);
     response
-        .take(MAX_BYTES + 1)
+        .take(limit as u64)
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_BYTES {
-        return Err("syscall response too large".into());
+    if bytes.len() != expected {
+        return Err("syscall response length mismatch".into());
     }
     crate::sys::signature::decode(signature, &bytes)
 }
