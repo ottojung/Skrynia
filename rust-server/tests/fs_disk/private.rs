@@ -8,7 +8,7 @@ fn newly_created_disk_files_exclude_group_and_other() {
         .open_disk(
             None,
             &mut fds,
-            b"private",
+            b"user/private",
             libskrynia::fs::disk::DiskMode::create_new_rw(),
             0,
         )

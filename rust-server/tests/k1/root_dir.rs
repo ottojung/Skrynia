@@ -12,7 +12,7 @@ fn root_directory_opens_through_shared_ram_and_syncs() {
  (data (i32.const 0) "x")
  (func (export "skrynia_main") (param $in i32) (param $out i32) (result i32)
   (local $fd i32)
-  (local.set $fd (call $od (i64.const 0) (i64.const 1)))
+  (local.set $fd (call $od (i64.const 0) (i64.const 6)))
   (if (i32.lt_s (local.get $fd) (i32.const 0)) (then (return (local.get $fd))))
   (i32.store8 (i32.const 0) (call $sy (local.get $fd)))
   (drop (call $cl (local.get $fd)))
@@ -20,7 +20,7 @@ fn root_directory_opens_through_shared_ram_and_syncs() {
   (i32.const 0)))"#;
     let k = kernel(&d, root);
     k.ram().truncate(64).unwrap();
-    k.ram().write(0, b".").unwrap();
+    k.ram().write(0, b"user/.").unwrap();
     assert_eq!(k.invoke(&[]).unwrap(), vec![0], "root sync status");
     let _ = std::fs::remove_dir_all(&d);
 }

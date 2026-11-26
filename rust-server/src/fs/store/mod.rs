@@ -37,7 +37,4 @@ impl Fs {
             RootKind::User => &self.user,
         }
     }
-    pub fn pick_read_root(&self, _path: &[u8]) -> RootKind {
-        RootKind::Operator
-    }
 }

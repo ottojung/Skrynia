@@ -16,7 +16,13 @@ fn setup(name: &str) -> (std::path::PathBuf, boot::Kernel) {
 fn rejects_bad_and_escaping_paths() {
     let (dir, k) = setup("skrynia-fs-node2");
     let s = k.fs();
-    for p in [b"/abs".as_slice(), b"../x", b"a/../../b", b"a\0b", b""] {
+    for p in [
+        b"/abs".as_slice(),
+        b"user/../x",
+        b"user/a/../../b",
+        b"a\0b",
+        b"",
+    ] {
         assert!(s.exists(Some(U), p).is_err());
     }
     let mut fds = fs::table::Table::new();
@@ -24,7 +30,7 @@ fn rejects_bad_and_escaping_paths() {
         s.open_disk(
             Some(U),
             &mut fds,
-            b"../out",
+            b"user/../out",
             fs::disk::DiskMode::read_write(),
             0,
         )

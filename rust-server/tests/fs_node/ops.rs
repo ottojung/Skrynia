@@ -17,24 +17,24 @@ fn node_ops_and_rename() {
     let (dir, k) = setup("skrynia-fs-node");
     let s = k.fs();
     let mut fds = fs::table::Table::new();
-    s.mkdir(Some(U), b"d", fs::node::MkdirMode::create_if_absent())
+    s.mkdir(Some(U), b"user/d", fs::node::MkdirMode::create_if_absent())
         .unwrap();
-    assert!(s.is_dir(Some(U), b"d").unwrap());
+    assert!(s.is_dir(Some(U), b"user/d").unwrap());
     let fd = s
         .open_disk(
             Some(U),
             &mut fds,
-            b"d/a",
+            b"user/d/a",
             fs::disk::DiskMode::read_write(),
             0,
         )
         .unwrap();
     s.write(&mut fds, fd, b"hi").unwrap();
     s.close(&mut fds, fd).unwrap();
-    s.rename(Some(U), b"d/a", b"d/b").unwrap();
-    assert!(!s.exists(Some(U), b"d/a").unwrap());
-    s.delete(Some(U), b"d/b").unwrap();
-    assert!(!s.exists(Some(U), b"d/not-created/leaf").unwrap());
-    assert!(s.delete(Some(U), b"d/not-created/leaf").is_ok());
+    s.rename(Some(U), b"user/d/a", b"user/d/b").unwrap();
+    assert!(!s.exists(Some(U), b"user/d/a").unwrap());
+    s.delete(Some(U), b"user/d/b").unwrap();
+    assert!(!s.exists(Some(U), b"user/d/not-created/leaf").unwrap());
+    assert!(s.delete(Some(U), b"user/d/not-created/leaf").is_ok());
     let _ = stdfs::remove_dir_all(&dir);
 }
