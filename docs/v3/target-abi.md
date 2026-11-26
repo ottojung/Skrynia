@@ -113,6 +113,16 @@ not through the `eval` result. Each evaluation uses a fresh child store
 borrowing the suspended parent; sequential evaluations do not accumulate
 instances in a long-lived store.
 
+**Integration assumption recorded by K0 (from K2, 2026-11-26):** Wasmtime host
+functions are store-bound, so the implementation may invoke the supplied
+function through a generic typed trampoline in the same store while still
+instantiating a fresh child instance for each evaluation and retaining no
+instance in a long-lived store. This is an engine implementation concession,
+not owner ABI. A separate child store borrowing the suspended parent remains
+the experimentally validated candidate and may replace it without an ABI
+change. Legacy bulk I/O shims temporarily retained while K1/K2 port tests are
+transitional and must be removed before target acceptance.
+
 Wasmtime fuel, epoch deadlines, store resource limits and aggregate fuel
 transfer are not part of this ABI. Measurement, metering, budgets and quotas
 are implemented by custom userland VMs. Kernel bounds checks, memory safety,

@@ -17,7 +17,8 @@ head. No result is reported from a dirty or unpushed checkout.
    source linter (50 code lines/file, 10 entries/dir, sibling-only imports),
    strict Clippy (`correctness`, `suspicious`, `perf`, `complexity`).
    No obsolete imports, no native fuel/epoch/resource-limit machinery, no
-   superseded API claims presented as current.
+   superseded API claims presented as current, and no transitional legacy
+   bulk-I/O shims left after K1/K2 tests have been ported.
 2. **ABI conformance:** fixed 19-function inventory from `target-abi.md`;
    byte-only `read1`/`write1`; signed relative seek and forward input skips;
    shared-RAM `u64` addresses/lengths and dynamic resize; byte atomicity and
