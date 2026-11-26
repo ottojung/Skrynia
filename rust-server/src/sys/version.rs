@@ -32,6 +32,6 @@ pub fn info(
     Ok(serde_json::json!({
         "version": version,
         "commit": commit,
-        "syscalls": crate::sys::signature::to_discovery(signatures),
+        "syscalls": crate::sys::signature::to_list(signatures),
     }))
 }

@@ -1,4 +1,4 @@
-use super::{Signature, VERSION};
+use super::{Signature, VERSION, tag};
 use wasmtime::Val;
 
 pub fn decode(signature: &Signature, bytes: &[u8]) -> Result<Vec<Val>, String> {
@@ -12,12 +12,9 @@ pub fn decode(signature: &Signature, bytes: &[u8]) -> Result<Vec<Val>, String> {
     let mut rest = &bytes[2..];
     let mut values = Vec::with_capacity(count);
     for ty in signature.results().bytes() {
-        let (tag, bits) = take(rest)?;
-        if tag != ty {
-            return Err("result type mismatch".into());
-        }
+        let (bits, used) = take(rest, ty)?;
         values.push(value(ty, bits));
-        rest = &rest[9..];
+        rest = &rest[used..];
     }
     if !rest.is_empty() {
         return Err("trailing wire bytes".into());
@@ -25,17 +22,19 @@ pub fn decode(signature: &Signature, bytes: &[u8]) -> Result<Vec<Val>, String> {
     Ok(values)
 }
 
-fn take(bytes: &[u8]) -> Result<(u8, u64), String> {
-    if bytes.len() < 9 {
-        return Err("truncated wire value".into());
+fn take(bytes: &[u8], ty: u8) -> Result<(u64, usize), String> {
+    let width = if ty == b'i' { 4 } else { 8 };
+    if bytes.len() < width + 1 || bytes[0] != tag(ty) {
+        return Err("truncated or mistyped wire value".into());
     }
-    let bits: [u8; 8] = bytes[1..9].try_into().map_err(|_| "truncated wire value")?;
-    Ok((bytes[0], u64::from_le_bytes(bits)))
+    let mut buf = [0u8; 8];
+    buf[..width].copy_from_slice(&bytes[1..width + 1]);
+    Ok((u64::from_le_bytes(buf), width + 1))
 }
 
 fn value(ty: u8, bits: u64) -> Val {
     if ty == b'i' {
-        Val::I32(bits as i64 as i32)
+        Val::I32(bits as u32 as i32)
     } else {
         Val::I64(bits as i64)
     }

@@ -24,7 +24,7 @@ pub(super) fn cross_check(
         return Err(format!("version status: {}", response.status()));
     }
     let value = super::discover::read(&mut response)?;
-    let advertised = crate::sys::signature::from_discovery(&value["syscalls"])?;
+    let advertised = crate::sys::signature::from_version(&value)?;
     if &advertised != discovered {
         return Err("version/discovery signature mismatch".into());
     }

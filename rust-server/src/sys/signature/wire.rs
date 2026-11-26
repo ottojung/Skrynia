@@ -13,20 +13,23 @@ pub fn encode(signature: &Signature, args: &[Val]) -> Result<Vec<u8>, String> {
     }
     let mut out = vec![VERSION, args.len() as u8];
     for (ty, value) in signature.params().bytes().zip(args) {
-        let (tag, bits) = scalar(ty, value)?;
+        let (tag, bytes) = scalar(ty, value)?;
         out.push(tag);
-        out.extend_from_slice(&bits.to_le_bytes());
+        out.extend_from_slice(&bytes);
     }
     Ok(out)
 }
 
-fn scalar(ty: u8, value: &Val) -> Result<(u8, u64), String> {
-    let bits = match (ty, value) {
-        (b'i', Val::I32(v)) => *v as i64 as u64,
-        (b'l', Val::I64(v)) => *v as u64,
-        _ => return Err("argument type mismatch".into()),
-    };
-    Ok((ty, bits))
+fn scalar(ty: u8, value: &Val) -> Result<(u8, Vec<u8>), String> {
+    match (ty, value) {
+        (b'i', Val::I32(v)) => Ok((0x32, v.to_le_bytes().to_vec())),
+        (b'l', Val::I64(v)) => Ok((0x40, v.to_le_bytes().to_vec())),
+        _ => Err("argument type mismatch".into()),
+    }
+}
+
+pub fn tag(ty: u8) -> u8 {
+    if ty == b'i' { 0x32 } else { 0x40 }
 }
 
 pub fn fill(signature: &Signature, values: &[Val], results: &mut [Val]) -> Result<(), String> {

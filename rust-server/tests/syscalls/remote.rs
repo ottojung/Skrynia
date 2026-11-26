@@ -1,16 +1,16 @@
 #[test]
 fn http_roundtrip_and_exact_result_length() {
-    let expected = super::provider::wire(&[(b'i', 255)]);
+    let expected = super::provider::wire(&[(0x32, 255)]);
     for (reply, valid) in [
         (expected.clone(), true),
-        (vec![0; 21], false),
-        (vec![0; 19], false),
+        (vec![0; 9], false),
+        (vec![0; 6], false),
     ] {
         let discovery = super::provider::Discovery {
             status: 200,
             body: super::provider::DOUBLE.into(),
             reply,
-            request: Some(super::provider::wire(&[(b'i', u64::MAX)])),
+            request: Some(super::provider::wire(&[(0x32, u32::MAX as u64)])),
             ..Default::default()
         };
         let provider = super::provider::start(discovery, 3);

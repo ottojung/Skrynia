@@ -6,7 +6,8 @@ fn malformed_wire_reply_is_rejected() {
         vec![],
         vec![1, 2],
         vec![2, 2],
-        vec![1, 1, b'l'],
+        vec![1, 1, 0x40],
+        vec![1, 2, 0x32, 0, 0, 0, 0, 0x32, 0, 0, 0, 0],
         super::super::super::provider::wire(&super::super::MIX_RESULTS[..1]),
         {
             let mut bytes = super::super::super::provider::wire(&super::super::MIX_RESULTS);
@@ -16,7 +17,7 @@ fn malformed_wire_reply_is_rejected() {
     ] {
         let discovery = super::super::super::provider::Discovery {
             status: 200,
-            body: super::super::transport::LIST.into(),
+            body: format!(r#"{{"functions":{}}}"#, super::super::transport::LIST),
             reply,
             request: Some(super::super::super::provider::wire(&super::super::MIX_ARGS)),
             ..Default::default()

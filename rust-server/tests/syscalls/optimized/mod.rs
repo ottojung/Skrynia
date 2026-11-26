@@ -4,13 +4,13 @@ use wasmtime::Val;
 
 #[test]
 fn optimized_matches_http_result_and_names() {
-    let reply = super::provider::wire(&[(b'i', u64::MAX - 1)]);
+    let reply = super::provider::wire(&[(0x32, u32::MAX.wrapping_mul(2) as u64)]);
     let provider = super::provider::start(
         super::provider::Discovery {
             status: 200,
             body: super::provider::DOUBLE.into(),
             reply,
-            request: Some(super::provider::wire(&[(b'i', u64::MAX)])),
+            request: Some(super::provider::wire(&[(0x32, u32::MAX as u64)])),
             ..Default::default()
         },
         3,

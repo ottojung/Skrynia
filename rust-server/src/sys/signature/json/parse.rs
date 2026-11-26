@@ -25,6 +25,14 @@ fn notation(value: &serde_json::Value) -> Result<String, String> {
 }
 
 pub fn from_discovery(value: &serde_json::Value) -> Result<BTreeMap<String, Signature>, String> {
+    parse(&value["functions"])
+}
+
+pub fn from_version(value: &serde_json::Value) -> Result<BTreeMap<String, Signature>, String> {
+    parse(&value["syscalls"])
+}
+
+fn parse(value: &serde_json::Value) -> Result<BTreeMap<String, Signature>, String> {
     let list = value.as_array().ok_or("syscalls must be an array")?;
     if list.len() > 256 {
         return Err("syscall list too long".into());

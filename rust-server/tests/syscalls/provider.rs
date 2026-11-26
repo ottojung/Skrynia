@@ -41,13 +41,15 @@ pub(super) fn start(discovery: Discovery, connections: usize) -> Provider {
     }
 }
 
-pub(super) const DOUBLE: &str = r#"[{"name":"double","params":["i32"],"results":["i32"]}]"#;
+pub(super) const DOUBLE: &str =
+    r#"{"functions":[{"name":"double","params":["i32"],"results":["i32"]}]}"#;
 
 pub(super) fn wire(args: &[(u8, u64)]) -> Vec<u8> {
     let mut bytes = vec![1, args.len() as u8];
     for (tag, bits) in args {
+        let width = if *tag == 0x40 { 8 } else { 4 };
         bytes.push(*tag);
-        bytes.extend_from_slice(&bits.to_le_bytes());
+        bytes.extend_from_slice(&bits.to_le_bytes()[..width]);
     }
     bytes
 }
