@@ -40,5 +40,6 @@ No native registration, program-ID management or application protocols.
 Allocation, memory protection and application policy belong to software.
 
 Before implementation finalize error/EOF encodings, relative-seek return
-semantics, eval binding/result conventions, FFI context access and copy
-semantics. This is an intent record, not a claim about the current ABI.
+semantics, eval binding/result conventions, typed FFI wire encoding and
+copy semantics. Remote FFI machine-context access is explicitly deferred
+and must not block implementation. This is an intent record, not a claim about the current ABI.

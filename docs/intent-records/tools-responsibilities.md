@@ -15,7 +15,10 @@ skrynia-tools supplies:
 - Program 0 and the userland invoke convention.
 - WASM ABI bindings, serialization and convenient wrappers.
 - HTTP syscall provider implementations, initially publish and unpublish,
-  and optional derived-operation accelerators.
+  and optional derived-operation accelerators where feasible. HTTP copy
+  is not required; software providing copy may supply its own byte-I/O
+  fallback, independently of whether it is Program 0, Program 1 or another
+  component. Remote machine-context access is deferred.
 - Corresponding custom Rust implementations for libskrynia where provided.
 - Deployment and self-hosted administration UI, including version listing,
   atomic rollback and grant creation.
@@ -27,4 +30,5 @@ generic machine entrypoint for the externally supplied root.
 
 Publication policy and nginx integration belong to the tools/provider,
 not the kernel. Migrate tools and applications to the new ABI after its
-remaining protocol details are finalized.
+remaining required protocol details are finalized; deferred remote FFI
+machine-context access is not a migration prerequisite.

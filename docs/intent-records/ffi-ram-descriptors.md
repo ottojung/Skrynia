@@ -23,13 +23,16 @@ libskrynia executes corresponding custom Rust implementations directly
 with equivalent semantics. Do not require an argument-buffer convention
 or force multiple scalar arguments into a RAM request structure.
 
-Native providers must receive access to the calling machine context,
-including its RAM and descriptor operations. HTTP providers must obtain
-equivalent access through a private call-scoped interface. The concrete
-transport, authentication, descriptor scope/lifetime, cancellation,
-concurrency and revocation protocol remains to be specified. A descriptor
-number by itself is insufficient to identify request-local state.
-Do not expose new public application routes in the kernel for FFI.
+Native Rust implementations may use the calling machine context,
+including RAM and descriptor operations. Remote HTTP providers receive
+the encoded integer arguments; they are not required to have access to
+the caller's RAM or descriptors. General remote machine-context access
+is deliberately deferred. Do not introduce a private RPC protocol,
+shared-memory transport or new kernel endpoints to solve it now.
+A descriptor number by itself is insufficient to identify request-local
+state. An HTTP provider may omit functions it cannot implement without
+machine access, including copy. This does not block the new ABI or
+migration to it.
 
 Resolve imports during initialization. See ffi-fallbacks.md for optional
 accelerators and fallback behavior. No automatic replay of failed calls.
