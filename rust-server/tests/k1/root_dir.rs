@@ -7,7 +7,7 @@ fn root_directory_opens_through_shared_ram_and_syncs() {
  (import "skrynia" "open_directory" (func $od (param i64 i64) (result i32)))
  (import "skrynia" "sync" (func $sy (param i32) (result i32)))
  (import "skrynia" "close" (func $cl (param i32) (result i32)))
- (import "skrynia" "write" (func $w (param i32 i32 i32) (result i32)))
+ (import "skrynia" "write1" (func $sk_write1_0 (param i32 i32) (result i32)))(func $w (param $fd i32)(param $src i32)(param $len i32)(result i32)(local $i i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(drop(call $sk_write1_0(local.get $fd)(i32.load8_u(i32.add(local.get $src)(local.get $i)))))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $len))
  (memory (export "memory") 1)
  (data (i32.const 0) "x")
  (func (export "skrynia_main") (param $in i32) (param $out i32) (result i32)

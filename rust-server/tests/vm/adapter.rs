@@ -3,8 +3,8 @@ pub fn adapt(root: &str) -> String {
         .replacen(
             "(module",
             r#"(module
-            (import "skrynia" "read" (func $input_read (param i32 i32 i32) (result i32)))
-            (import "skrynia" "write" (func $output_write (param i32 i32 i32) (result i32)))"#,
+            (import "skrynia" "read1" (func $sk_read1_1 (param i32) (result i32)))(func $input_read (param $fd i32)(param $dst i32)(param $len i32)(result i32)(local $i i32)(local $b i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(local.set $b(call $sk_read1_1(local.get $fd)))(br_if $done(i32.lt_s(local.get $b)(i32.const 0)))(i32.store8(i32.add(local.get $dst)(local.get $i))(local.get $b))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $i))
+            (import "skrynia" "write1" (func $sk_write1_0 (param i32 i32) (result i32)))(func $output_write (param $fd i32)(param $src i32)(param $len i32)(result i32)(local $i i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(drop(call $sk_write1_0(local.get $fd)(i32.load8_u(i32.add(local.get $src)(local.get $i)))))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $len))"#,
             1,
         )
         .replace(r#"(func(export "skrynia_main")"#, "(func $old_entry");

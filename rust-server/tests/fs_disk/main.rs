@@ -19,12 +19,12 @@ fn disk_ops_modes_and_errors() {
         .open_disk(u, &mut fds, b"a.txt", DiskMode::read_write(), 0)
         .unwrap();
     assert_eq!(s.write(&mut fds, fd, b"hello").unwrap(), 5);
-    s.seek(&mut fds, fd, 0).unwrap();
+    s.seek_rel(&mut fds, fd, 0).unwrap();
     let mut b = [0u8; 5];
     assert_eq!(s.read(&mut fds, fd, &mut b).unwrap(), 5);
     assert_eq!(&b, b"hello");
     s.truncate_fd(&mut fds, fd, 2).unwrap();
-    s.seek(&mut fds, fd, 0).unwrap();
+    s.seek_rel(&mut fds, fd, 0).unwrap();
     let mut c = [0u8; 5];
     assert_eq!(s.read(&mut fds, fd, &mut c).unwrap(), 2);
     s.sync(&mut fds, fd).unwrap();

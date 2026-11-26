@@ -16,6 +16,8 @@ fn next_entry_reads_long_name() {
         &dir.join("user"),
     )
     .unwrap();
+    k.ram().truncate(16).unwrap();
+    k.ram().write(0, b"d").unwrap();
     let out = k.invoke(b"").unwrap();
     assert_eq!(out, vec![1]);
     let _ = fs::remove_dir_all(&dir);

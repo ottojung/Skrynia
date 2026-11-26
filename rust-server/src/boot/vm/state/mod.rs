@@ -2,7 +2,6 @@ mod cache;
 mod cap;
 mod ctx;
 mod frame;
-mod mutation;
 mod vm;
 pub use cache::{Cache, MAX_MODULE_BYTES};
 pub use cap::GuestCap;
@@ -19,7 +18,6 @@ pub struct Vm {
     pub cache: Arc<Cache>,
     pub depth: u32,
     pub guest: Option<GuestCap>,
-    pub mutation_held: bool,
     pub providers: Vec<ProviderCtx>,
     pub cur: Option<wasmtime::Instance>,
     pub fs_auth: crate::boot::vm::cap::FsAuth,

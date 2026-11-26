@@ -16,7 +16,6 @@ impl super::Vm {
             cache,
             depth: 0,
             guest: None,
-            mutation_held: false,
             providers: Vec::new(),
             cur: None,
             fs_auth: crate::boot::vm::cap::FsAuth::Empty,

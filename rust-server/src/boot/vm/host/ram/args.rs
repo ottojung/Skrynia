@@ -1,6 +1,5 @@
 // Fixed ABI pointers/lengths are u64 offsets into the single shared RAM.
-// A linear-memory fallback exists ONLY while RAM is uninitialized (len 0),
-// for legacy kernel tests not yet ported by K2/K0. Remove after test port.
+// Caller WASM linear memory is never used for a fixed-ABI argument.
 mod codes;
 pub use codes::*;
 
@@ -10,12 +9,6 @@ pub fn read(
     len: u64,
 ) -> Result<Vec<u8>, i32> {
     let ram = c.data().ram.clone();
-    if ram.len() == 0 {
-        let p = u32::try_from(ptr).map_err(|_| E_BOUNDS)?;
-        let n = u32::try_from(len).map_err(|_| E_BOUNDS)?;
-        let mem = crate::boot::vm::mem::get(c)?;
-        return crate::boot::vm::mem::read_buf(c, mem, p, n);
-    }
     let end = ptr.checked_add(len).ok_or(E_RANGE)?;
     if end > ram.len() {
         return Err(E_BOUNDS);
@@ -31,16 +24,6 @@ pub fn write(
     src: &[u8],
 ) -> Result<(), i32> {
     let ram = c.data().ram.clone();
-    if ram.len() == 0 {
-        let m = crate::boot::vm::mem::get(c)?;
-        return crate::boot::vm::mem::write_buf(
-            c,
-            m,
-            u32::try_from(ptr).map_err(|_| E_BOUNDS)?,
-            src,
-        )
-        .map_err(|_| E_BOUNDS);
-    }
     let end = ptr.checked_add(src.len() as u64).ok_or(E_RANGE)?;
     if end > ram.len() {
         return Err(E_BOUNDS);

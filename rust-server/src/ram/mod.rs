@@ -1,10 +1,9 @@
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, RwLock};
 mod cas;
 #[cfg(test)]
 mod concurrent;
 mod io;
-mod mutation;
 mod resize;
 #[cfg(test)]
 mod tests;
@@ -15,7 +14,6 @@ pub const MAX_RAM_BYTES: u64 = 64 * 1024 * 1024;
 #[derive(Debug, Default)]
 pub struct Ram {
     slots: RwLock<Arc<Vec<AtomicU8>>>,
-    mutation_held: AtomicBool,
 }
 
 impl Ram {
