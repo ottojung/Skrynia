@@ -14,7 +14,9 @@ pub fn read(
         return Err(E_BOUNDS);
     }
     let mut buf = vec![0u8; usize::try_from(len).map_err(|_| E_BOUNDS)?];
-    ram.read(ptr, &mut buf).map_err(|_| E_BOUNDS)?;
+    if ram.read(ptr, &mut buf).map_err(|_| E_BOUNDS)? != buf.len() {
+        return Err(E_BOUNDS);
+    }
     Ok(buf)
 }
 
@@ -28,5 +30,8 @@ pub fn write(
     if end > ram.len() {
         return Err(E_BOUNDS);
     }
-    ram.write(ptr, src).map(|_| ()).map_err(|_| E_BOUNDS)
+    if ram.write(ptr, src).map_err(|_| E_BOUNDS)? != src.len() {
+        return Err(E_BOUNDS);
+    }
+    Ok(())
 }

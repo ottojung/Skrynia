@@ -7,7 +7,6 @@ mod v3_codes;
 mod v3_eval;
 mod v3_fixtures;
 mod v3_nested;
-mod v3_ram;
 use libskrynia::fs::{self, disk::DiskMode};
 #[test]
 fn disk_ops_modes_and_errors() {

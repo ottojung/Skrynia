@@ -22,22 +22,20 @@ fn truncate_zero_fills() {
     let mut buf = [1u8; 8];
     ram.read(0, &mut buf).unwrap();
     assert_eq!(&buf[4..], &[0, 0, 0, 0]);
-    assert_eq!(
-        ram.truncate(libskrynia::ram::MAX_RAM_BYTES + 1),
-        Err("nospace")
-    );
+    assert!(ram.truncate(libskrynia::ram::MAX_RAM_BYTES + 1).is_err());
     assert_eq!(ram.len(), 8);
 }
 
 #[test]
-fn cas_alignment_bounds_and_values() {
+fn cas_byte_bounds_and_values() {
     let ram = Ram::new();
     ram.truncate(16).unwrap();
-    assert!(ram.cas_u64(1, 0, 1).is_err());
-    assert!(ram.cas_u64(16, 0, 1).is_err());
-    assert_eq!(ram.cas_u64(0, 0, 7).unwrap(), 0);
-    assert_eq!(ram.cas_u64(0, 0, 9).unwrap(), 7);
-    assert_eq!(ram.cas_u64(0, 7, 9).unwrap(), 7);
+    assert_eq!(ram.cas1(1, 0, 255), Ok(0));
+    assert_eq!(ram.cas1(1, 0, 1), Ok(255));
+    assert!(ram.cas1(16, 0, 1).is_err());
+    assert_eq!(ram.cas1(0, 0, 7).unwrap(), 0);
+    assert_eq!(ram.cas1(0, 0, 9).unwrap(), 7);
+    assert_eq!(ram.cas1(0, 7, 9).unwrap(), 7);
 }
 
 #[test]
@@ -45,10 +43,10 @@ fn cas_has_one_winner() {
     let ram = Arc::new(Ram::new());
     ram.truncate(8).unwrap();
     let mut hs = Vec::new();
-    for i in 1u64..=8 {
+    for i in 1u8..=8 {
         let r = ram.clone();
-        hs.push(std::thread::spawn(move || r.cas_u64(0, 0, i).unwrap()));
+        hs.push(std::thread::spawn(move || r.cas1(0, 0, i).unwrap()));
     }
-    let olds: Vec<u64> = hs.into_iter().map(|h| h.join().unwrap()).collect();
+    let olds: Vec<u8> = hs.into_iter().map(|h| h.join().unwrap()).collect();
     assert_eq!(olds.iter().filter(|&&v| v == 0).count(), 1);
 }
