@@ -4,12 +4,12 @@ use super::{dir, kernel};
 fn wasm_can_access_ram_above_four_gib() {
     let d = dir("sparse-ram");
     let root = r#"(module
-      (import "skrynia" "open_ram" (func $ram (result i32)))
-      (import "skrynia" "truncate" (func $t (param i32 i64) (result i32)))
-      (import "skrynia" "seek" (func $s (param i32 i64) (result i64)))
-      (import "skrynia" "write1" (func $w (param i32 i32) (result i32)))
-      (import "skrynia" "cas1" (func $c (param i32 i64 i32 i32) (result i32)))
-      (import "skrynia" "read1" (func $r (param i32) (result i32)))
+      (import "skrynia_v3_1" "open_ram" (func $ram (result i32)))
+      (import "skrynia_v3_1" "truncate" (func $t (param i32 i64) (result i32)))
+      (import "skrynia_v3_1" "seek" (func $s (param i32 i64) (result i64)))
+      (import "skrynia_v3_1" "write1" (func $w (param i32 i32) (result i32)))
+      (import "skrynia_v3_1" "cas1" (func $c (param i32 i64 i32 i32) (result i32)))
+      (import "skrynia_v3_1" "read1" (func $r (param i32) (result i32)))
       (func (export "skrynia_main") (param i32) (param $out i32) (result i32)
         (local $fd i32)
         (local.set $fd (call $ram))

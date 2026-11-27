@@ -4,12 +4,12 @@ use super::{dir, kernel};
 fn descriptor_control_errors_use_target_scalar_codes() {
     let d = dir("control-errors");
     let root = r#"(module
-      (import "skrynia" "open_ram" (func $ram (result i32)))
-      (import "skrynia" "close" (func $close (param i32) (result i32)))
-      (import "skrynia" "sync" (func $sync (param i32) (result i32)))
-      (import "skrynia" "read1" (func $read (param i32) (result i32)))
-      (import "skrynia" "write1" (func $write (param i32 i32) (result i32)))
-      (import "skrynia" "open_disk" (func $open (param i64 i64 i32) (result i32)))
+      (import "skrynia_v3_1" "open_ram" (func $ram (result i32)))
+      (import "skrynia_v3_1" "close" (func $close (param i32) (result i32)))
+      (import "skrynia_v3_1" "sync" (func $sync (param i32) (result i32)))
+      (import "skrynia_v3_1" "read1" (func $read (param i32) (result i32)))
+      (import "skrynia_v3_1" "write1" (func $write (param i32 i32) (result i32)))
+      (import "skrynia_v3_1" "open_disk" (func $open (param i64 i64 i32) (result i32)))
       (func (export "skrynia_main") (param $in i32) (param $out i32) (result i32)
         (local $fd i32)
         (local.set $fd (call $ram))

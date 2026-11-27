@@ -32,10 +32,13 @@ pub fn rig(name: &str, root: &str) -> Rig {
     Rig { dir, kernel }
 }
 
-pub fn put(r: &Rig, offset: u64, bytes: &[u8]) {
-    r.kernel
-        .ram()
-        .truncate(offset + bytes.len() as u64)
-        .unwrap();
-    r.kernel.ram().write(offset, bytes).unwrap();
+pub fn wat_data(offset: usize, bytes: &[u8]) -> String {
+    let mut s = String::from("(data (i32.const ");
+    s.push_str(&offset.to_string());
+    s.push_str(") \"");
+    for &b in bytes {
+        s.push_str(&format!("\\{b:02x}"));
+    }
+    s.push_str("\")");
+    s
 }
