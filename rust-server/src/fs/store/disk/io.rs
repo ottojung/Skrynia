@@ -9,7 +9,7 @@ impl Fs {
     ) -> Result<usize, &'static str> {
         match fds.get_mut(fd) {
             Some(Item::Input(e)) => e.read(dst),
-            Some(Item::Output(_)) => Err("perm"),
+            Some(Item::Output(_)) | Some(Item::Dir(_)) => Err("perm"),
             Some(Item::Ram(e)) => {
                 let off = e.pos;
                 let n = self.ram.read(off, dst)?;
@@ -27,7 +27,7 @@ impl Fs {
         src: &[u8],
     ) -> Result<usize, &'static str> {
         match fds.get_mut(fd) {
-            Some(Item::Input(_)) => Err("perm"),
+            Some(Item::Input(_)) | Some(Item::Dir(_)) => Err("perm"),
             Some(Item::Output(e)) => e.write(src),
             Some(Item::Ram(e)) => {
                 let off = e.pos;
