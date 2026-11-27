@@ -19,12 +19,16 @@ impl Ram {
         }
         Ok(())
     }
+    // Exclusive shard access waits for overlapping page spans; the atomic
+    // stores below target page bytes, not the map, so Clippy's read-only
+    // heuristic does not apply.
+    #[allow(clippy::readonly_write_lock)]
     fn clear_tail(&self, end: u64) {
         let off = (end % SIZE) as usize;
         if off == 0 {
             return;
         }
-        let shard = self.pages.shard(end / SIZE).read().unwrap();
+        let shard = self.pages.shard(end / SIZE).write().unwrap();
         if let Some(page) = shard.get(&(end / SIZE)) {
             for b in &page[off..] {
                 b.store(0, Ordering::SeqCst);

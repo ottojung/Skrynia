@@ -3,7 +3,7 @@ use super::pages::{Page, Pages, SIZE};
 use std::sync::atomic::Ordering;
 
 impl Ram {
-    fn page(&self, off: u64, create: bool) -> Result<Option<Page>, &'static str> {
+    pub(crate) fn page(&self, off: u64, create: bool) -> Result<Option<Page>, &'static str> {
         let index = off / SIZE;
         let shard = self.pages.shard(index);
         {
