@@ -16,7 +16,7 @@ fn with_root(wat: &str, f: impl FnOnce(Result<Kernel, String>)) {
 
 #[test]
 fn bulk_bounds_eof_partial_progress_and_permission() {
-    with_root(include_str!("../test-fixtures/abi31/bulk.wat"), |k| {
+    with_root(include_str!("../../test-fixtures/abi31/bulk.wat"), |k| {
         assert_eq!(k.unwrap().invoke(b"XYZ").unwrap(), b"XYZdefXYZd");
     });
 }
