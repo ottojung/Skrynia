@@ -8,7 +8,7 @@ impl Fs {
     ) -> Result<Option<u8>, &'static str> {
         match fds.get_mut(fd) {
             Some(Item::Input(e)) => e.read1(),
-            Some(Item::Output(_) | Item::BufferedOutput(_) | Item::Dir(_)) => Err("perm"),
+            Some(Item::Output(_) | Item::Dir(_)) => Err("perm"),
             Some(Item::Ram(e)) => match self.ram.read_byte(e.pos) {
                 Ok(v) => {
                     e.pos = e.pos.saturating_add(1);
@@ -30,7 +30,6 @@ impl Fs {
         match fds.get_mut(fd) {
             Some(Item::Input(_) | Item::Dir(_)) => Err("perm"),
             Some(Item::Output(e)) => e.write1(byte),
-            Some(Item::BufferedOutput(e)) => e.write1(byte),
             Some(Item::Ram(e)) => {
                 self.ram.write_byte(e.pos, byte)?;
                 e.pos = e.pos.saturating_add(1);
