@@ -1,14 +1,17 @@
 $id-1891053258346572
-title: Byte-only fundamental descriptor I/O and relative seek
-date: 2026/11/26
+title: Fundamental descriptor I/O and relative seek
+date: 2026/11/27
 source: @ottojung
 kind: requirement
 
-read1 and write1 are the only fundamental descriptor data-transfer
-operations. Each transfers exactly one byte on success. Do not retain
-buffered read or write as fixed kernel imports. Bulk transfer is a
-derived named FFI operation with a reference fallback, not an additional
-fundamental capability. The byte operations need no RAM buffer.
+Retain read1 and write1, each transferring exactly one byte on success.
+Add buffered read and write as fixed kernel imports, transferring between a
+descriptor and the caller's private WASM linear memory. Buffer pointers
+and lengths are u64. Return the actual byte count or a negative error;
+read returns zero at EOF. Partial transfers are allowed, the full buffer
+range is validated before I/O, and the cursor moves by actual progress.
+Byte operations require no linear memory. Bulk RAM operations guarantee
+individual byte atomicity, not multi-byte transactions.
 
 seek takes a signed relative displacement from the current position,
 not an absolute offset. Zero leaves the position unchanged, +1 advances
@@ -17,15 +20,4 @@ The input stream descriptor must support nonnegative relative seeking:
 a positive shift advances over (discards) input bytes, and zero is a no-op.
 Backward seeking on a forward-only input stream is not supported.
 
-Specify overflow, underflow, short skips, end-of-stream and cursor
-behavior before implementing the final ABI. The exact scalar return/error
-encoding for read1 and write1 and supported output-stream seek behavior
-are not established by this record.
-
-Supersedes the earlier bulk-plus-byte I/O intent and absolute-seek ABI.
-See kernel-abi.md and ffi-fallbacks.md.
-
-Reaffirmed by the owner on 2026/11/26: retain this byte-only descriptor
-I/O design. Performance concerns and proposed wider I/O primitives from
-architectural assessments are not authorization to redesign it. Optimize
-implementations without changing the specified fundamental operations.
+See kernel-abi.md, shared-ram-abi.md and ffi-fallbacks.md.

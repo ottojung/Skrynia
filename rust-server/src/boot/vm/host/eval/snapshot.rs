@@ -1,24 +1,17 @@
 use wasmtime::Caller;
 
-const ERR_RANGE: i64 = -6;
-
 pub fn snapshot(
-    c: &Caller<'_, crate::boot::vm::state::Vm>,
+    c: &mut Caller<'_, crate::boot::vm::state::Vm>,
     offset: u64,
     size: u64,
 ) -> Result<Vec<u8>, i64> {
     if size > crate::boot::vm::state::MAX_MODULE_BYTES as u64 {
-        return Err(ERR_RANGE);
+        return Err(-6);
     }
-    let size = usize::try_from(size).map_err(|_| ERR_RANGE)?;
-    let mut bytes = vec![0u8; size];
-    let n = c
-        .data()
-        .ram
-        .read(offset, &mut bytes)
-        .map_err(|_| ERR_RANGE)?;
-    if n != size {
-        return Err(ERR_RANGE);
-    }
+    let (memory, span) =
+        crate::boot::vm::host::memory::buffer(c, offset, size).map_err(i64::from)?;
+    let mut bytes = Vec::new();
+    bytes.try_reserve_exact(span.len()).map_err(|_| -5i64)?;
+    bytes.extend_from_slice(&memory.data(&*c)[span]);
     Ok(bytes)
 }

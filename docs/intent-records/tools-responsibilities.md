@@ -1,6 +1,6 @@
 $id-1891053258346577
 title: skrynia-tools supplies userland and optional host extensions
-date: 2026/11/26
+date: 2026/11/27
 source: @ottojung
 kind: requirement
 
@@ -19,7 +19,7 @@ skrynia-tools supplies:
   software-defined fallbacks for optional operations.
 - HTTP syscall provider implementations, initially publish and unpublish,
   and optional derived-operation accelerators where feasible. HTTP copy
-  is not required; software providing copy may supply its own byte-I/O
+  is not required; software providing copy may supply its own buffered or byte-I/O
   fallback, independently of whether it is Program 0, Program 1 or another
   component. Remote machine-context access is deferred.
 - Corresponding custom Rust implementations for libskrynia where provided.

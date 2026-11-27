@@ -1,5 +1,7 @@
 use std::io::Read;
 
+mod error;
+
 pub struct Input {
     reader: Box<dyn Read + Send>,
     remaining: u64,
@@ -14,19 +16,20 @@ impl Input {
         if dst.is_empty() {
             return Ok(0);
         }
-        let max = dst
-            .len()
-            .min(self.remaining.saturating_add(1).min(dst.len() as u64) as usize);
-        let n = self.reader.read(&mut dst[..max]).map_err(|e| {
-            if e.kind() == std::io::ErrorKind::InvalidData {
-                "limit"
-            } else {
-                "io"
-            }
-        })?;
-        if n as u64 > self.remaining {
-            return Err("limit");
+        let max = self.remaining.min(dst.len() as u64) as usize;
+        if max == 0 {
+            // Probe only after all accepted bytes have been reported. Never
+            // put the rejected overflow byte in the caller's destination.
+            return match self.reader.read(&mut [0u8; 1]) {
+                Ok(0) => Ok(0),
+                Ok(_) => Err("limit"),
+                Err(e) => Err(error::read_error(e)),
+            };
         }
+        let n = self
+            .reader
+            .read(&mut dst[..max])
+            .map_err(error::read_error)?;
         self.remaining -= n as u64;
         self.pos += n as u64;
         Ok(n)

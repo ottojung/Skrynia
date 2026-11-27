@@ -12,12 +12,12 @@ not additional owner requirements.
 At startup the kernel loads, validates and compiles the operator-supplied
 `SKRYNIA_ROOT_WASM`. No root program is built in. The required entrypoint is
 `skrynia_main(input_fd: i32, output_fd: i32) -> i32`; there is no mandatory
-linear memory export. Only exact fixed kernel imports in namespace `skrynia`
+linear memory export. Only exact fixed kernel imports in namespace `skrynia_v3_1`
 and configured typed named functions in namespace `syscall` are resolved.
 Unknown namespaces, unresolved imports and wrong types reject startup.
 
 The only execution endpoint is `POST /` with an opaque binary body.
-`POST /version` returns build version, commit and discovered typed syscall
+`POST /version` returns build version, commit, ABI identifier and discovered typed syscall
 metadata without invoking the root. Other methods/paths do not dispatch
 application operations.
 
@@ -50,12 +50,13 @@ An oversized request is rejected with 413; a transport error is not EOF.
 There are three distinct memory domains:
 
 - Private WASM linear memory, if a module has any, is for that module's
-  computations. It is never an implicit machine syscall buffer.
+  computations and explicit fixed-ABI buffers. Calls taking a pointer require
+  an ordinary exported memory named `memory`.
 - Kernel-owned memory holds implementation metadata, compiled modules,
   descriptor tables and transient I/O buffers. Its pointers are not exposed.
 - Shared RAM is one process-global volatile byte-addressable object, initially
-  empty. All fixed machine pointer/length parameters are 64-bit offsets and
-  lengths in this object. RAM is not implicitly populated with HTTP bodies
+  empty. Access is explicit via descriptors, including bulk and byte I/O.
+  Descriptor offsets remain 64-bit. RAM is not implicitly populated with HTTP bodies
   or module private memory. Its allocation and protection are userland
   protocols, not per-program kernel partitions.
 
@@ -77,8 +78,8 @@ uses descriptor-relative traversal and rejects symlink traversal; lexical
 validation alone is insufficient.
 
 Descriptors are opaque nonnegative i32 handles; stale or closed handles
-must not alias a live resource. Each descriptor has its own cursor. Only
-read1/write1 are fundamental byte transfers. The machine ABI defines relative
+must not alias a live resource. Each descriptor has its own cursor. Bulk read/write use private linear buffers;
+read1/write1 require no buffer. The machine ABI defines relative
 seek, supported operations, EOF, shared-RAM resize and CAS. File/directory
 mutation and ordinary disk writes are not automatically durable. Rename
 uses the host's atomic same-filesystem operation where supported. For

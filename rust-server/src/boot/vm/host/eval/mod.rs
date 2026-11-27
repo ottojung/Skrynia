@@ -10,7 +10,7 @@ mod start;
 pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
     linker
         .func_wrap(
-            "skrynia",
+            "skrynia_v3_1",
             "eval",
             |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
              code: u64,

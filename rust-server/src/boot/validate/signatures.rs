@@ -1,5 +1,4 @@
-// Target ABI signatures: u64 shared-RAM pointers/lengths ("l") and byte-scalar
-// I/O. Removed old-ABI inventory is not registered (target-abi.md section 5).
+// ABI 3.1: u64 linear-memory pointers/lengths ("l"), bulk and byte I/O.
 pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
     Some(match name {
         "open_disk" | "mkdir" => ("lli", "i"),
@@ -8,6 +7,7 @@ pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
         "next_entry" => ("ill", "i"),
         "truncate" => ("il", "i"),
         "close" | "sync" => ("i", "i"),
+        "read" | "write" => ("ill", "l"),
         "read1" => ("i", "i"),
         "write1" => ("ii", "i"),
         "seek" => ("il", "l"),

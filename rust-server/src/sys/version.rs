@@ -32,6 +32,7 @@ pub fn info(
     Ok(serde_json::json!({
         "version": version,
         "commit": commit,
+        "abi": "skrynia_v3_1",
         "syscalls": crate::sys::signature::to_list(signatures),
     }))
 }

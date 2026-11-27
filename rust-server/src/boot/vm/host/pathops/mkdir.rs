@@ -3,10 +3,10 @@ type Vm = crate::boot::vm::state::Vm;
 pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
     linker
         .func_wrap(
-            "skrynia",
+            "skrynia_v3_1",
             "mkdir",
             |mut c: wasmtime::Caller<'_, Vm>, ptr: u64, len: u64, m: u32| -> i32 {
-                let p = match crate::boot::vm::host::ram::args::read(&mut c, ptr, len) {
+                let p = match crate::boot::vm::host::memory::read(&mut c, ptr, len) {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
@@ -20,7 +20,7 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
                 };
                 match c.data().fs.mkdir(root, &p, mode) {
                     Ok(()) => 0,
-                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
+                    Err(e) => crate::boot::vm::host::memory::map_fs(e),
                 }
             },
         )

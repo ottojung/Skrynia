@@ -8,16 +8,17 @@ in [skrynia-tools](https://github.com/ottojung/skrynia-tools).
 
 The kernel offers one opaque execution endpoint, `POST /`, and a metadata
 endpoint, `POST /version`. Each request gives the root program independent
-input and output descriptors. Byte transfers use `read1` and `write1`;
+input and output descriptors. Transfers use buffered `read`/`write` or byte `read1`/`write1`;
 the server never puts the HTTP body in shared RAM. The root entrypoint is
 `skrynia_main(input_fd: i32, output_fd: i32) -> i32`.
 
 The fixed machine ABI includes confined filesystem operations, dynamically
 resizable shared RAM with single-byte CAS, time, randomness, and generic
 evaluation of a module with zero or one explicitly supplied integer-signature
-function. All ABI buffer addresses and lengths refer to shared RAM and use
-64-bit integers. Private WASM linear memory is optional and is not the
-machine's communication buffer. Allocation, application policy, metering and
+function. Fixed ABI 3.1 imports use `skrynia_v3_1`. All buffer addresses and lengths
+refer to the caller's exported linear memory and use 64-bit integers.
+Shared RAM is accessed explicitly through descriptors; scalar-only programs
+need no memory. Allocation, application policy, metering and
 execution budgets belong to software running on the kernel.
 
 The root can also import named operator-provided functions in namespace
