@@ -44,6 +44,7 @@ fn ram_max_limit() {
     assert!(ram.truncate(64 * 1024 * 1024).is_ok());
     assert!(ram.truncate(libskrynia::ram::MAX_RAM_BYTES + 1).is_err());
 }
+mod abi31;
 mod case;
 mod exports;
 mod imports;
