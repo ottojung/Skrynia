@@ -1,6 +1,7 @@
 use super::Ram;
 mod bench;
 mod bulk;
+mod bulk_atomic;
 mod bulk_cas;
 mod bulk_resize;
 mod cas;
