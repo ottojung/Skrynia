@@ -25,14 +25,19 @@ fn same_key_compiles_once() {
             c.compile(b"same", || {
                 n.fetch_add(1, Ordering::SeqCst);
                 tx.send(()).unwrap();
-                go_rx.lock().unwrap().recv().unwrap();
+                go_rx
+                    .lock()
+                    .unwrap()
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap();
                 Ok(m)
             })
         }));
     }
-    rx.recv().unwrap();
+    rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(20));
     go_tx.send(()).unwrap();
+    drop(go_tx);
     for h in hs {
         assert!(h.join().unwrap().is_ok());
     }

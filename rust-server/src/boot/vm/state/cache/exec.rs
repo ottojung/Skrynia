@@ -1,4 +1,4 @@
-use super::{Cache, MAX_ENTRIES, flight::Flight, guard::Guard};
+use super::{Cache, MAX_ENTRIES, claim::Claim, guard::Guard};
 use std::sync::Arc;
 
 impl Cache {
@@ -10,16 +10,10 @@ impl Cache {
         if let Some(m) = self.ready.lock().unwrap().get(&key).cloned() {
             return Ok(m);
         }
-        let flight = {
-            let mut m = self.inflight.lock().unwrap();
-            if let Some(f) = m.get(&key) {
-                let f = f.clone();
-                drop(m);
-                return f.wait();
-            }
-            let f = Arc::new(Flight::new());
-            m.insert(key, f.clone());
-            f
+        let flight = match self.claim(key) {
+            Claim::Ready(m) => return Ok(m),
+            Claim::Wait(f) => return f.wait(),
+            Claim::Compile(f) => f,
         };
         let mut g = Guard {
             map: &self.inflight,
@@ -35,12 +29,12 @@ impl Cache {
             }
             rm.insert(key, m.clone());
         }
+        flight.finish(r.clone());
         let mut im = self.inflight.lock().unwrap();
         if matches!(im.get(&key), Some(f) if Arc::ptr_eq(f, &flight)) {
             im.remove(&key);
         }
         drop(im);
-        flight.finish(r.clone());
         g.done = true;
         r
     }

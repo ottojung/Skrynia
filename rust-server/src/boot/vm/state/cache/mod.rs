@@ -1,3 +1,4 @@
+mod claim;
 mod exec;
 mod flight;
 mod guard;
