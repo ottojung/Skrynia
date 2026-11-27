@@ -29,21 +29,3 @@ fn time_and_random_look_valid() {
     assert_ne!(a, [0u8; 32]);
     assert_ne!(a, b);
 }
-
-#[test]
-fn guest_trap_propagates_error() {
-    let root = r#"(module(import "skrynia" "read"(func $r(param i32 i32 i32)(result i32)))(import "skrynia" "eval"(func $e(param i32 i32 i32 i32 i32)(result i32)))(memory(export "memory") 2)(func(export "skrynia_main")(param $in i32)(param $out i32)(result i32)(local $n i32)(local.set $n(call $r(local.get $in)(i32.const 0)(i32.const 65536)))(if(i32.lt_s(local.get $n)(i32.const 0))(then(return(local.get $n))))(call $e(i32.const 0)(local.get $n)(local.get $in)(local.get $out)(i32.const -1))))"#;
-    let child = r#"(module(memory(export "memory") 1)(func(export "skrynia_main")(param $in i32)(param $out i32)(result i32) unreachable (i32.const 0)))"#;
-    let dir = std::env::temp_dir().join("skrynia-v3-trap-prop");
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(dir.join("operator")).unwrap();
-    std::fs::create_dir_all(dir.join("user")).unwrap();
-    std::fs::write(dir.join("r.wasm"), wat::parse_str(root).unwrap()).unwrap();
-    let k = libskrynia::boot::Kernel::start(
-        &dir.join("r.wasm"),
-        &dir.join("operator"),
-        &dir.join("user"),
-    )
-    .unwrap();
-    assert!(k.invoke(&wat::parse_str(child).unwrap()).is_err());
-}

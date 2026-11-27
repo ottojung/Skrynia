@@ -6,12 +6,20 @@ impl Fs {
         root: Option<RootKind>,
         fds: &mut crate::fs::table::Table<Item>,
         p: &[u8],
-        owner: u32,
     ) -> Result<crate::fs::Fd, &'static str> {
-        let rel = crate::fs::path::clean(p)?;
-        let kind = root.unwrap_or(self.pick_read_root(p));
-        let e = crate::fs::dir::open_dir(self.root(kind), &rel)?;
-        fds.insert(Item::Dir(e), owner)
+        let (kind, suffix) = crate::fs::root::select::split(p)?;
+        if let Some(want) = root
+            && want != kind
+        {
+            return Err("root");
+        }
+        let e = if suffix == b"." {
+            crate::fs::dir::open_root(self.root(kind))?
+        } else {
+            let rel = crate::fs::path::clean(suffix)?;
+            crate::fs::dir::open_dir(self.root(kind), &rel)?
+        };
+        fds.insert(Item::Dir(e))
     }
     pub fn next_entry(
         &self,

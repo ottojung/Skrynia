@@ -1,15 +1,20 @@
+// Target ABI signatures: u64 shared-RAM pointers/lengths ("l") and byte-scalar
+// I/O. Removed old-ABI inventory is not registered (target-abi.md section 5).
 pub fn expected(name: &str) -> Option<(&'static str, &'static str)> {
     Some(match name {
-        "open_disk" | "read" | "write" | "mkdir" | "next_entry" => ("iii", "i"),
-        "truncate" | "seek" => ("il", "i"),
+        "open_disk" | "mkdir" => ("lli", "i"),
+        "exists" | "is_dir" | "delete" | "open_directory" | "secure_random_bits" => ("ll", "i"),
+        "rename" => ("llll", "i"),
+        "next_entry" => ("ill", "i"),
+        "truncate" => ("il", "i"),
         "close" | "sync" => ("i", "i"),
-        "exists" | "delete" | "is_dir" | "open_directory" | "secure_random_bits" => ("ii", "i"),
-        "rename" | "fs_delegate_scope" => ("iiii", "i"),
-        "open_ram" | "try_mutation_lock" | "release_mutation_lock" => ("", "i"),
-        "cas_ram_u64" => ("illli", "i"),
+        "read1" => ("i", "i"),
+        "write1" => ("ii", "i"),
+        "seek" => ("il", "l"),
+        "cas1" => ("ilii", "i"),
+        "open_ram" => ("", "i"),
         "now" => ("", "l"),
-        "eval" | "eval_delegate" => ("iiiii", "i"),
-        "eval_buffered" => ("iiiiiii", "i"),
+        "eval" => ("lliii", "l"),
         _ => return None,
     })
 }

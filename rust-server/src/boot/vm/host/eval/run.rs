@@ -1,33 +1,47 @@
+use wasmtime::Caller;
+
+const ERR_INVAL: i64 = -3;
+
 pub fn eval(
-    c: &mut wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
-    cp: u32,
-    cl: u32,
-    in_fd: i32,
-    out_fd: i32,
-    cb_idx: i32,
-    child_eval: bool,
-) -> i32 {
-    if cl as usize > crate::boot::vm::state::MAX_MODULE_BYTES {
-        return crate::boot::vm::codes::ERR_LIMIT;
+    c: &mut Caller<'_, crate::boot::vm::state::Vm>,
+    code: u64,
+    code_size: u64,
+    function: i32,
+    arg0: i32,
+    arg1: i32,
+) -> i64 {
+    if c.data().depth >= 32 {
+        return -5;
     }
-    let mem = match crate::boot::vm::mem::get(c) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    let code = match crate::boot::vm::mem::read_buf(c, mem, cp, cl) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let cb = match super::cb::get_cb(c, cb_idx) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let module = match super::comp::compile(c, &code) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    if !super::check::module_ok(&module, child_eval) {
-        return crate::boot::vm::codes::ERR_INVALID;
+    if function < -1 || (function == -1 && (arg0 != 0 || arg1 != 0)) {
+        return ERR_INVAL;
     }
-    super::guest::run(c, &module, in_fd, out_fd, cb, child_eval)
+    let bytes = match super::snapshot::snapshot(c, code, code_size) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let selected = match super::func::select(c, function) {
+        Ok(v) => v,
+        Err(e) => return e as i64,
+    };
+    let module = match super::comp::compile(c, &bytes) {
+        Ok(m) => m,
+        Err(e) => return e as i64,
+    };
+    let binding = match super::binding::single(&module) {
+        Ok(v) => v,
+        Err(e) => return e as i64,
+    };
+    if let Err(e) = super::link::validate(binding.as_ref(), selected.as_ref()) {
+        return e as i64;
+    }
+    let exported_start = match super::start::validate(&module, &bytes) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    // Context handles are reserved in the current ABI, not injected into imports.
+    c.data_mut().depth += 1;
+    let result = super::entry::execute(c, &module, binding, selected, exported_start);
+    c.data_mut().depth -= 1;
+    result
 }

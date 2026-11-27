@@ -1,56 +1,46 @@
-# Optimizing syscall execution with libskrynia
+# In-process named FFI with libskrynia
 
-> **Implementation snapshot, not the next ABI.** The existing implementation
-> described below predates the approved [target kernel design](../intent-records/kernel-abi.md).
-> The intent records govern the migration; older incompatible ABI details
-> below are not requirements for the new design.
+The [typed FFI contract](typed-ffi.md) defines named functions and their
+ordered i32/i64 parameter/result types. An optimized kernel executable
+can supply equivalent Rust implementations rather than making HTTP calls.
 
-The [HTTP operational prescription](syscalls.md) defines what syscalls mean.
-A custom kernel may eliminate transport entirely if it preserves that
-prescription's observable semantics. The library does not define another
-category of syscalls, merge name sets, select preferred implementations or
-perform fallback calls.
-
-Depend on the workspace package `libskrynia`:
+Depend on the workspace package:
 
 ```toml
 [dependencies]
 libskrynia = { git = "https://github.com/ottojung/Skrynia" }
+wasmtime = "27"
 ```
 
-If a reference HTTP server advertises exactly `["double"]` and its POST
-endpoint returns twice its four-byte argument modulo 2^32, an equivalent
-custom executable is:
+For a provider exposing `double(i32) -> i32`, the matching native example is:
 
 ```rust
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     libskrynia::run_optimized(|| {
         Ok(libskrynia::Syscalls::optimized([
-            libskrynia::EquivalentCall::new("double", |value| {
-                Ok(value.wrapping_mul(2))
+            libskrynia::EquivalentCall::new("double", "i", "i", |args| {
+                Ok(vec![wasmtime::Val::I32(
+                    args[0].unwrap_i32().wrapping_mul(2),
+                )])
             })?,
         ])?)
     })
 }
 ```
 
-This example is available in `rust-server/examples/custom_kernel.rs`.
-The optimized executable neither reads SKRYNIA_SYSCALL_URL nor performs
-HTTP discovery or execution. Its supplied names represent the complete
-discovery result of the corresponding reference server. The optimizer is
-responsible for matching all names, results, side effects, ordering,
-concurrency and failure semantics of that server, not merely successful
-return values. An error returned by an equivalent call traps execution.
-The optimization cannot be certified automatically for arbitrary endpoints.
+This is the executable example in `rust-server/examples/custom_kernel.rs`.
+Signature strings use `i` for i32 and `l` for i64. Empty strings mean no
+parameters or results. The declared signatures and actual result values are
+checked before the values reach WASM.
 
-The same WASM import `(import "syscall" "double" (func $double (param i32)
-(result i32)))` works unchanged in either executable. Imports are resolved
-once at startup and the resulting Wasmtime InstancePre is reused for fresh
-logical instances. There is no per-invocation name lookup. This is a
-transport-elision optimization, not a guarantee of machine-code inlining.
-The library does not implicitly pass RAM, guest pointers or new authority
-to equivalent calls. Captured state must reproduce the corresponding HTTP
-server's state and synchronization. In-process code is trusted and is not
-interrupted by WASM fuel; equivalent implementations must enforce the same
-bounds as the reference prescription. Provider initialization occurs only
-in the server, not in the isolated compiler worker.
+`EquivalentCall::with_context` additionally gives trusted in-process Rust
+code a mutable reference to the calling Wasmtime context, including the
+machine's shared RAM and descriptor table. A plain numeric address does not
+give an HTTP provider access to machine state; that remote access protocol
+is explicitly deferred.
+
+The optimized executable supplies the complete set of named provider
+functions; it does not merge remote and native name sets or retry a failed
+operation using another provider. It is responsible for equivalent results,
+effects, concurrency and failure semantics. In-process code is trusted; the
+kernel does not certify equivalence or meter userland execution.

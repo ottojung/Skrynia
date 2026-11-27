@@ -15,10 +15,6 @@ pub fn map(e: &'static str) -> i32 {
         _ => ERR_FAULT,
     }
 }
-pub fn trap(e: wasmtime::Error) -> i32 {
-    let s = e.to_string().to_ascii_lowercase();
-    if s.contains("all fuel consumed") || s.contains("out of fuel") {
-        return super::codes::ERR_LIMIT;
-    }
+pub fn trap(_e: wasmtime::Error) -> i32 {
     super::codes::ERR_FAULT
 }

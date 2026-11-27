@@ -1,11 +1,22 @@
 pub struct Output {
     writer: Box<dyn std::io::Write + Send>,
+    pos: u64,
 }
 impl Output {
     pub fn new(writer: Box<dyn std::io::Write + Send>) -> Self {
-        Self { writer }
+        Self { writer, pos: 0 }
     }
     pub fn write(&mut self, src: &[u8]) -> Result<usize, &'static str> {
-        self.writer.write(src).map_err(|_| "io")
+        let n = self.writer.write(src).map_err(|_| "io")?;
+        self.pos = self.pos.checked_add(n as u64).ok_or("overflow")?;
+        Ok(n)
+    }
+    pub fn write1(&mut self, byte: u8) -> Result<(), &'static str> {
+        self.writer.write_all(&[byte]).map_err(|_| "io")?;
+        self.pos = self.pos.checked_add(1).ok_or("overflow")?;
+        Ok(())
+    }
+    pub fn position(&self) -> u64 {
+        self.pos
     }
 }

@@ -1,20 +1,26 @@
+// Bulk helpers are loops over byte accesses. They never take a global data mutex.
 impl super::Ram {
-    pub fn read(&self, off: usize, dst: &mut [u8]) -> Result<usize, &'static str> {
-        let b = self.bytes.lock().unwrap();
-        if off > b.len() {
+    pub fn read(&self, off: u64, dst: &mut [u8]) -> Result<usize, &'static str> {
+        if off > self.len() {
             return Err("oob");
         }
-        let n = dst.len().min(b.len() - off);
-        dst[..n].copy_from_slice(&b[off..off + n]);
-        Ok(n)
+        for (i, b) in dst.iter_mut().enumerate() {
+            match self.read_byte(off + i as u64) {
+                Ok(v) => *b = v,
+                Err(_) => return Ok(i),
+            }
+        }
+        Ok(dst.len())
     }
-    pub fn write(&self, off: usize, src: &[u8]) -> Result<usize, &'static str> {
-        let mut b = self.bytes.lock().unwrap();
-        if off > b.len() {
+    pub fn write(&self, off: u64, src: &[u8]) -> Result<usize, &'static str> {
+        if off > self.len() {
             return Err("oob");
         }
-        let n = src.len().min(b.len() - off);
-        b[off..off + n].copy_from_slice(&src[..n]);
-        Ok(n)
+        for (i, b) in src.iter().enumerate() {
+            if self.write_byte(off + i as u64, *b).is_err() {
+                return Ok(i);
+            }
+        }
+        Ok(src.len())
     }
 }

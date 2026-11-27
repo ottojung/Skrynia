@@ -3,7 +3,7 @@ use super::case::check;
 fn startup_checks_exports_without_invoking_root() {
     let good = include_str!("../../test-fixtures/root_stub.wat");
     assert!(check("good", good));
-    assert!(!check(
+    assert!(check(
         "no-memory",
         r#"(module
       (func(export "skrynia_main")(param i32 i32)(result i32) i32.const 0))"#

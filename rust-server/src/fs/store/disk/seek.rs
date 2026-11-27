@@ -1,20 +1,32 @@
 use super::{Fs, Item};
 
 impl Fs {
-    pub fn seek(
+    pub fn seek_rel(
         &self,
         fds: &mut crate::fs::table::Table<Item>,
         fd: crate::fs::Fd,
-        off: u64,
-    ) -> Result<(), &'static str> {
+        shift: i64,
+    ) -> Result<u64, &'static str> {
         match fds.get_mut(fd) {
-            Some(Item::Input(_) | Item::Output(_)) => Err("perm"),
-            Some(Item::Ram(e)) => {
-                e.pos = off;
-                Ok(())
+            Some(Item::Input(e)) => {
+                if shift < 0 {
+                    return Err("unsupported");
+                }
+                e.skip(shift as u64)
             }
-            Some(Item::File(e)) => crate::fs::disk::seek(e, off),
-            _ => Err("badfd"),
+            Some(Item::Output(e)) if shift == 0 => Ok(e.position()),
+            Some(Item::Output(_)) => Err("unsupported"),
+            Some(Item::Ram(e)) => {
+                let next = i128::from(e.pos) + i128::from(shift);
+                if next < 0 || next as u64 > self.ram.len() {
+                    return Err("overflow");
+                }
+                e.pos = next as u64;
+                Ok(e.pos)
+            }
+            Some(Item::File(e)) => crate::fs::disk::byte::seek_rel(e, shift),
+            Some(Item::Dir(_)) => Err("unsupported"),
+            None => Err("badfd"),
         }
     }
     pub fn truncate_fd(
@@ -25,9 +37,7 @@ impl Fs {
     ) -> Result<(), &'static str> {
         match fds.get(fd) {
             Some(Item::Input(_) | Item::Output(_)) => Err("perm"),
-            Some(Item::Ram(_)) => self
-                .ram
-                .truncate(usize::try_from(size).map_err(|_| "nospace")?),
+            Some(Item::Ram(_)) => self.ram.truncate(size),
             Some(Item::File(e)) => crate::fs::disk::truncate(e, size),
             _ => Err("badfd"),
         }

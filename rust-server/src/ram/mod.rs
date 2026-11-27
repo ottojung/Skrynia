@@ -1,34 +1,37 @@
-use std::sync::{Mutex, atomic::AtomicBool};
-mod cas;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+mod bytes;
+#[cfg(test)]
+mod concurrent;
 mod io;
-mod mutation;
+mod pages;
+#[cfg(test)]
+mod regrow;
+mod resize;
+#[cfg(test)]
+mod retained;
+#[cfg(test)]
+mod tests;
 
-pub const MAX_RAM_BYTES: usize = 64 * 1024 * 1024;
+// Largest logical size representable by the signed seek result.
+// Physical storage is allocated lazily, not at truncate time.
+pub const MAX_RAM_BYTES: u64 = i64::MAX as u64;
 
 #[derive(Debug, Default)]
 pub struct Ram {
-    bytes: Mutex<Vec<u8>>,
-    mutation_held: AtomicBool,
+    size: AtomicU64,
+    pages: pages::Pages,
+    resize: Mutex<()>,
 }
 
 impl Ram {
     pub fn new() -> Self {
         Self::default()
     }
-    pub fn len(&self) -> usize {
-        self.bytes.lock().unwrap().len()
+    pub fn len(&self) -> u64 {
+        self.size.load(Ordering::SeqCst)
     }
     pub fn is_empty(&self) -> bool {
         self.len() == 0
-    }
-    pub fn truncate(&self, size: usize) -> Result<(), &'static str> {
-        if size > MAX_RAM_BYTES {
-            return Err("nospace");
-        }
-        let mut b = self.bytes.lock().unwrap();
-        let extra = size.saturating_sub(b.len());
-        b.try_reserve(extra).map_err(|_| "nospace")?;
-        b.resize(size, 0);
-        Ok(())
     }
 }

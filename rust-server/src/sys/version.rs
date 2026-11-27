@@ -25,7 +25,13 @@ pub fn read() -> io::Result<(String, String)> {
     }
 }
 
-pub fn info(syscalls: Vec<String>) -> Result<serde_json::Value, String> {
+pub fn info(
+    signatures: &std::collections::BTreeMap<String, crate::Signature>,
+) -> Result<serde_json::Value, String> {
     let (version, commit) = read().map_err(|e| e.to_string())?;
-    Ok(serde_json::json!({"version": version, "commit": commit, "syscalls": syscalls}))
+    Ok(serde_json::json!({
+        "version": version,
+        "commit": commit,
+        "syscalls": crate::sys::signature::to_list(signatures),
+    }))
 }

@@ -1,13 +1,18 @@
+const IMPORTS: &str = r#"(import "skrynia" "read1" (func $sk_read1_1 (param i32) (result i32)))
+            (import "skrynia" "write1" (func $sk_write1_0 (param i32 i32) (result i32))) "#;
+
+const HELPERS: &str = r#"(func $input_read (param $fd i32)(param $dst i32)(param $len i32)(result i32)(local $i i32)(local $b i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(local.set $b(call $sk_read1_1(local.get $fd)))(if(i32.lt_s(local.get $b)(i32.const 0))(then(if(i32.ne(local.get $b)(i32.const -1))(then(return(local.get $b))))(br $done)))(i32.store8(i32.add(local.get $dst)(local.get $i))(local.get $b))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $i))
+            (func $output_write (param $fd i32)(param $src i32)(param $len i32)(result i32)(local $i i32)(local $r i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(local.set $r(call $sk_write1_0(local.get $fd)(i32.load8_u(i32.add(local.get $src)(local.get $i)))))(if(i32.lt_s(local.get $r)(i32.const 0))(then(return(local.get $r))))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $i)) "#;
+
 pub fn adapt(root: &str) -> String {
-    let transformed = root
-        .replacen(
-            "(module",
-            r#"(module
-            (import "skrynia" "read" (func $input_read (param i32 i32 i32) (result i32)))
-            (import "skrynia" "write" (func $output_write (param i32 i32 i32) (result i32)))"#,
-            1,
-        )
-        .replace(r#"(func(export "skrynia_main")"#, "(func $old_entry");
+    // WAT requires every import before any function or memory definition.
+    let imported = root.replacen("(module", &format!("(module{IMPORTS}"), 1);
+    let with_helpers = if imported.contains("(memory") {
+        imported.replacen("(memory", &format!("{HELPERS}(memory"), 1)
+    } else {
+        imported.replacen("(func", &format!("{HELPERS}(func"), 1)
+    };
+    let transformed = with_helpers.replace(r#"(func(export "skrynia_main")"#, "(func $old_entry");
     let end = transformed.rfind(')').unwrap();
     let wrapper = r#"(func (export "skrynia_main") (param $input i32)
         (param $output i32) (result i32)

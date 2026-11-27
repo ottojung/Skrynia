@@ -3,6 +3,7 @@ use std::path::Path;
 mod open;
 pub mod parent;
 pub mod rel;
+pub mod select;
 pub mod walk;
 
 pub struct Root {

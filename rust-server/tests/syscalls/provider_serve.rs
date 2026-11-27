@@ -15,22 +15,29 @@ pub(super) fn serve(socket: &mut std::net::TcpStream, discovery: &Discovery) {
         }
         headers.push(line.to_ascii_lowercase());
     }
-    let (status, body, kind) = if path == "/syscalls_list" && method == "GET" {
-        assert!(
-            headers
-                .iter()
-                .all(|h| !h.starts_with("content-length:") || h.contains(": 0"))
-        );
+    let len = headers
+        .iter()
+        .find_map(|h| h.strip_prefix("content-length:"))
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    let mut request = vec![0u8; len];
+    reader.read_exact(&mut request).unwrap();
+    let (status, body, kind): (u16, &[u8], &str) = if path == "/syscalls_list" && method == "GET" {
         (
             discovery.status,
             discovery.body.as_bytes(),
             "application/json",
         )
+    } else if path == "/version" && method == "POST" {
+        match discovery.version.as_deref() {
+            Some(value) => (200, value.as_bytes(), "application/json"),
+            None => (404, &[], "text/plain"),
+        }
     } else {
         assert_eq!(method, "POST");
-        let mut bytes = [0u8; 4];
-        reader.read_exact(&mut bytes).unwrap();
-        assert_eq!(bytes, u32::MAX.to_le_bytes());
+        if let Some(expected) = &discovery.request {
+            assert_eq!(&request, expected);
+        }
         (200, discovery.reply.as_slice(), "application/octet-stream")
     };
     drop(reader);

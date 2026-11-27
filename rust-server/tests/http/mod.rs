@@ -1,6 +1,5 @@
 mod admission;
 mod basic;
-mod callback;
 mod early;
 mod failure;
 mod output_large;

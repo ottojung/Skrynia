@@ -1,4 +1,3 @@
-use libskrynia::fs;
 use std::{fs as stdfs, os::unix::fs::PermissionsExt};
 #[test]
 fn newly_created_disk_files_exclude_group_and_other() {
@@ -9,9 +8,8 @@ fn newly_created_disk_files_exclude_group_and_other() {
         .open_disk(
             None,
             &mut fds,
-            b"private",
+            b"user/private",
             libskrynia::fs::disk::DiskMode::create_new_rw(),
-            0,
         )
         .unwrap();
     k.fs().close(&mut fds, fd).unwrap();

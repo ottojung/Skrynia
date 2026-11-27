@@ -1,10 +1,13 @@
 use super::provider_serve::serve;
 use std::net::TcpListener;
 
+#[derive(Default)]
 pub(super) struct Discovery {
     pub status: u16,
     pub body: String,
+    pub version: Option<String>,
     pub reply: Vec<u8>,
+    pub request: Option<Vec<u8>>,
 }
 
 pub(super) struct Provider {
@@ -36,4 +39,17 @@ pub(super) fn start(discovery: Discovery, connections: usize) -> Provider {
         url,
         thread: Some(thread),
     }
+}
+
+pub(super) const DOUBLE: &str =
+    r#"{"functions":[{"name":"double","params":["i32"],"results":["i32"]}]}"#;
+
+pub(super) fn wire(args: &[(u8, u64)]) -> Vec<u8> {
+    let mut bytes = vec![1, args.len() as u8];
+    for (tag, bits) in args {
+        let width = if *tag == 0x40 { 8 } else { 4 };
+        bytes.push(*tag);
+        bytes.extend_from_slice(&bits.to_le_bytes()[..width]);
+    }
+    bytes
 }

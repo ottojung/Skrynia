@@ -12,24 +12,8 @@ impl super::Vm {
             fs,
             ram,
             fds: crate::fs::table::Table::new(),
-            frames: Vec::new(),
             cache,
             depth: 0,
-            guest: None,
-            mutation_held: false,
-            limits: wasmtime::StoreLimitsBuilder::new()
-                .memory_size(64 * 1024 * 1024)
-                .table_elements(10_000)
-                .instances(16)
-                .tables(16)
-                .memories(16)
-                .build(),
-            providers: Vec::new(),
-            cur: None,
-            fs_auth: crate::boot::vm::cap::FsAuth::Empty,
-            fs_delegate: crate::boot::vm::cap::FsAuth::Empty,
-            fd_scope: 0,
-            fd_next_scope: 1,
         }
     }
 }

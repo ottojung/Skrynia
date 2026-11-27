@@ -1,26 +1,16 @@
-pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<(), String> {
+type Vm = crate::boot::vm::state::Vm;
+
+pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
     linker
         .func_wrap(
             "skrynia",
             "mkdir",
-            |mut c: wasmtime::Caller<'_, crate::boot::vm::state::Vm>,
-             ptr: u32,
-             len: u32,
-             m: u32|
-             -> i32 {
-                let mem = match crate::boot::vm::mem::get(&mut c) {
+            |mut c: wasmtime::Caller<'_, Vm>, ptr: u64, len: u64, m: u32| -> i32 {
+                let p = match crate::boot::vm::host::ram::args::read(&mut c, ptr, len) {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                let p = match crate::boot::vm::mem::read_buf(&mut c, mem, ptr, len) {
-                    Ok(x) => x,
-                    Err(e) => return e,
-                };
-                let root = match super::super::fs_cap::resolve(
-                    &c,
-                    crate::boot::vm::cap::FsOp::Mkdir,
-                    &p,
-                ) {
+                let root = match super::super::fs_root::resolve(&p) {
                     Ok(r) => r,
                     Err(e) => return e,
                 };
@@ -30,7 +20,7 @@ pub fn add(linker: &mut wasmtime::Linker<crate::boot::vm::state::Vm>) -> Result<
                 };
                 match c.data().fs.mkdir(root, &p, mode) {
                     Ok(()) => 0,
-                    Err(e) => crate::boot::vm::err::map(e),
+                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
                 }
             },
         )

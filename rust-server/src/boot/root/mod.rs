@@ -7,7 +7,7 @@ pub fn bytes(path: &Path) -> Result<Vec<u8>, String> {
     options.read(true);
     #[cfg(unix)]
     options.custom_flags(libc::O_NONBLOCK);
-    let mut file = options.open(path).map_err(|e| format!("open root: {e}"))?;
+    let file = options.open(path).map_err(|e| format!("open root: {e}"))?;
     let meta = file.metadata().map_err(|e| format!("stat root: {e}"))?;
     if !meta.is_file() {
         return Err("root must be a regular file".into());

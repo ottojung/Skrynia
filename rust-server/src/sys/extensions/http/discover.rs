@@ -1,16 +1,24 @@
+use std::collections::BTreeMap;
 use std::io::Read;
 
-const MAX_LIST_BYTES: u64 = 8 * 1024;
+/// Practical ceiling for discovery metadata; wide signatures need more than
+/// the old fixed 8 KiB. Frames themselves use a signature-derived bound.
+const MAX_BYTES: u64 = 1024 * 1024;
 
-pub(super) fn names(
+pub(super) fn signatures(
     client: &reqwest::blocking::Client,
     base: &reqwest::Url,
-) -> Result<std::collections::BTreeSet<String>, String> {
+) -> Result<BTreeMap<String, crate::Signature>, String> {
     let mut url = base.clone();
     url.path_segments_mut()
         .map_err(|_| "invalid base URL")?
         .push("syscalls_list");
-    let response = client
+    let value = get(client, url)?;
+    crate::sys::signature::from_discovery(&value)
+}
+
+fn get(client: &reqwest::blocking::Client, url: reqwest::Url) -> Result<serde_json::Value, String> {
+    let mut response = client
         .get(url)
         .header("Accept", "application/json")
         .send()
@@ -18,21 +26,17 @@ pub(super) fn names(
     if response.status() != reqwest::StatusCode::OK {
         return Err(format!("syscall discovery status: {}", response.status()));
     }
+    read(&mut response)
+}
+
+pub(super) fn read(response: &mut impl Read) -> Result<serde_json::Value, String> {
     let mut bytes = Vec::new();
     response
-        .take(MAX_LIST_BYTES + 1)
+        .take(MAX_BYTES + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
-    if bytes.len() as u64 > MAX_LIST_BYTES {
-        return Err("syscall discovery response too large".into());
+    if bytes.len() as u64 > MAX_BYTES {
+        return Err("discovery response too large".into());
     }
-    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-    let list = value.as_array().ok_or("missing syscall list")?;
-    let mut names = std::collections::BTreeSet::new();
-    for item in list {
-        let name = item.as_str().ok_or("invalid syscall name type")?;
-        super::super::names::check(name)?;
-        names.insert(name.to_string());
-    }
-    Ok(names)
+    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
 }
