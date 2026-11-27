@@ -1,5 +1,5 @@
 use super::call::call;
-use super::rig::{put, rig};
+use super::rig::rig;
 
 const NOOP: &str = "(func $cb (global.set $g(i64.const 1)))";
 
@@ -15,19 +15,18 @@ fn no_function_requires_zero_context_args() {
 }
 
 #[test]
-fn code_outside_shared_ram_is_rejected() {
+fn code_outside_linear_memory_is_rejected() {
     let root = r#"(module
-(import "skrynia" "eval" (func $e(param i64 i64 i32 i32 i32)(result i64)))
-(import "skrynia" "write1" (func $sk_write1_0 (param i32 i32) (result i32)))(func $w (param $fd i32)(param $src i32)(param $len i32)(result i32)(local $i i32)(local $r i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(local.set $r(call $sk_write1_0(local.get $fd)(i32.load8_u(i32.add(local.get $src)(local.get $i)))))(if(i32.lt_s(local.get $r)(i32.const 0))(then(return(local.get $r))))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $i))
+(import "skrynia_v3_1" "eval" (func $e(param i64 i64 i32 i32 i32)(result i64)))
+(import "skrynia_v3_1" "write1" (func $sk_write1_0 (param i32 i32) (result i32)))(func $w (param $fd i32)(param $src i32)(param $len i32)(result i32)(local $i i32)(local $r i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(local.set $r(call $sk_write1_0(local.get $fd)(i32.load8_u(i32.add(local.get $src)(local.get $i)))))(if(i32.lt_s(local.get $r)(i32.const 0))(then(return(local.get $r))))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $i))
 (memory(export "memory") 1)
 (func(export "skrynia_main")(param $in i32)(param $out i32)(result i32)
 (i64.store(i32.const 0)(call $e(i64.const 1099511627776)(i64.const 4)(i32.const -1)(i32.const 0)(i32.const 0)))
 (drop(call $w(local.get $out)(i32.const 0)(i32.const 8)))
 (i32.const 0)))"#;
     let r = rig("bounds", root);
-    put(&r, 0, &[0u8; 8]);
     let out = r.kernel.invoke(&[]).unwrap();
-    assert_eq!(i64::from_le_bytes(out.try_into().unwrap()), -6);
+    assert_eq!(i64::from_le_bytes(out.try_into().unwrap()), -7);
 }
 
 #[test]

@@ -11,7 +11,7 @@ use tower::ServiceExt;
 async fn incomplete_input_times_out() {
     let wasm = wat::parse_str(
         r#"(module
-          (import "skrynia" "read1" (func $read (param i32) (result i32)))
+          (import "skrynia_v3_1" "read1" (func $read (param i32) (result i32)))
           (memory (export "memory") 1)
           (func (export "skrynia_main") (param $in i32) (param i32) (result i32)
             (local $n i32)

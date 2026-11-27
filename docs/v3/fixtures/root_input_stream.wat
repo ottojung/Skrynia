@@ -1,6 +1,6 @@
 (module
-  (import "skrynia" "read1" (func $read (param i32) (result i32)))
-  (import "skrynia" "write1" (func $write (param i32 i32) (result i32)))
+  (import "skrynia_v3_1" "read1" (func $read (param i32) (result i32)))
+  (import "skrynia_v3_1" "write1" (func $write (param i32 i32) (result i32)))
   (func (export "skrynia_main")
     (param $input_fd i32) (param $output_fd i32) (result i32)
     (local $byte i32) (local $status i32)
