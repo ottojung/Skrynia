@@ -9,7 +9,7 @@ fn read_write_and_bounds() {
     let mut buf = [0u8; 4];
     assert_eq!(ram.read(0, &mut buf).unwrap(), 4);
     assert_eq!(buf, [1, 2, 3, 4]);
-    assert!(ram.read(9, &mut buf).is_err());
+    assert_eq!(ram.read(9, &mut buf), Ok(0));
     assert!(ram.write(9, &[1]).is_err());
 }
 
