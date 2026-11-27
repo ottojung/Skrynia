@@ -24,8 +24,8 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
     let t = term::new();
     let verdict: gate::Verdict = Arc::new(AtomicU8::new(0));
     let (tx, rx) = mpsc::channel(2);
-    let (out_tx, out_rx) = mpsc::channel(3);
-    // Preserve two data slots and a reserved terminal-error slot.
+    let (out_tx, out_rx) = mpsc::channel(output::DATA_SLOTS + 1);
+    // Bound data bytes and reserve a separate terminal-error slot.
     let terminal = out_tx.clone().try_reserve_owned().expect("fresh queue");
     let deadline = tokio::time::Instant::now() + super::router::response_total();
     let body = if chunked {
