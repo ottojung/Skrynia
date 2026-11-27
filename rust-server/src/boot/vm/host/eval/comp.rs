@@ -5,12 +5,9 @@ pub fn compile(
     if code.len() > crate::boot::vm::state::MAX_MODULE_BYTES {
         return Err(-6);
     }
-    if let Some(m) = c.data().cache.get(code) {
-        return Ok(m);
-    }
     let engine = c.data().engine.clone();
-    let m = crate::boot::vm::compile::bounded(&engine, code)
-        .map_err(|e| if e == "invalid" { -3 } else { -5 })?;
-    c.data().cache.put(code, m.clone());
-    Ok(m)
+    let cache = c.data().cache.clone();
+    cache
+        .compile(code, || crate::boot::vm::compile::bounded(&engine, code))
+        .map_err(|e| if e == "invalid" { -3 } else { -5 })
 }
