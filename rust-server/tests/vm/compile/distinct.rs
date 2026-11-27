@@ -21,11 +21,13 @@ fn distinct_keys_compile_independently() {
         c.compile(b"a", || {
             n.fetch_add(1, Ordering::SeqCst);
             tx.send(()).unwrap();
-            go_rx.recv().unwrap();
+            go_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
             Ok(m)
         })
     });
-    rx.recv().unwrap();
+    rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
     let m2 = module.clone();
     let n2 = cb.clone();
     let rb = cache.compile(b"b", || {
@@ -33,6 +35,7 @@ fn distinct_keys_compile_independently() {
         Ok(m2)
     });
     go_tx.send(()).unwrap();
+    drop(go_tx);
     assert!(ha.join().unwrap().is_ok());
     assert!(rb.is_ok());
     assert_eq!(ca.load(Ordering::SeqCst), 1);
