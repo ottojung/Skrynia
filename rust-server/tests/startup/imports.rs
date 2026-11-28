@@ -32,4 +32,13 @@ fn startup_rejects_forbidden_or_mistyped_imports() {
         ),
         "old namespace must be rejected"
     );
+    assert!(
+        !check(
+            "shared-memory",
+            r#"(module
+      (memory (export "memory") 1 1 shared)
+      (func(export "skrynia_main")(param i32 i32)(result i32) i32.const 0))"#
+        ),
+        "shared linear memory must be rejected"
+    );
 }
