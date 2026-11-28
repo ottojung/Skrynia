@@ -14,13 +14,6 @@ pub(super) fn open_root(path: &std::path::Path) -> Result<Root, String> {
         .open(path)
         .map_err(|e| format!("open data dir: {e}"))?;
     let fd = OwnedFd::from(file);
-    // Change permissions on the opened directory, never on a replaceable path.
-    if unsafe { libc::fchmod(fd.as_raw_fd(), 0o700) } != 0 {
-        return Err(format!(
-            "data dir mode: {}",
-            std::io::Error::last_os_error()
-        ));
-    }
     let mut st = MaybeUninit::<libc::stat>::uninit();
     if unsafe { libc::fstat(fd.as_raw_fd(), st.as_mut_ptr()) } != 0 {
         return Err(format!(

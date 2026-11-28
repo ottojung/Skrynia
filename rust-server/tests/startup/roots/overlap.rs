@@ -1,5 +1,6 @@
 use libskrynia::boot;
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 
 fn wasm(dir: &std::path::Path) -> std::path::PathBuf {
     let p = dir.join("root.wasm");
@@ -27,9 +28,19 @@ fn rejects_same_nested_and_reversed_roots() {
     let user_in_op = op.join("user");
     fs::create_dir_all(&op_in_user).unwrap();
     fs::create_dir_all(&user_in_op).unwrap();
+    let dirs = [&user, &op_in_user, &op, &user_in_op];
+    for dir in dirs {
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let root = wasm(&d);
     assert!(boot::Kernel::start(&root, &user, &user).is_err());
     assert!(boot::Kernel::start(&root, &op_in_user, &user).is_err());
     assert!(boot::Kernel::start(&root, &op, &user_in_op).is_err());
+    for dir in dirs {
+        assert_eq!(
+            fs::metadata(dir).unwrap().permissions().mode() & 0o777,
+            0o755
+        );
+    }
     let _ = fs::remove_dir_all(d);
 }
