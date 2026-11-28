@@ -7,7 +7,13 @@ impl Output {
         Self { writer, pos: 0 }
     }
     pub fn write(&mut self, src: &[u8]) -> Result<usize, &'static str> {
+        if src.is_empty() {
+            return Ok(0);
+        }
         let n = self.writer.write(src).map_err(|_| "io")?;
+        if n > src.len() {
+            return Err("io");
+        }
         self.pos = self.pos.checked_add(n as u64).ok_or("overflow")?;
         Ok(n)
     }
@@ -20,3 +26,6 @@ impl Output {
         self.pos
     }
 }
+
+#[cfg(test)]
+mod tests;
