@@ -1,5 +1,6 @@
 mod collect;
 mod preflight;
+mod reject;
 mod stream;
 use super::{flow, gate, input, output, pump, respond, router::App, term};
 use axum::{
@@ -7,14 +8,13 @@ use axum::{
     http::{Method, StatusCode},
     response::IntoResponse,
 };
-use std::sync::{Arc, atomic::AtomicU8};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub(super) struct Common {
     kernel: Arc<crate::boot::Kernel>,
     lim: pump::Limits,
     t: term::Term,
-    verdict: gate::Verdict,
     out_tx: mpsc::Sender<output::Chunk>,
     out_rx: mpsc::Receiver<output::Chunk>,
     deadline: tokio::time::Instant,
@@ -38,7 +38,6 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
         kernel: app.kernel,
         lim,
         t: term::new(),
-        verdict: Arc::new(AtomicU8::new(0)),
         terminal: out_tx.clone().try_reserve_owned().expect("fresh queue"),
         out_tx,
         out_rx,

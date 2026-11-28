@@ -1,4 +1,4 @@
-use super::{Common, collect, flow, gate, input, output, respond};
+use super::{Common, collect, flow, input, output, respond};
 use axum::{
     extract::Request,
     response::{IntoResponse, Response},
@@ -14,21 +14,15 @@ pub(super) async fn run(
         kernel,
         lim,
         t,
-        verdict,
         out_tx,
         out_rx,
         deadline,
         terminal,
     } = common;
-    let body = gate::body(
-        request.into_body(),
-        lim.max,
-        lim.inactivity,
-        verdict.clone(),
-    );
-    let bytes = match collect::buffered(body, lim.max, deadline, &t, &verdict).await {
+    let body = request.into_body();
+    let bytes = match collect::buffered(body, lim.max, lim.inactivity, lim.total, &t).await {
         Ok(b) => b,
-        Err(code) => return code.into_response(),
+        Err(r) => return r.recorded(&t).into_response(),
     };
     let (tx, rx) = mpsc::channel(1);
     if !bytes.is_empty() {
@@ -45,5 +39,12 @@ pub(super) async fn run(
         )
     });
     tokio::spawn(flow::supervise_done(worker, terminal));
-    respond::response(out_rx, t, verdict).await
+    respond::response(out_rx, t).await
 }
+
+#[cfg(test)]
+#[path = "preflight_fixture.rs"]
+mod preflight_fixture;
+#[cfg(test)]
+#[path = "preflight_tests.rs"]
+mod tests;

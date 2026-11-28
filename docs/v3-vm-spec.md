@@ -46,7 +46,10 @@ The reference transport admits 16 concurrent execution requests and rejects
 new requests with 503 while no permit is available. It bounds request bytes
 (`SKRYNIA_MAX_REQUEST_BYTES`, default 16 MiB) and transport inactivity/total
 times (`SKRYNIA_INPUT_INACTIVITY_SECS`, `SKRYNIA_REQUEST_TOTAL_SECS`,
-`SKRYNIA_RESPONSE_TOTAL_SECS`). These are transport protections, not
+`SKRYNIA_RESPONSE_TOTAL_SECS`). `SKRYNIA_REQUEST_TOTAL_SECS` is the absolute
+deadline for request-body intake, including the chunked preflight;
+`SKRYNIA_RESPONSE_TOTAL_SECS` is the absolute deadline for output, measured
+from request arrival. These are transport protections, not
 instruction metering or a guarantee that unrestricted native WASM terminates.
 An oversized request is rejected with 413; a transport error is not EOF.
 

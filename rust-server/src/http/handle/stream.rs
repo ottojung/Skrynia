@@ -11,14 +11,13 @@ pub(super) async fn run(
         kernel,
         lim,
         t,
-        verdict,
         out_tx,
         out_rx,
         deadline,
         terminal,
     } = common;
     let (tx, rx) = mpsc::channel(2);
-    let pump = tokio::spawn(pump::run(request.into_body(), tx, t.clone(), lim, false));
+    let pump = tokio::spawn(pump::run(request.into_body(), tx, t.clone(), lim));
     let worker_term = t.clone();
     let worker = tokio::task::spawn_blocking(move || {
         let _permit = permit;
@@ -29,5 +28,5 @@ pub(super) async fn run(
         )
     });
     tokio::spawn(flow::supervise(pump, worker, terminal));
-    respond::response(out_rx, t, verdict).await
+    respond::response(out_rx, t).await
 }
