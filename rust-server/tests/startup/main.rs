@@ -16,7 +16,7 @@ fn config_requires_env() {
 
 #[test]
 fn boot_rejects_invalid_wasm() {
-    let dir = std::env::temp_dir().join("skrynia-v3-test-bad");
+    let dir = std::env::temp_dir().join(format!("skrynia-v3-test-bad-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("operator")).unwrap();
     fs::create_dir_all(dir.join("user")).unwrap();
@@ -28,7 +28,7 @@ fn boot_rejects_invalid_wasm() {
 
 #[test]
 fn boot_rejects_empty_root_abi() {
-    let dir = std::env::temp_dir().join("skrynia-v3-test-ok");
+    let dir = std::env::temp_dir().join(format!("skrynia-v3-test-ok-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("operator")).unwrap();
     fs::create_dir_all(dir.join("user")).unwrap();
