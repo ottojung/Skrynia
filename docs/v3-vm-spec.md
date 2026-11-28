@@ -24,7 +24,12 @@ application operations.
 Each request creates a fresh root instance and an independent descriptor
 table. The kernel supplies a read-only input stream and write-only output
 stream. Input is pulled incrementally through bounded transport buffers; it
-is not copied into global RAM or WASM memory. Output bytes are streamed
+is not copied into global RAM or WASM memory. For `Transfer-Encoding: chunked`
+requests the transport completes a bounded preflight of the entire request
+body (size, per-chunk inactivity and total deadline) before starting the root,
+so an oversized or broken chunked stream cannot be masked by early root output;
+this is the documented exception to incremental input delivery. Known-length
+bodies remain duplex, with output available before request EOF. Output bytes are streamed
 incrementally, with bounded backpressure. The root may explicitly close
 either descriptor; all request-local descriptors are released when the
 invocation finishes.

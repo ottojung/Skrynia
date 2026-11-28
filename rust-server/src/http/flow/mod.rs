@@ -1,6 +1,9 @@
+mod supervise_done;
 use super::output::Chunk;
 use std::io;
 use tokio::{sync::mpsc, task::JoinHandle};
+
+pub use supervise_done::run as supervise_done;
 
 pub async fn supervise(
     mut pump: JoinHandle<io::Result<()>>,
