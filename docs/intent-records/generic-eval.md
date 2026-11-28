@@ -1,11 +1,12 @@
 $id-1891053258346575
 title: Sole generic eval primitive with zero or one supplied function
-date: 2026/11/26
+date: 2026/11/27
 source: @ottojung
 kind: requirement
 
 eval is the only kernel execution primitive. Its executable bytes reside
-in shared RAM, addressed by a u64 offset and length. It instantiates a
+in the evaluator's exported linear memory, addressed by a u64 offset and
+length. Snapshot the bytes before execution; no shared-RAM staging required. It instantiates a
 module importing zero or one function, selected explicitly by the
 evaluator. There is no binding array. No implicit imports of read, write,
 close, invoke or other functions are injected into children.
@@ -18,8 +19,8 @@ module/name or application protocol. Non-function imports are not supplied.
 skrynia-tools may supply its userland invoke convention as this function.
 
 The function executes in its originating WASM context, not the child's
-context. Modules may have no linear memory; no memory export is required
-solely to communicate with the machine. Do not copy data between linear
+context. Modules not using fixed buffer-based calls may have no linear memory;
+evaluating a child requires the evaluator's exported memory. Do not copy data between linear
 memories implicitly or grow them for callbacks.
 
 Remove eval_delegate, eval_buffered, fs_delegate_scope and kernel-specific

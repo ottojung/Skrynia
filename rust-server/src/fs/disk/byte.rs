@@ -22,6 +22,9 @@ pub fn write1(e: &mut Entry, byte: u8) -> Result<(), &'static str> {
 
 pub fn seek_rel(e: &mut Entry, shift: i64) -> Result<u64, &'static str> {
     let cur = e.file.stream_position().map_err(|_| "io")?;
+    if shift == 0 {
+        return Ok(cur);
+    }
     let len = e.file.metadata().map_err(|_| "io")?.len();
     let next = i128::from(cur) + i128::from(shift);
     if next < 0 || next > i64::MAX as i128 || next as u64 > len {

@@ -4,13 +4,13 @@ use super::{dir, kernel};
 fn byte_io_eof_seek_and_cas_errors() {
     let d = dir("byte-io");
     let root = r#"(module
- (import "skrynia" "open_ram" (func $or (result i32)))
- (import "skrynia" "truncate" (func $tr (param i32 i64) (result i32)))
- (import "skrynia" "read1" (func $r1 (param i32) (result i32)))
- (import "skrynia" "write1" (func $w1 (param i32 i32) (result i32)))
- (import "skrynia" "seek" (func $sk (param i32 i64) (result i64)))
- (import "skrynia" "cas1" (func $cas (param i32 i64 i32 i32) (result i32)))
- (import "skrynia" "write1" (func $sk_write1_0 (param i32 i32) (result i32)))(func $w (param $fd i32)(param $src i32)(param $len i32)(result i32)(local $i i32)(local $r i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(local.set $r(call $sk_write1_0(local.get $fd)(i32.load8_u(i32.add(local.get $src)(local.get $i)))))(if(i32.lt_s(local.get $r)(i32.const 0))(then(return(local.get $r))))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $i))
+ (import "skrynia_v3_1" "open_ram" (func $or (result i32)))
+ (import "skrynia_v3_1" "truncate" (func $tr (param i32 i64) (result i32)))
+ (import "skrynia_v3_1" "read1" (func $r1 (param i32) (result i32)))
+ (import "skrynia_v3_1" "write1" (func $w1 (param i32 i32) (result i32)))
+ (import "skrynia_v3_1" "seek" (func $sk (param i32 i64) (result i64)))
+ (import "skrynia_v3_1" "cas1" (func $cas (param i32 i64 i32 i32) (result i32)))
+ (import "skrynia_v3_1" "write1" (func $sk_write1_0 (param i32 i32) (result i32)))(func $w (param $fd i32)(param $src i32)(param $len i32)(result i32)(local $i i32)(local $r i32)(block $done(loop $lp(br_if $done(i32.ge_u(local.get $i)(local.get $len)))(local.set $r(call $sk_write1_0(local.get $fd)(i32.load8_u(i32.add(local.get $src)(local.get $i)))))(if(i32.lt_s(local.get $r)(i32.const 0))(then(return(local.get $r))))(local.set $i(i32.add(local.get $i)(i32.const 1)))(br $lp)))(local.get $i))
  (memory (export "memory") 1)
  (func (export "skrynia_main") (param $in i32) (param $out i32) (result i32)
   (local $fd i32)

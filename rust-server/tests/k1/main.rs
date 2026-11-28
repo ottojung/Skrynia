@@ -1,6 +1,9 @@
+mod bounds;
+mod buffer;
 mod byte_io;
 mod errors;
 mod input_seek;
+mod ram_semantics;
 mod root_dir;
 mod shared_ram;
 mod sparse;

@@ -5,4 +5,5 @@ mod imports;
 mod nested;
 mod repeated;
 mod rig;
+mod snapshot;
 mod trap;

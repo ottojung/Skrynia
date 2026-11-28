@@ -3,22 +3,41 @@
 > **Status:** normative ABI for the target kernel implementation.
 > Whole-stack acceptance is governed separately by the qualification plan.
 >
-> **Authority:** `docs/intent-records/*.md` at owner head
-> `0ccc90ff7cfa8ee1a62b4a1e90b6b08677976323` (2026-11-26). Nothing here changes
-> an owner requirement. Items marked **[K0-CHOICE]** are explicit K0 integration
+> **Authority:** current `docs/intent-records/*.md`, revised by owner approval
+> 2026-11-27 for private linear-memory buffers and bulk I/O. Items marked
+> **[K0-CHOICE]** are explicit integration
 > decisions needed to make the target executable; they are not owner decisions
 > and are open to owner override. Items marked **[UNRESOLVED]** must not be
 > guessed or encoded as owner intent.
 
-## 1. Fixed function inventory (19 functions)
+## 1. Fixed function inventory (21 functions; ABI 3.1)
 
-All shared-RAM pointers and buffer lengths are `u64`, independent of WASM
-linear-memory width. Scalar descriptors, table indices and byte values are
-ordinary integer values, never RAM addresses.
+All fixed ABI buffer pointers and lengths are `u64`, independent of WASM
+linear-memory width. A pointer addresses the calling instance's ordinary
+(non-shared) exported linear memory named `memory`. A caller that uses only
+scalar functions need not export or define memory. Scalar descriptors,
+table indices and byte values are ordinary integers. Descriptor offsets
+(including cas1) address the descriptor, not linear memory.
+
+**[K0-CHOICE] ABI versioning.** Fixed imports use namespace `skrynia_v3_1`.
+The old namespace is not linked; a module importing old fixed functions
+must be rebuilt. POST /version includes `"abi":"skrynia_v3_1"`. The root
+entrypoint, named syscall namespace, and child single-function import
+conventions are unchanged. There is no old-pointer compatibility mode.
+
+Buffer-based operations validate the complete requested range before any
+descriptor/file/RNG effect: missing or nonordinary exported memory is -3;
+u64 addition overflow is -6; a range outside the current memory is -7.
+A zero-length buffer must still refer to a valid memory position
+(including one-past-end). Buffer lengths must fit a nonnegative i64 count.
+No borrowed view survives a host call or reentry into WASM. No implicit
+allocation, copying between instances, or memory growth is performed.
 
     i32 open_ram();
     i32 open_disk(u64 path, u64 len, u32 mode);
     i32 close(i32 fd);
+    i64 read(i32 fd, u64 ptr, u64 size);
+    i64 write(i32 fd, u64 ptr, u64 size);
     i32 read1(i32 fd);
     i32 write1(i32 fd, u32 byte);
     i64 seek(i32 fd, i64 shift);
@@ -41,10 +60,24 @@ functions with provider-defined integer signatures (section 6).
 
 ## 2. Descriptor bytes, errors, EOF and relative seek
 
-`read1` and `write1` are the only fundamental descriptor data-transfer
-operations; each transfers exactly one byte. There are no fixed kernel bulk
-read/write imports and no RAM buffer requirement for byte I/O. Bytes are
-`0..255`; a byte operand outside that range is invalid.
+`read1` and `write1` transfer exactly one byte and need no linear memory.
+Bytes are `0..255`; a byte operand outside that range is invalid.
+
+`read` and `write` transfer between the descriptor and private linear
+memory. A successful call returns the actual number of bytes transferred
+(0..size); a partial transfer is valid, and the caller may continue at the
+updated cursor. A positive-length read returns 0 at EOF, not -1. An error
+before progress returns a negative code; if some progress was made, return
+its count. The cursor advances by the returned count, and a read only
+changes the corresponding destination prefix. A zero-length call validates
+the descriptor's access mode and the buffer and makes no transfer.
+Bulk RAM access is only byte-atomic; it is not a transaction or snapshot.
+Writes to RAM do not implicitly resize it. At the end of the allocated RAM
+a nonempty write with no progress reports a bounds error; a short write
+that reaches the end returns its count. A read at or beyond RAM EOF (e.g.
+after a concurrent shrink) returns 0. Transport-level errors may have
+irreversibly consumed input outside the accepted stream limit; they are
+not successful reads. Ordinary disk write durability still requires sync.
 
 **[K0-CHOICE] Scalar encoding.** Negative results are errors, nonnegative
 results are values or success status. Codes: `-1` EOF, `-2` EBADF, `-3` EINVAL
@@ -59,8 +92,9 @@ unchanged (except the documented skip clamp below).
 **[K0-CHOICE] Relative seek.** `seek(fd, shift)` returns the new absolute
 cursor position (`>= 0`) on success or a negative error. A failed seek on
 forward-only input may already have consumed bytes; those cannot be rewound.
-Other failed seeks do not move the cursor. `shift = 0` is a no-op that still returns the position.
-Regular file and RAM descriptors support signed seeking inside `[0, len]`;
+Other failed seeks do not move the cursor. `shift = 0` is a no-op that
+returns the current position, including after a concurrent shrink.
+Nonzero signed seeks on regular file and RAM descriptors stay inside `[0, len]`;
 `position + shift` outside that interval is `-6`. Forward-only input streams accept
 `shift >= 0` only: a positive shift discards that many input bytes, a short
 skip clamps the cursor to end-of-stream (subsequent `read1` is `-1`), and a
@@ -93,11 +127,11 @@ failed observations also acquire. No CAS buffer and no multi-byte CAS.
 `open_directory` must begin with exactly one namespace token, `user/` or
 `operator/`. The token alone selects that root; the kernel strips it and
 applies the unchanged relative-path grammar (no absolute paths, `..`, `//`,
-trailing slash, NUL or paths over 4096 bytes). Unqualified paths, token
-escapes and cross-token renames are rejected with `-3`; there is no implicit
-default, overlay or fallback between the two physically distinct roots.
-`FsAuth` only restricts: full authority permits both namespaces, scoped caps
-are checked against the token-selected root and cannot redirect it. Never
+trailing slash, NUL or relative suffixes over 4096 bytes). Unqualified paths,
+token escapes and cross-token renames are rejected with `-3`; there is no
+implicit default, overlay or fallback between the two physically distinct roots.
+A native filesystem caller may supply a matching explicit root constraint;
+it cannot redirect the path's namespace token. Never
 treat `-8` (the only genuine ENOENT code), `-5` EIO or `-2` EBADF as absence of
 a path. `open_directory("user/.")` or `open_directory("operator/.")` opens that
 namespace root, and `sync` on that descriptor requests directory durability
@@ -107,12 +141,13 @@ not a separate owner approval.
 
 ## 4. Generic single-function eval
 
-`eval` is the only kernel execution primitive. Code bytes are read from shared
-RAM at `(code, code_size)` and snapshotted before validation and execution.
+`eval` is the only kernel execution primitive. Code bytes are read from the evaluator's
+exported linear memory at `(code, code_size)` and snapshotted before validation
+and execution. No borrowed memory view survives instantiation or callback.
 The module imports zero or one function, selected by the evaluator; the kernel
 validates its exact ordered `i32`/`i64` parameter and result types against the
 child import. There is no binding array, no implicit import injection, no
-non-function import, no prescribed import name, no mandatory linear memory and
+non-function import, no prescribed import name, no mandatory child linear memory and
 no implicit linear-memory copying or growth.
 
 **[K0-CHOICE] Eval conventions.** `eval` returns `0` on success and a negative
@@ -140,7 +175,7 @@ from application metering.
 
 ## 5. Removed inventory
 
-Do not retain `read`, `write`, `invoke`, `cas_ram_u64`, `eval_delegate`,
+Do not retain `invoke`, `cas_ram_u64`, `eval_delegate`,
 `eval_buffered`, `fs_delegate_scope`, `try_mutation_lock` or
 `release_mutation_lock` as fixed native ABI functions or implicit imports.
 Native registration, program-ID management and application protocols do not
@@ -158,7 +193,7 @@ replay of a failed call.
 
 **[K0-CHOICE] Discovery shape.** `GET /syscalls_list` returns
 `{"functions":[{"name":"...","params":["i32","i64"],"results":["i32"]}]}`.
-`POST /version` returns build version and commit plus the same descriptors
+`POST /version` returns build version, commit, ABI identifier and the same descriptors
 under `"syscalls"`.
 
 **[K0-CHOICE] Binary wire format.** See [typed FFI](typed-ffi.md) for
@@ -172,8 +207,9 @@ typed integers directly; general remote machine-context access is deferred.
 arguments, not a RAM request-structure pointer. Its meanings, order, widths,
 return signature, error codes, partial-progress/EOF behavior, overlapping and
 same-descriptor behavior, and concurrency semantics are **[UNRESOLVED]** by
-the owner. Software providing copy may use a portable `read1`/`write1`
-fallback or a native accelerator, selected before execution; an HTTP provider
+the owner. Copy may optimize transfers between RAM ranges or disk and RAM.
+Software providing copy may use a portable buffered read/write fallback
+(or byte I/O) or a native accelerator, selected before execution; an HTTP provider
 may omit copy. No kernel fallback is required. K0 will not encode a guessed
 copy signature into this ABI; T1 and K3 must coordinate the unresolved parts
 without presenting them as owner intent.

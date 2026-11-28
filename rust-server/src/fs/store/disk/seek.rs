@@ -17,8 +17,11 @@ impl Fs {
             Some(Item::Output(e)) if shift == 0 => Ok(e.position()),
             Some(Item::Output(_)) => Err("unsupported"),
             Some(Item::Ram(e)) => {
+                if shift == 0 {
+                    return Ok(e.pos);
+                }
                 let next = i128::from(e.pos) + i128::from(shift);
-                if next < 0 || next as u64 > self.ram.len() {
+                if next < 0 || next > i128::from(self.ram.len()) {
                     return Err("overflow");
                 }
                 e.pos = next as u64;

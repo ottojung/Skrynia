@@ -3,7 +3,7 @@ pub fn check(module: &wasmtime::Module) -> Result<(), String> {
         if import.module() == "syscall" {
             continue;
         }
-        if import.module() != "skrynia" {
+        if import.module() != "skrynia_v3_1" {
             return Err(format!("root imports forbidden module {}", import.module()));
         }
         let (args, result) = super::signatures::expected(import.name())

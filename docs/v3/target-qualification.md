@@ -1,7 +1,7 @@
 # Skrynia target qualification plan (K0)
 
-This plan defines what may count as evidence for the owner-approved target at
-`docs/intent-records` head `0ccc90f`. It does not assert that the target is
+This plan defines what may count as evidence for the owner-approved target in
+current `docs/intent-records` (ABI 3.1, 2026-11-27). It does not assert that the target is
 qualified. Old-ABI qualification results, pins and release gates are
 historical evidence only; they are not reused as new acceptance.
 
@@ -17,16 +17,17 @@ head. No result is reported from a dirty or unpushed checkout.
    source linter (50 code lines/file, 10 entries/dir, sibling-only imports),
    strict Clippy (`correctness`, `suspicious`, `perf`, `complexity`).
    No obsolete imports, no native fuel/epoch/resource-limit machinery, no
-   superseded API claims presented as current, and no transitional legacy
-   bulk-I/O shims left after K1/K2 tests have been ported.
-2. **ABI conformance:** fixed 19-function inventory from `target-abi.md`;
-   byte-only `read1`/`write1`; signed relative seek and forward input skips;
-   shared-RAM `u64` addresses/lengths and dynamic resize; byte atomicity and
+   superseded API claims presented as current, and no old shared-RAM-pointer
+   ABI shims.
+2. **ABI conformance:** fixed 21-function inventory from `target-abi.md`;
+   new versioned namespace, private linear-memory `u64` buffer validation,
+   bulk read/write including EOF and partial progress, scalar read1/write1;
+   signed relative seek, forward input skips, shared RAM and dynamic resize; byte atomicity and
    disjoint writes under concurrency; sequentially consistent single-byte CAS
    with release/acquire publication; root `open_directory("user/.")` / `open_directory("operator/.")` plus `sync`;
    generic zero-or-one function `eval` with exact type validation, originating
    context execution, fresh child stores, no implicit imports or mandatory
-   memory; arbitrary typed named FFI with discovery and no replay.
+   child memory; private eval code snapshots; arbitrary typed named FFI with discovery and no replay.
 3. **Failure and durability:** bounds, EOF, invalid operands, descriptor and
    path errors, trap recovery, crash/restart durability of directory
    mutations, host-safe out-of-resource failures.

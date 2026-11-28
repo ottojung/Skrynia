@@ -1,5 +1,14 @@
 use super::Ram;
+mod bench;
+mod bulk;
+mod bulk_atomic;
+mod bulk_cas;
+mod bulk_resize;
 mod cas;
+mod resize_edges_a;
+mod resize_edges_b;
+mod resize_guard;
+mod scalar_resize;
 
 #[test]
 fn truncate_grows_zeroes_and_shrinks() {

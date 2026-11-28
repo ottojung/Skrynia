@@ -1,6 +1,6 @@
 $id-1891053258346574
-title: Minimal shared-RAM kernel ABI
-date: 2026/11/26
+title: Minimal kernel ABI with private buffers
+date: 2026/11/27
 source: @ottojung
 kind: requirement
 
@@ -10,6 +10,8 @@ signatures below are the working design, subject to final ABI specification):
     i32 open_ram();
     i32 open_disk(u64 path, u64 len, u32 mode);
     i32 close(i32 fd);
+    i64 read(i32 fd, u64 ptr, u64 size);
+    i64 write(i32 fd, u64 ptr, u64 size);
     i32 read1(i32 fd);
     i32 write1(i32 fd, u32 byte);
     i64 seek(i32 fd, i64 shift);
@@ -28,10 +30,12 @@ signatures below are the working design, subject to final ABI specification):
     i64 eval(u64 code, u64 code_size, i32 function,
              i32 arg0, i32 arg1);
 
-All pointers and buffer lengths are u64 and refer to shared RAM, independent
-of WASM linear-memory address width. The fixed inventory contains 19
-functions, plus operator-defined named FFI imports in namespace syscall.
-read1/write1 are the only fundamental descriptor data transfers.
+All buffer pointers and lengths are u64 and refer to the calling instance's
+exported linear memory, independent of WASM address width. The fixed inventory
+contains 21 functions, plus operator-defined named FFI imports in namespace
+syscall. The ABI must be versioned so older incompatible guests cannot link
+silently. read/write are bulk descriptor transfers; read1/write1 remain byte
+transfers without memory requirements.
 seek is relative and signed; input supports nonnegative shifts.
 CAS compares and conditionally replaces exactly one RAM byte. The proposed
 cas1 signature returns the observed byte directly (0..255), or a negative
@@ -45,7 +49,7 @@ evaluator. The kernel imposes no import name or application protocol.
 No binding array. The proposed function selector is a table index with
 a reserved no-function value; exact encoding is not yet finalized.
 
-Remove native cas_ram_u64, read, write, invoke, eval_delegate, eval_buffered,
+Remove native cas_ram_u64, invoke, eval_delegate, eval_buffered,
 fs_delegate_scope, try_mutation_lock and release_mutation_lock.
 No native registration, program-ID management or application protocols.
 Allocation, memory protection and application policy belong to software.

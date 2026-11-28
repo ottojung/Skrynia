@@ -1,6 +1,6 @@
 $id-1891053258346576
 title: Optional named FFI accelerators and software fallbacks
-date: 2026/11/26
+date: 2026/11/27
 source: @ottojung
 kind: requirement
 
@@ -26,13 +26,14 @@ Start with copy as the standard derived FFI function. It has exactly
 four explicit integer arguments, not a single pointer to a RAM request
 structure. The meanings, order and widths of the four arguments and
 the return signature remain to be finalized; do not invent them.
-A software provider can implement copy using read1 and write1 when
-an accelerated FFI implementation is unavailable. A custom libskrynia
+A software provider can implement copy using fixed bulk read/write and
+private scratch memory (or read1/write1) when an accelerator is unavailable.
+Efficient copying between locations of shared RAM, or between a file and RAM,
+is a use case; the accelerator is optional and must preserve reference semantics. A custom libskrynia
 implementation may accelerate it natively. The HTTP syscall provider
 may omit copy entirely; it need not access the machine's RAM or
 descriptors. Do not require a native kernel fallback or make remote
 machine-context access a prerequisite for this design.
-Do not reintroduce fixed bulk read/write kernel imports.
 
 Finalize the signature, result/error codes, partial progress, EOF,
 overlapping ranges, same descriptor behavior and concurrency semantics

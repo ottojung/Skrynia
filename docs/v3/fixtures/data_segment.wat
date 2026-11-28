@@ -1,5 +1,5 @@
 (module
-  (import "skrynia" "write1" (func $write (param i32 i32) (result i32)))
+  (import "skrynia_v3_1" "write1" (func $write (param i32 i32) (result i32)))
   (memory 1)
   (data (i32.const 64) "v3")
   (func (export "skrynia_main") (param i32) (param $out i32) (result i32)

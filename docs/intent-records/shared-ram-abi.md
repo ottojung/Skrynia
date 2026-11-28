@@ -1,18 +1,17 @@
 $id-1891053258346571
-title: All machine ABI buffers address shared RAM
-date: 2026/11/26
+title: Explicit shared RAM and private ABI buffers
+date: 2026/11/27
 source: @ottojung
 kind: requirement
 
-All memory pointers and buffer ranges in the Skrynia machine ABI refer to
-the single shared RAM object, never to a caller's WASM linear memory.
-All shared RAM addresses and buffer lengths in the machine ABI are u64,
-independent of the WASM linear-memory address width. This applies to
-paths, directory entries, random output and eval code. FFI signatures
-are provider-defined; use u64 for shared RAM addresses and buffer lengths
-when defining such arguments. CAS has no observation buffer.
-Scalar values, descriptor identifiers and function-table indices remain
-values of their respective types, not RAM addresses.
+All fixed ABI buffer pointers and lengths are u64 and address the calling
+WASM instance's exported linear memory, including paths, directory entries,
+random output, bulk I/O buffers and eval code. Use an exported memory named
+memory; scalar-only callers need not have memory. Never retain a borrowed
+linear-memory view across a host call or reentrant WASM execution. Do not
+implicitly share or copy linear memory between instances. Descriptor offsets
+(such as cas1) are not linear-memory pointers. FFI signatures and address
+interpretations remain provider-defined.
 
 RAM is unpartitioned by the machine; allocation and protection policies
 belong to software. RAM remains dynamically resizable via truncate:
@@ -34,18 +33,10 @@ Conflicting accesses to regions removed or recreated by concurrent
 truncation need not have meaningful data semantics; host safety is mandatory.
 Ordinary RAM data operations must not require a global RAM mutex.
 
-RAM is accessible through descriptors like other byte-addressable resources.
-The only fundamental descriptor data-transfer operations are read1 and
-write1. Bulk RAM transfers are copies between descriptors, supplied as
-derived FFI rather than native read/write imports. Exact overlapping-copy
-semantics remain to be specified.
+RAM is accessible explicitly through descriptors, like other byte-addressable
+resources, with read1/write1 or read/write. Copy between RAM locations, or
+between files and RAM, can be provided as an optional optimized named FFI;
+it is not a fundamental kernel transfer requirement. See ffi-fallbacks.md.
 
-eval code pointers address shared RAM. No binding array is used. A WASM module
-need not define or export linear memory. See generic-eval.md.
-
-This record states architectural intent, not existing implementation.
-
-Reaffirmed by the owner on 2026/11/26: retain this shared RAM design.
-Performance and coordination concerns are not authorization to change
-the memory model. Implement the existing requirements as written; leave
-allocation, protection and synchronization protocols to userland.
+No ABI pointer implicitly addresses shared RAM. Its allocation, protection
+and synchronization protocols remain userland responsibilities.

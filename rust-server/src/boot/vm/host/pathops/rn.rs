@@ -3,14 +3,14 @@ type Vm = crate::boot::vm::state::Vm;
 pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
     linker
         .func_wrap(
-            "skrynia",
+            "skrynia_v3_1",
             "rename",
             |mut c: wasmtime::Caller<'_, Vm>, ap: u64, al: u64, bp: u64, bl: u64| -> i32 {
-                let a = match crate::boot::vm::host::ram::args::read(&mut c, ap, al) {
+                let a = match crate::boot::vm::host::memory::read(&mut c, ap, al) {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
-                let b = match crate::boot::vm::host::ram::args::read(&mut c, bp, bl) {
+                let b = match crate::boot::vm::host::memory::read(&mut c, bp, bl) {
                     Ok(x) => x,
                     Err(e) => return e,
                 };
@@ -22,15 +22,12 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
                     Ok(r) => r,
                     Err(e) => return e,
                 };
-                let root = match (ra, rb) {
-                    (Some(x), Some(y)) if x == y => Some(x),
-                    (Some(_), Some(_)) => return crate::boot::vm::host::ram::args::E_NOSUP,
-                    (Some(x), None) | (None, Some(x)) => Some(x),
-                    (None, None) => None,
-                };
-                match c.data().fs.rename(root, &a, &b) {
+                if ra != rb {
+                    return crate::boot::vm::host::memory::E_INVAL;
+                }
+                match c.data().fs.rename(ra, &a, &b) {
                     Ok(()) => 0,
-                    Err(e) => crate::boot::vm::host::ram::args::map_fs(e),
+                    Err(e) => crate::boot::vm::host::memory::map_fs(e),
                 }
             },
         )
