@@ -1,5 +1,7 @@
 use std::path::{Component, Path, PathBuf};
 
+pub(crate) const MAX_RELATIVE_PATH_BYTES: usize = 4096;
+
 pub fn clean_relative(path: &Path) -> Result<PathBuf, &'static str> {
     if path.as_os_str().is_empty() {
         return Err("empty");
@@ -11,7 +13,7 @@ pub fn clean_relative(path: &Path) -> Result<PathBuf, &'static str> {
     if std::str::from_utf8(s).is_err() || s.windows(2).any(|w| w == b"//") || s.ends_with(b"/") {
         return Err("invalid");
     }
-    if s.len() > 4096 {
+    if s.len() > MAX_RELATIVE_PATH_BYTES {
         return Err("invalid");
     }
     if path.is_absolute() {
@@ -31,7 +33,7 @@ pub fn clean_relative(path: &Path) -> Result<PathBuf, &'static str> {
         return Err("empty");
     }
     let out_len = out.as_os_str().as_encoded_bytes().len();
-    if out_len > 4096 {
+    if out_len > MAX_RELATIVE_PATH_BYTES {
         return Err("invalid");
     }
     Ok(out)

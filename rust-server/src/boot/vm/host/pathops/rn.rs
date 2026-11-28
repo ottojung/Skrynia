@@ -22,13 +22,10 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
                     Ok(r) => r,
                     Err(e) => return e,
                 };
-                let root = match (ra, rb) {
-                    (Some(x), Some(y)) if x == y => Some(x),
-                    (Some(_), Some(_)) => return crate::boot::vm::host::memory::E_NOSUP,
-                    (Some(x), None) | (None, Some(x)) => Some(x),
-                    (None, None) => None,
-                };
-                match c.data().fs.rename(root, &a, &b) {
+                if ra != rb {
+                    return crate::boot::vm::host::memory::E_INVAL;
+                }
+                match c.data().fs.rename(ra, &a, &b) {
                     Ok(()) => 0,
                     Err(e) => crate::boot::vm::host::memory::map_fs(e),
                 }

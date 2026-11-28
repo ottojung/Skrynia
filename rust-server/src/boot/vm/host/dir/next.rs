@@ -10,9 +10,6 @@ pub fn add(linker: &mut wasmtime::Linker<Vm>) -> Result<(), String> {
                     return e;
                 }
                 let max = cap.min(4096);
-                if max > crate::boot::limits::MAX_IO as u64 {
-                    return crate::boot::vm::host::memory::E_BOUNDS;
-                }
                 let mut buf = vec![0u8; max as usize];
                 let fs = c.data().fs.clone();
                 let res = fs.next_entry(&mut c.data_mut().fds, crate::fs::Fd(fd), &mut buf);

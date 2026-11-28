@@ -92,8 +92,9 @@ unchanged (except the documented skip clamp below).
 **[K0-CHOICE] Relative seek.** `seek(fd, shift)` returns the new absolute
 cursor position (`>= 0`) on success or a negative error. A failed seek on
 forward-only input may already have consumed bytes; those cannot be rewound.
-Other failed seeks do not move the cursor. `shift = 0` is a no-op that still returns the position.
-Regular file and RAM descriptors support signed seeking inside `[0, len]`;
+Other failed seeks do not move the cursor. `shift = 0` is a no-op that
+returns the current position, including after a concurrent shrink.
+Nonzero signed seeks on regular file and RAM descriptors stay inside `[0, len]`;
 `position + shift` outside that interval is `-6`. Forward-only input streams accept
 `shift >= 0` only: a positive shift discards that many input bytes, a short
 skip clamps the cursor to end-of-stream (subsequent `read1` is `-1`), and a
@@ -126,11 +127,11 @@ failed observations also acquire. No CAS buffer and no multi-byte CAS.
 `open_directory` must begin with exactly one namespace token, `user/` or
 `operator/`. The token alone selects that root; the kernel strips it and
 applies the unchanged relative-path grammar (no absolute paths, `..`, `//`,
-trailing slash, NUL or paths over 4096 bytes). Unqualified paths, token
-escapes and cross-token renames are rejected with `-3`; there is no implicit
-default, overlay or fallback between the two physically distinct roots.
-`FsAuth` only restricts: full authority permits both namespaces, scoped caps
-are checked against the token-selected root and cannot redirect it. Never
+trailing slash, NUL or relative suffixes over 4096 bytes). Unqualified paths,
+token escapes and cross-token renames are rejected with `-3`; there is no
+implicit default, overlay or fallback between the two physically distinct roots.
+A native filesystem caller may supply a matching explicit root constraint;
+it cannot redirect the path's namespace token. Never
 treat `-8` (the only genuine ENOENT code), `-5` EIO or `-2` EBADF as absence of
 a path. `open_directory("user/.")` or `open_directory("operator/.")` opens that
 namespace root, and `sync` on that descriptor requests directory durability
