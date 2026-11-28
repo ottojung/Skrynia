@@ -1,16 +1,12 @@
-use super::{gate, output, output::Chunk, term};
+use super::{output, output::Chunk, term};
 use axum::{
     http::{StatusCode, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
 };
 use std::io;
-use std::sync::atomic::Ordering;
 use tokio::sync::mpsc;
 
-fn rejected(t: &term::Term, verdict: &gate::Verdict) -> Option<StatusCode> {
-    if verdict.load(Ordering::Relaxed) == 1 {
-        return Some(StatusCode::PAYLOAD_TOO_LARGE);
-    }
+fn rejected(t: &term::Term) -> Option<StatusCode> {
     term::get(t).map(|e| match e.kind() {
         io::ErrorKind::InvalidData => StatusCode::PAYLOAD_TOO_LARGE,
         io::ErrorKind::BrokenPipe | io::ErrorKind::TimedOut => StatusCode::BAD_REQUEST,
@@ -18,13 +14,9 @@ fn rejected(t: &term::Term, verdict: &gate::Verdict) -> Option<StatusCode> {
     })
 }
 
-pub async fn response(
-    mut receiver: mpsc::Receiver<Chunk>,
-    t: term::Term,
-    verdict: gate::Verdict,
-) -> Response {
+pub async fn response(mut receiver: mpsc::Receiver<Chunk>, t: term::Term) -> Response {
     let first = receiver.recv().await;
-    if let Some(code) = rejected(&t, &verdict) {
+    if let Some(code) = rejected(&t) {
         return code.into_response();
     }
     match first {

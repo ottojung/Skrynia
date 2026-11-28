@@ -17,7 +17,6 @@ pub async fn run(
     tx: mpsc::Sender<io::Result<Bytes>>,
     t: super::term::Term,
     lim: Limits,
-    buffered: bool,
 ) -> io::Result<()> {
-    read::run(body, tx, t, lim, buffered).await
+    read::run(body, tx, t, lim).await
 }

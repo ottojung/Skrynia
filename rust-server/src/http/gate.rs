@@ -1,6 +1,4 @@
 use axum::http::Request;
-pub type Verdict = std::sync::Arc<std::sync::atomic::AtomicU8>;
-
 pub fn declared_too_large<T>(r: &Request<T>, max: usize) -> bool {
     r.headers()
         .get("content-length")

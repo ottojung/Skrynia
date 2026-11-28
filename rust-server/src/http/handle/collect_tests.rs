@@ -1,3 +1,4 @@
+use super::term;
 use super::*;
 use axum::body::Body;
 use futures_util::stream;
@@ -6,7 +7,6 @@ use std::io;
 #[tokio::test(start_paused = true)]
 async fn request_total_bounds_chunked_preflight() {
     let t = term::new();
-    let v = Arc::new(AtomicU8::new(0));
     let parts = stream::unfold(0u8, |n| async move {
         if n >= 3 {
             return None;
@@ -22,7 +22,6 @@ async fn request_total_bounds_chunked_preflight() {
             Duration::from_secs(5),
             Duration::from_secs(1),
             &t,
-            &v,
         )
         .await
     });
@@ -30,5 +29,5 @@ async fn request_total_bounds_chunked_preflight() {
         tokio::time::advance(Duration::from_secs(1)).await;
         tokio::task::yield_now().await;
     }
-    assert_eq!(task.await.unwrap(), Err(StatusCode::BAD_REQUEST));
+    assert_eq!(task.await.unwrap(), Err(Reject::BadRequest));
 }
