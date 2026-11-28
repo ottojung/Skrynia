@@ -9,6 +9,7 @@ pub async fn run(
     tx: mpsc::Sender<io::Result<Bytes>>,
     t: super::super::term::Term,
     lim: Limits,
+    buffered: bool,
 ) -> io::Result<()> {
     let mut stream = body.into_data_stream();
     let end = tokio::time::Instant::now() + lim.total;
@@ -19,7 +20,7 @@ pub async fn run(
         let chunk = tokio::select! {
             biased;
             _ = tokio::time::sleep_until(end) => return Err(send::stop(&t, stalled())),
-            _ = idle => return Err(send::stop(&t, stalled())),
+            _ = idle, if !buffered => return Err(send::stop(&t, stalled())),
             c = stream.next() => c,
         };
         let Some(chunk) = chunk else { return Ok(()) };

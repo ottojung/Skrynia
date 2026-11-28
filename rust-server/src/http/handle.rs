@@ -28,12 +28,13 @@ pub(super) async fn handle(State(app): State<App>, request: Request) -> impl Int
     // Bound data bytes and reserve a separate terminal-error slot.
     let terminal = out_tx.clone().try_reserve_owned().expect("fresh queue");
     let deadline = tokio::time::Instant::now() + super::router::response_total();
+    let raw = request.into_body();
     let body = if chunked {
-        gate::body(request.into_body(), lim.max, verdict.clone())
+        gate::body(raw, lim.max, lim.inactivity, verdict.clone())
     } else {
-        request.into_body()
+        raw
     };
-    let pump = tokio::spawn(pump::run(body, tx, t.clone(), lim));
+    let pump = tokio::spawn(pump::run(body, tx, t.clone(), lim, chunked));
     let kernel = app.kernel;
     let worker_tx = out_tx;
     let input_term = t.clone();
