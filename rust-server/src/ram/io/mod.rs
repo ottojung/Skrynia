@@ -1,4 +1,4 @@
 use super::Ram;
-use super::pages::SIZE;
 mod read;
+mod span;
 mod write;

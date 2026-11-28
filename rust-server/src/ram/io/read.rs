@@ -1,36 +1,29 @@
-use super::SIZE;
+use super::Ram;
 use std::sync::atomic::Ordering;
 
-impl super::Ram {
+impl Ram {
     pub fn read(&self, off: u64, dst: &mut [u8]) -> Result<usize, &'static str> {
-        let Some(avail) = self.len().checked_sub(off) else {
-            return Ok(0);
-        };
-        let n = core::cmp::min(dst.len() as u64, avail) as usize;
-        let mut pos = 0usize;
-        while pos < n {
-            let cur = off + pos as u64;
-            let idx = cur / SIZE;
-            let within = (cur % SIZE) as usize;
-            let chunk = core::cmp::min((SIZE as usize) - within, n - pos);
-            let entries = self.pages.shard(idx).read().unwrap();
-            let now = self.len();
-            if cur >= now {
-                return Ok(pos);
-            }
-            let can = core::cmp::min(chunk as u64, now - cur) as usize;
-            if let Some(page) = entries.get(&idx) {
-                for j in 0..can {
-                    dst[pos + j] = page[within + j].load(Ordering::SeqCst);
+        let mut pos = 0;
+        let limit = self.len().saturating_sub(off).min(dst.len() as u64) as usize;
+        while pos < limit {
+            let result = self.span(off + pos as u64, limit - pos, false, |page, at, n| {
+                let target = &mut dst[pos..pos + n];
+                if let Some(page) = page {
+                    for (byte, cell) in target.iter_mut().zip(&page[at..at + n]) {
+                        *byte = cell.load(Ordering::SeqCst);
+                    }
+                } else {
+                    target.fill(0);
                 }
-            } else {
-                dst[pos..pos + can].fill(0);
+                n
+            });
+            match result {
+                Ok(n) => pos += n,
+                Err("oob") => break,
+                Err(_) if pos > 0 => break,
+                Err(e) => return Err(e),
             }
-            if can < chunk {
-                return Ok(pos + can);
-            }
-            pos += chunk;
         }
-        Ok(n)
+        Ok(pos)
     }
 }

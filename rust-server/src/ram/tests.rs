@@ -5,6 +5,7 @@ mod bulk_atomic;
 mod bulk_cas;
 mod bulk_resize;
 mod cas;
+mod scalar_resize;
 
 #[test]
 fn truncate_grows_zeroes_and_shrinks() {
