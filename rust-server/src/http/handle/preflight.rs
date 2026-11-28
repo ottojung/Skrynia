@@ -1,4 +1,4 @@
-use super::{Common, collect, flow, gate, input, output, respond};
+use super::{Common, collect, flow, input, output, respond};
 use axum::{
     extract::Request,
     response::{IntoResponse, Response},
@@ -20,13 +20,9 @@ pub(super) async fn run(
         deadline,
         terminal,
     } = common;
-    let body = gate::body(
-        request.into_body(),
-        lim.max,
-        lim.inactivity,
-        verdict.clone(),
-    );
-    let bytes = match collect::buffered(body, lim.max, deadline, &t, &verdict).await {
+    let body = request.into_body();
+    let args = (lim.max, lim.inactivity, lim.total, &t, &verdict);
+    let bytes = match collect::buffered(body, args.0, args.1, args.2, args.3, args.4).await {
         Ok(b) => b,
         Err(code) => return code.into_response(),
     };
