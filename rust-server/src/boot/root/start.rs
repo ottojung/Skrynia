@@ -18,9 +18,11 @@ impl crate::boot::Kernel {
         crate::boot::vm::link::root::add(&mut linker)?;
         syscalls.link(&mut linker, &root)?;
         let pre = linker.instantiate_pre(&root).map_err(|e| e.to_string())?;
-        let operator = std::sync::Arc::new(crate::fs::root::Root::open(operator_dir)?);
-        let user = std::sync::Arc::new(crate::fs::root::Root::open(user_dir)?);
+        let operator = std::sync::Arc::new(crate::fs::root::Root::open_unhardened(operator_dir)?);
+        let user = std::sync::Arc::new(crate::fs::root::Root::open_unhardened(user_dir)?);
         crate::boot::distinct::ensure_distinct(&operator, &user, operator_dir, user_dir)?;
+        operator.restrict_permissions()?;
+        user.restrict_permissions()?;
         let ram = std::sync::Arc::new(crate::ram::Ram::new());
         let fs = std::sync::Arc::new(crate::fs::Fs::new(operator, user, ram.clone()));
         let cache = std::sync::Arc::new(crate::boot::vm::state::Cache::new());

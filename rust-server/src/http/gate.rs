@@ -3,6 +3,7 @@ use axum::http::Request;
 use futures_util::{StreamExt, stream};
 use std::io;
 use std::sync::atomic::{AtomicU8, Ordering};
+use tokio::time::Duration;
 
 pub type Verdict = std::sync::Arc<AtomicU8>;
 
@@ -21,9 +22,10 @@ pub fn chunked<T>(r: &Request<T>) -> bool {
         .is_some_and(|v| v.to_ascii_lowercase().contains("chunked"))
 }
 
-pub fn body(body: Body, max: usize, verdict: Verdict) -> Body {
+pub fn body(body: Body, max: usize, inactivity: Duration, verdict: Verdict) -> Body {
+    let incoming = super::pump::inactive(body.into_data_stream(), inactivity);
     let held = stream::unfold(
-        (body.into_data_stream(), Vec::new(), false),
+        (incoming, Vec::new(), false),
         move |(mut s, mut buf, done)| {
             let verdict = verdict.clone();
             async move {

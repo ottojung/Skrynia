@@ -14,7 +14,22 @@ pub struct Root {
 
 impl Root {
     pub fn open(path: &Path) -> Result<Self, String> {
+        let root = Self::open_unhardened(path)?;
+        root.restrict_permissions()?;
+        Ok(root)
+    }
+    pub(crate) fn open_unhardened(path: &Path) -> Result<Self, String> {
         open::open_root(path)
+    }
+    pub(crate) fn restrict_permissions(&self) -> Result<(), String> {
+        // Harden the opened directory, never a replaceable path.
+        if unsafe { libc::fchmod(self.fd(), 0o700) } != 0 {
+            return Err(format!(
+                "data dir mode: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        Ok(())
     }
     pub fn fd(&self) -> std::os::fd::RawFd {
         use std::os::fd::AsRawFd;
