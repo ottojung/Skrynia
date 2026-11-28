@@ -32,6 +32,10 @@ fn version_exposes_typed_signatures_and_all_custom_names() {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert!(json["version"].is_string() && json["commit"].is_string());
+        assert_eq!(
+            json["abi"], "skrynia_v3_1",
+            "ABI identity must be advertised"
+        );
         assert_eq!(json["syscalls"], expected());
         let get = app
             .oneshot(Request::get("/version").body(Body::empty()).unwrap())
