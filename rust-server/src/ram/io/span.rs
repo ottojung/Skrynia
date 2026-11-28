@@ -1,5 +1,4 @@
-use super::super::Ram;
-use super::super::pages::{Pages, SIZE};
+use super::{Pages, Ram, SIZE};
 use std::sync::Arc;
 
 impl Ram {
